@@ -1,8 +1,9 @@
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomInt, randomUUID } from 'node:crypto';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { requireAuth, requireFamily, type ParentRole } from '../auth.js';
+import { config } from '../config.js';
 import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
 import {
@@ -16,15 +17,10 @@ import {
 const router = Router();
 const uuid = z.string().uuid();
 const categories = ['Scuola', 'Salute', 'Sport', 'Svago'] as const;
+const OTP_TTL_MINUTES = 5;
+const OTP_MAX_ATTEMPTS = 5;
 
-const allowedMimeTypes = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/heic',
-  'image/heif',
-]);
-
+const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024, files: 1 },
@@ -39,11 +35,7 @@ const upload = multer({
 
 function uploadReceipt(req: Request, res: Response, next: NextFunction): void {
   upload.single('receipt')(req, res, (error) => {
-    if (!error) {
-      next();
-      return;
-    }
-
+    if (!error) { next(); return; }
     const message = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE'
       ? 'La ricevuta non può superare 8 MB.'
       : error instanceof Error ? error.message : 'Ricevuta non valida.';
@@ -69,15 +61,22 @@ const createExpenseSchema = z.object({
   notes: z.string().trim().max(2000).optional(),
 });
 
+const approveSchema = z.object({
+  otp: z.string().regex(/^\d{6}$/, 'Inserisci il codice OTP di 6 cifre.'),
+});
+
 router.use(requireAuth);
+
+function otpHash(expenseId: string, userId: string, otp: string): string {
+  return createHmac('sha256', config.JWT_SECRET)
+    .update(`${expenseId}:${userId}:${otp}`)
+    .digest('hex');
+}
 
 function serializeExpense(row: Record<string, unknown>, currentUserId: string): Record<string, unknown> {
   const status = row.status as string;
   const paidByUserId = row.paidByUserId as string | null;
-  return {
-    ...row,
-    canReview: status === 'pending_approval' && paidByUserId !== currentUserId,
-  };
+  return { ...row, canReview: status === 'pending_approval' && paidByUserId !== currentUserId };
 }
 
 const expenseSelect = `
@@ -95,6 +94,7 @@ const expenseSelect = `
          e.notes,
          e.reviewed_by_user_id AS "reviewedByUserId",
          e.reviewed_at AS "reviewedAt",
+         e.approval_otp_verified_at AS "approvalOtpVerifiedAt",
          e.created_at AS "createdAt",
          e.updated_at AS "updatedAt"
     FROM expenses e
@@ -104,94 +104,53 @@ const expenseSelect = `
 router.get('/', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const { rows } = await pool.query(
-    `${expenseSelect}
-      WHERE e.family_id = $1
-      ORDER BY e.expense_date DESC, e.created_at DESC`,
+    `${expenseSelect} WHERE e.family_id = $1 ORDER BY e.expense_date DESC, e.created_at DESC`,
     [auth.familyId],
   );
-
   res.json(rows.map((row) => serializeExpense(row, auth.userId)));
 }));
 
 router.get('/balance', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const { rows } = await pool.query<{
-    fatherPaid: string;
-    motherPaid: string;
-    totalApproved: string;
-    perParentShare: string;
-    settlementAmount: string;
-    creditorRole: ParentRole | null;
-    debtorRole: ParentRole | null;
+    fatherPaid: string; motherPaid: string; totalApproved: string; perParentShare: string; settlementAmount: string; creditorRole: ParentRole | null; debtorRole: ParentRole | null;
   }>(
     `WITH totals AS (
        SELECT COALESCE(SUM(e.amount) FILTER (WHERE u.role = 'father'), 0::numeric) AS father_paid,
               COALESCE(SUM(e.amount) FILTER (WHERE u.role = 'mother'), 0::numeric) AS mother_paid
          FROM expenses e
          JOIN users u ON u.id = e.paid_by_user_id
-        WHERE e.family_id = $1
-          AND e.status = 'approved'
+        WHERE e.family_id = $1 AND e.status = 'approved'
      )
      SELECT father_paid::numeric(12,2)::text AS "fatherPaid",
             mother_paid::numeric(12,2)::text AS "motherPaid",
             (father_paid + mother_paid)::numeric(12,2)::text AS "totalApproved",
             ROUND((father_paid + mother_paid) / 2, 2)::numeric(12,2)::text AS "perParentShare",
             ROUND(ABS(father_paid - mother_paid) / 2, 2)::numeric(12,2)::text AS "settlementAmount",
-            CASE
-              WHEN father_paid > mother_paid THEN 'father'
-              WHEN mother_paid > father_paid THEN 'mother'
-              ELSE NULL
-            END AS "creditorRole",
-            CASE
-              WHEN father_paid > mother_paid THEN 'mother'
-              WHEN mother_paid > father_paid THEN 'father'
-              ELSE NULL
-            END AS "debtorRole"
+            CASE WHEN father_paid > mother_paid THEN 'father' WHEN mother_paid > father_paid THEN 'mother' ELSE NULL END AS "creditorRole",
+            CASE WHEN father_paid > mother_paid THEN 'mother' WHEN mother_paid > father_paid THEN 'father' ELSE NULL END AS "debtorRole"
        FROM totals`,
     [auth.familyId],
   );
-
   const balance = rows[0];
   if (!balance) throw new ApiError(500, 'Impossibile calcolare il bilancio', 'BALANCE_ERROR');
-
-  const direction = balance.creditorRole === null
-    ? 'settled'
-    : balance.creditorRole === auth.role ? 'receive' : 'pay';
-
-  res.json({
-    ...balance,
-    currentUserRole: auth.role,
-    direction,
-  });
+  const direction = balance.creditorRole === null ? 'settled' : balance.creditorRole === auth.role ? 'receive' : 'pay';
+  res.json({ ...balance, currentUserRole: auth.role, direction });
 }));
 
 router.get('/:id/receipt', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const expenseId = uuid.parse(req.params.id);
-  const { rows } = await pool.query<{
-    receiptData: Buffer | null;
-    receiptMimeType: string | null;
-    receiptFilename: string | null;
-  }>(
-    `SELECT receipt_data AS "receiptData",
-            receipt_mime_type AS "receiptMimeType",
-            receipt_filename AS "receiptFilename"
-       FROM expenses
-      WHERE id = $1 AND family_id = $2`,
+  const { rows } = await pool.query<{ receiptData: Buffer | null; receiptMimeType: string | null; receiptFilename: string | null }>(
+    `SELECT receipt_data AS "receiptData", receipt_mime_type AS "receiptMimeType", receipt_filename AS "receiptFilename"
+       FROM expenses WHERE id = $1 AND family_id = $2`,
     [expenseId, auth.familyId],
   );
-
   const receipt = rows[0];
-  if (!receipt?.receiptData) {
-    throw new ApiError(404, 'Ricevuta non trovata', 'RECEIPT_NOT_FOUND');
-  }
-
+  if (!receipt?.receiptData) throw new ApiError(404, 'Ricevuta non trovata', 'RECEIPT_NOT_FOUND');
   res.setHeader('Content-Type', receipt.receiptMimeType ?? 'application/octet-stream');
   res.setHeader('Cache-Control', 'private, no-store');
-  res.setHeader(
-    'Content-Disposition',
-    `inline; filename="${(receipt.receiptFilename ?? 'ricevuta').replace(/["\\\r\n]/g, '_')}"`,
-  );
+  res.setHeader('Content-Disposition', `inline; filename="${(receipt.receiptFilename ?? 'ricevuta').replace(/["\\\r\n]/g, '_')}"`);
   res.send(receipt.receiptData);
 }));
 
@@ -208,103 +167,179 @@ router.post('/', uploadReceipt, asyncHandler(async (req, res) => {
        status, expense_date, notes)
      VALUES ($1, $2, $3, $4::numeric, $5, $6, $7, $8, $9, $10,
              'pending_approval', COALESCE($11::date, CURRENT_DATE), $12)`,
-    [
-      id,
-      auth.familyId,
-      body.title,
-      body.amount,
-      body.category,
-      auth.userId,
-      receiptUrl,
-      req.file?.mimetype ?? null,
-      req.file?.originalname ?? null,
-      req.file?.buffer ?? null,
-      body.expenseDate ?? null,
-      body.notes || null,
-    ],
+    [id, auth.familyId, body.title, body.amount, body.category, auth.userId, receiptUrl, req.file?.mimetype ?? null, req.file?.originalname ?? null, req.file?.buffer ?? null, body.expenseDate ?? null, body.notes || null],
   );
 
-  const { rows } = await pool.query(
-    `${expenseSelect} WHERE e.id = $1 AND e.family_id = $2`,
-    [id, auth.familyId],
-  );
-
+  const { rows } = await pool.query(`${expenseSelect} WHERE e.id = $1 AND e.family_id = $2`, [id, auth.familyId]);
   await sendPushToOtherParent(auth.familyId, auth.userId, {
     title: 'Nuova spesa da approvare',
     body: `${parentRoleSubject(auth.role)} ha inserito una spesa di ${formatEuroAmount(body.amount)}. Approvala!`,
     data: { type: 'expense_created', screen: 'expenses', expenseId: id },
   });
-
   res.status(201).json(serializeExpense(rows[0] as Record<string, unknown>, auth.userId));
 }));
 
-async function reviewExpense(
-  req: Request,
-  status: 'approved' | 'declined',
-): Promise<Record<string, unknown>> {
+router.post('/:id/request-approval-otp', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const expenseId = uuid.parse(req.params.id);
+  const { rows } = await pool.query<{ paidByUserId: string; status: string }>(
+    `SELECT paid_by_user_id AS "paidByUserId", status
+       FROM expenses
+      WHERE id = $1 AND family_id = $2`,
+    [expenseId, auth.familyId],
+  );
+  const expense = rows[0];
+  if (!expense) throw new ApiError(404, 'Spesa non trovata', 'EXPENSE_NOT_FOUND');
+  if (expense.paidByUserId === auth.userId) throw new ApiError(403, 'Non puoi approvare una spesa inserita da te', 'SELF_REVIEW_NOT_ALLOWED');
+  if (expense.status !== 'pending_approval') throw new ApiError(409, 'Questa spesa è già stata valutata', 'EXPENSE_ALREADY_REVIEWED');
 
-  const result = await pool.query(
+  const otp = String(randomInt(100000, 1000000));
+  const digest = otpHash(expenseId, auth.userId, otp);
+  await pool.query(
     `UPDATE expenses
-        SET status = $1,
-            reviewed_by_user_id = $2,
-            reviewed_at = NOW(),
+        SET approval_otp_hash = $1,
+            approval_otp_expires_at = NOW() + INTERVAL '${OTP_TTL_MINUTES} minutes',
+            approval_otp_requested_by = $2,
+            approval_otp_attempts = 0,
             updated_at = NOW()
-      WHERE id = $3
-        AND family_id = $4
-        AND paid_by_user_id <> $2
-        AND status = 'pending_approval'
-      RETURNING id`,
-    [status, auth.userId, expenseId, auth.familyId],
+      WHERE id = $3 AND family_id = $4`,
+    [digest, auth.userId, expenseId, auth.familyId],
   );
 
-  if (result.rowCount !== 1) {
-    const existing = await pool.query<{ paidByUserId: string | null; status: string }>(
-      `SELECT paid_by_user_id AS "paidByUserId", status
-         FROM expenses
+  const delivered = await sendPushToUser(auth.userId, {
+    title: 'Codice firma DueCase',
+    body: `Il tuo codice OTP è ${otp}. Scade tra ${OTP_TTL_MINUTES} minuti.`,
+    data: { type: 'expense_approval_otp', screen: 'expenses', expenseId },
+  });
+
+  if (!delivered) {
+    await pool.query(
+      `UPDATE expenses
+          SET approval_otp_hash = NULL,
+              approval_otp_expires_at = NULL,
+              approval_otp_requested_by = NULL,
+              approval_otp_attempts = 0
         WHERE id = $1 AND family_id = $2`,
       [expenseId, auth.familyId],
     );
-    const expense = existing.rows[0];
-    if (!expense) throw new ApiError(404, 'Spesa non trovata', 'EXPENSE_NOT_FOUND');
-    if (expense.paidByUserId === auth.userId) {
-      throw new ApiError(403, 'Non puoi approvare o contestare una spesa inserita da te', 'SELF_REVIEW_NOT_ALLOWED');
-    }
-    throw new ApiError(409, 'Questa spesa è già stata valutata', 'EXPENSE_ALREADY_REVIEWED');
+    throw new ApiError(409, 'Impossibile consegnare il codice OTP. Attiva le notifiche push di DueCase e riprova.', 'OTP_DELIVERY_UNAVAILABLE');
   }
 
-  const { rows } = await pool.query(
-    `${expenseSelect} WHERE e.id = $1 AND e.family_id = $2`,
-    [expenseId, auth.familyId],
+  res.json({ ok: true, expiresInSeconds: OTP_TTL_MINUTES * 60 });
+}));
+
+async function declineExpense(req: Request): Promise<Record<string, unknown>> {
+  const auth = requireFamily(req);
+  const expenseId = uuid.parse(req.params.id);
+  const result = await pool.query(
+    `UPDATE expenses
+        SET status = 'declined', reviewed_by_user_id = $1, reviewed_at = NOW(), updated_at = NOW()
+      WHERE id = $2 AND family_id = $3 AND paid_by_user_id <> $1 AND status = 'pending_approval'
+      RETURNING id`,
+    [auth.userId, expenseId, auth.familyId],
   );
-
-  const updated = rows[0] as Record<string, unknown> | undefined;
-  if (!updated) throw new ApiError(500, 'Impossibile rileggere la spesa aggiornata', 'EXPENSE_REFRESH_ERROR');
-
+  if (result.rowCount !== 1) throw new ApiError(409, 'Spesa non disponibile per la revisione', 'EXPENSE_NOT_REVIEWABLE');
+  const { rows } = await pool.query(`${expenseSelect} WHERE e.id = $1 AND e.family_id = $2`, [expenseId, auth.familyId]);
+  const updated = rows[0] as Record<string, unknown>;
   const paidByUserId = updated.paidByUserId as string | null;
   if (paidByUserId) {
-    const verb = status === 'approved' ? 'approvata' : 'contestata';
     await sendPushToUser(paidByUserId, {
-      title: status === 'approved' ? 'Spesa approvata' : 'Spesa contestata',
-      body: `La spesa “${String(updated.title)}” di ${formatEuroAmount(String(updated.amount))} è stata ${verb} da ${parentRoleLabel(auth.role)}.`,
-      data: {
-        type: status === 'approved' ? 'expense_approved' : 'expense_declined',
-        screen: 'expenses',
-        expenseId,
-      },
+      title: 'Spesa contestata',
+      body: `La spesa “${String(updated.title)}” di ${formatEuroAmount(String(updated.amount))} è stata contestata da ${parentRoleLabel(auth.role)}.`,
+      data: { type: 'expense_declined', screen: 'expenses', expenseId },
     });
   }
+  return serializeExpense(updated, auth.userId);
+}
 
+async function approveExpense(req: Request): Promise<Record<string, unknown>> {
+  const auth = requireFamily(req);
+  const expenseId = uuid.parse(req.params.id);
+  const { otp } = approveSchema.parse(req.body);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query<{
+      paidByUserId: string;
+      status: string;
+      otpHash: string | null;
+      otpExpiresAt: Date | null;
+      otpRequestedBy: string | null;
+      otpAttempts: number;
+    }>(
+      `SELECT paid_by_user_id AS "paidByUserId",
+              status,
+              approval_otp_hash AS "otpHash",
+              approval_otp_expires_at AS "otpExpiresAt",
+              approval_otp_requested_by AS "otpRequestedBy",
+              approval_otp_attempts AS "otpAttempts"
+         FROM expenses
+        WHERE id = $1 AND family_id = $2
+        FOR UPDATE`,
+      [expenseId, auth.familyId],
+    );
+    const expense = rows[0];
+    if (!expense) throw new ApiError(404, 'Spesa non trovata', 'EXPENSE_NOT_FOUND');
+    if (expense.paidByUserId === auth.userId) throw new ApiError(403, 'Non puoi approvare una spesa inserita da te', 'SELF_REVIEW_NOT_ALLOWED');
+    if (expense.status !== 'pending_approval') throw new ApiError(409, 'Questa spesa è già stata valutata', 'EXPENSE_ALREADY_REVIEWED');
+    if (!expense.otpHash || !expense.otpExpiresAt || expense.otpRequestedBy !== auth.userId) throw new ApiError(409, 'Richiedi un nuovo codice OTP prima di approvare.', 'OTP_REQUIRED');
+    if (new Date(expense.otpExpiresAt).getTime() <= Date.now()) throw new ApiError(410, 'Il codice OTP è scaduto. Richiedine uno nuovo.', 'OTP_EXPIRED');
+    if (expense.otpAttempts >= OTP_MAX_ATTEMPTS) throw new ApiError(429, 'Troppi tentativi. Richiedi un nuovo codice OTP.', 'OTP_TOO_MANY_ATTEMPTS');
+
+    const candidate = otpHash(expenseId, auth.userId, otp);
+    if (candidate !== expense.otpHash) {
+      await client.query(
+        `UPDATE expenses SET approval_otp_attempts = approval_otp_attempts + 1, updated_at = NOW() WHERE id = $1`,
+        [expenseId],
+      );
+      await client.query('COMMIT');
+      throw new ApiError(400, 'Codice OTP non corretto.', 'OTP_INVALID');
+    }
+
+    await client.query(
+      `UPDATE expenses
+          SET status = 'approved',
+              reviewed_by_user_id = $1,
+              reviewed_at = NOW(),
+              approval_otp_verified_at = NOW(),
+              approval_otp_hash = NULL,
+              approval_otp_expires_at = NULL,
+              approval_otp_requested_by = NULL,
+              approval_otp_attempts = 0,
+              updated_at = NOW()
+        WHERE id = $2`,
+      [auth.userId, expenseId],
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    if ((client as unknown as { _queryable?: boolean })._queryable !== false) {
+      try { await client.query('ROLLBACK'); } catch { /* transaction may already be committed for invalid OTP attempt */ }
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  const { rows } = await pool.query(`${expenseSelect} WHERE e.id = $1 AND e.family_id = $2`, [expenseId, auth.familyId]);
+  const updated = rows[0] as Record<string, unknown> | undefined;
+  if (!updated) throw new ApiError(500, 'Impossibile rileggere la spesa aggiornata', 'EXPENSE_REFRESH_ERROR');
+  const paidByUserId = updated.paidByUserId as string | null;
+  if (paidByUserId) {
+    await sendPushToUser(paidByUserId, {
+      title: 'Spesa approvata',
+      body: `La spesa “${String(updated.title)}” di ${formatEuroAmount(String(updated.amount))} è stata approvata con firma OTP da ${parentRoleLabel(auth.role)}.`,
+      data: { type: 'expense_approved', screen: 'expenses', expenseId },
+    });
+  }
   return serializeExpense(updated, auth.userId);
 }
 
 router.post('/:id/approve', asyncHandler(async (req, res) => {
-  res.json(await reviewExpense(req, 'approved'));
+  res.json(await approveExpense(req));
 }));
 
 router.post('/:id/decline', asyncHandler(async (req, res) => {
-  res.json(await reviewExpense(req, 'declined'));
+  res.json(await declineExpense(req));
 }));
 
 export default router;
