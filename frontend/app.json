@@ -2,6 +2,7 @@
   "expo": {
     "name": "DueCase",
     "slug": "duecase",
+    "owner": "tecnicoelioss-team",
     "scheme": "duecase",
     "version": "0.2.0",
     "orientation": "portrait",
@@ -28,6 +29,11 @@
     "android": {
       "package": "com.tecnicoelios.duecase",
       "edgeToEdgeEnabled": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "9fb7f36d-c1ce-448b-9659-d7ea6167af1b"
+      }
     }
   }
 }
