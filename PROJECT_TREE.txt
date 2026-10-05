@@ -1,4 +1,5 @@
 .github/workflows/ci.yml
+.github/workflows/eas-preview.yml
 .gitignore
 PROJECT_TREE.txt
 README.md
@@ -6,6 +7,7 @@ backend/.env.example
 backend/API_EXAMPLES.http
 backend/package.json
 backend/sql/001_init.sql
+backend/sql/002_push_notifications.sql
 backend/src/app.ts
 backend/src/auth.ts
 backend/src/config.ts
@@ -15,10 +17,12 @@ backend/src/routes/auth.ts
 backend/src/routes/documents.ts
 backend/src/routes/expenses.ts
 backend/src/routes/family.ts
+backend/src/routes/swapRequests.ts
 backend/src/routes/turns.ts
 backend/src/scripts/migrate.ts
 backend/src/scripts/seed.ts
 backend/src/server.ts
+backend/src/services/notificationService.ts
 backend/tsconfig.json
 frontend/.env.example
 frontend/App.tsx
@@ -38,6 +42,7 @@ frontend/src/screens/FamilyOnboardingScreen.tsx
 frontend/src/screens/LoginScreen.tsx
 frontend/src/screens/RegisterScreen.tsx
 frontend/src/services/api.ts
+frontend/src/services/notifications.ts
 frontend/src/services/tokenStorage.ts
 frontend/src/types/models.ts
 frontend/tsconfig.json
