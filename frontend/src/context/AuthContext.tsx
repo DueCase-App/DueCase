@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, setApiToken } from '../services/api';
+import { registerPushNotificationsAsync, unregisterPushNotificationsAsync } from '../services/notifications';
 import { clearStoredToken, getStoredToken, storeToken } from '../services/tokenStorage';
 import type { AuthUser, ParentRole } from '../types/models';
 
@@ -34,7 +35,10 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
         if (!token) return;
         setApiToken(token);
         const restoredUser = await api.auth.me();
-        if (active) setUser(restoredUser);
+        if (active) {
+          setUser(restoredUser);
+          void registerPushNotificationsAsync();
+        }
       } catch {
         setApiToken(null);
         await clearStoredToken();
@@ -52,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     setApiToken(result.token);
     await storeToken(result.token);
     setUser(result.user);
+    void registerPushNotificationsAsync();
   }, []);
 
   const register = useCallback(async (input: RegisterInput) => {
@@ -59,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     setApiToken(result.token);
     await storeToken(result.token);
     setUser(result.user);
+    void registerPushNotificationsAsync();
   }, []);
 
   const refreshUser = useCallback(async () => {
@@ -67,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   }, []);
 
   const logout = useCallback(async () => {
+    await unregisterPushNotificationsAsync();
     setApiToken(null);
     setUser(null);
     await clearStoredToken();
