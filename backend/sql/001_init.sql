@@ -1,5 +1,7 @@
--- Base schema + authentication/family onboarding.
--- This file is intentionally idempotent because Render runs it at startup.
+-- DueCase canonical schema + safe upgrades from the legacy Due-case database.
+-- Intentionally idempotent: Render executes this file on every service start.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS families (
   id UUID PRIMARY KEY,
@@ -7,10 +9,8 @@ CREATE TABLE IF NOT EXISTS families (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Upgrade databases created with the previous schema.
 ALTER TABLE families ADD COLUMN IF NOT EXISTS invite_code TEXT;
 
--- Backfill an invite code only for legacy rows that predate authentication.
 UPDATE families
    SET invite_code = UPPER(SUBSTRING(MD5(id::text || RANDOM()::text || CLOCK_TIMESTAMP()::text), 1, 10))
  WHERE invite_code IS NULL;
@@ -18,7 +18,12 @@ UPDATE families
 CREATE UNIQUE INDEX IF NOT EXISTS idx_families_invite_code
   ON families(invite_code);
 
-ALTER TABLE families ALTER COLUMN invite_code SET NOT NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM families WHERE invite_code IS NULL) THEN
+    ALTER TABLE families ALTER COLUMN invite_code SET NOT NULL;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY,
@@ -31,17 +36,103 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Legacy Due-case used users(name, email, password_hash) and family_members.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS family_id UUID REFERENCES families(id) ON DELETE SET NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'name'
+  ) THEN
+    EXECUTE 'UPDATE users SET display_name = name WHERE display_name IS NULL';
+  END IF;
+END $$;
+
+UPDATE users
+   SET display_name = COALESCE(display_name, NULLIF(email, ''), 'Genitore')
+ WHERE display_name IS NULL;
+
+DO $$
+BEGIN
+  IF to_regclass('public.family_members') IS NOT NULL THEN
+    EXECUTE $legacy$
+      WITH ranked AS (
+        SELECT fm.user_id,
+               fm.family_id,
+               ROW_NUMBER() OVER (
+                 PARTITION BY fm.family_id
+                 ORDER BY COALESCE(u.created_at, NOW()), u.id
+               ) AS rn
+          FROM family_members fm
+          JOIN users u ON u.id = fm.user_id
+      )
+      UPDATE users u
+         SET family_id = r.family_id,
+             role = CASE
+                      WHEN r.rn = 1 THEN 'father'
+                      WHEN r.rn = 2 THEN 'mother'
+                      ELSE u.role
+                    END,
+             updated_at = NOW()
+        FROM ranked r
+       WHERE u.id = r.user_id
+         AND r.rn <= 2
+         AND (u.family_id IS NULL OR u.role IS NULL)
+    $legacy$;
+  END IF;
+END $$;
+
+-- Complete any partially migrated users without rewriting already valid roles.
+WITH ranked AS (
+  SELECT id,
+         family_id,
+         ROW_NUMBER() OVER (PARTITION BY family_id ORDER BY created_at, id) AS rn
+    FROM users
+   WHERE family_id IS NOT NULL
+)
+UPDATE users u
+   SET role = CASE WHEN r.rn = 1 THEN 'father' WHEN r.rn = 2 THEN 'mother' ELSE u.role END,
+       updated_at = NOW()
+  FROM ranked r
+ WHERE u.id = r.id
+   AND u.role IS NULL
+   AND r.rn <= 2;
+
+UPDATE users
+   SET role = 'father', updated_at = NOW()
+ WHERE role IS NULL
+   AND family_id IS NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_role_check') THEN
+    ALTER TABLE users
+      ADD CONSTRAINT users_role_check
+      CHECK (role IS NULL OR role IN ('father', 'mother')) NOT VALID;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM users WHERE display_name IS NULL) THEN
+    ALTER TABLE users ALTER COLUMN display_name SET NOT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM users WHERE role IS NULL) THEN
+    ALTER TABLE users ALTER COLUMN role SET NOT NULL;
+  END IF;
+END $$;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower
   ON users(LOWER(email));
 
--- A family can contain at most one father and one mother.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_family_role
   ON users(family_id, role)
-  WHERE family_id IS NOT NULL;
+  WHERE family_id IS NOT NULL AND role IN ('father', 'mother');
 
--- Domain parent profiles are kept for compatibility with the existing
--- calendar/expense schema. Authenticated users get a parent row with the
--- same UUID when they create or join a family.
 CREATE TABLE IF NOT EXISTS parents (
   id UUID PRIMARY KEY,
   family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
@@ -50,6 +141,18 @@ CREATE TABLE IF NOT EXISTS parents (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Auth users and parent profiles share the same UUID.
+INSERT INTO parents (id, family_id, display_name, role, created_at)
+SELECT id, family_id, display_name, role, created_at
+  FROM users
+ WHERE family_id IS NOT NULL
+   AND display_name IS NOT NULL
+   AND role IN ('father', 'mother')
+ON CONFLICT (id) DO UPDATE
+SET family_id = EXCLUDED.family_id,
+    display_name = EXCLUDED.display_name,
+    role = EXCLUDED.role;
+
 CREATE TABLE IF NOT EXISTS children (
   id UUID PRIMARY KEY,
   family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
@@ -57,6 +160,27 @@ CREATE TABLE IF NOT EXISTS children (
   birth_date DATE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE children ADD COLUMN IF NOT EXISTS display_name TEXT;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'children' AND column_name = 'name'
+  ) THEN
+    EXECUTE 'UPDATE children SET display_name = name WHERE display_name IS NULL';
+  END IF;
+END $$;
+
+UPDATE children SET display_name = 'Figlio/a' WHERE display_name IS NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM children WHERE display_name IS NULL) THEN
+    ALTER TABLE children ALTER COLUMN display_name SET NOT NULL;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS custody_turns (
   id UUID PRIMARY KEY,
@@ -71,10 +195,6 @@ CREATE TABLE IF NOT EXISTS custody_turns (
   CHECK (ends_at > starts_at)
 );
 
-CREATE INDEX IF NOT EXISTS idx_custody_turns_family_dates
-  ON custody_turns(family_id, starts_at, ends_at);
-
--- Daily custody calendar fields. They stay nullable so legacy interval rows remain valid.
 ALTER TABLE custody_turns ADD COLUMN IF NOT EXISTS custody_date DATE;
 ALTER TABLE custody_turns ADD COLUMN IF NOT EXISTS custodian_role TEXT;
 ALTER TABLE custody_turns ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
@@ -89,6 +209,9 @@ BEGIN
       CHECK (custodian_role IS NULL OR custodian_role IN ('father', 'mother'));
   END IF;
 END $$;
+
+CREATE INDEX IF NOT EXISTS idx_custody_turns_family_dates
+  ON custody_turns(family_id, starts_at, ends_at);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_custody_turns_family_day
   ON custody_turns(family_id, custody_date)
@@ -139,40 +262,63 @@ CREATE TABLE IF NOT EXISTS expenses (
   reviewed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  -- Legacy columns kept nullable so old installations can migrate in place.
   paid_by_parent_id UUID REFERENCES parents(id) ON DELETE SET NULL,
   total_cents INTEGER,
   payer_share_cents INTEGER,
   other_share_cents INTEGER
 );
 
--- Upgrade databases created by earlier DueCase revisions without losing history.
-ALTER TABLE expenses ADD COLUMN IF NOT EXISTS amount NUMERIC(12,2);
+-- Upgrade both the old Due-case expense table and earlier DueCase revisions.
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS category TEXT;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS paid_by_user_id UUID REFERENCES users(id) ON DELETE RESTRICT;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt_url TEXT;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt_mime_type TEXT;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt_filename TEXT;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt_data BYTEA;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS expense_date DATE;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS notes TEXT;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS reviewed_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS paid_by_parent_id UUID REFERENCES parents(id) ON DELETE SET NULL;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS total_cents INTEGER;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payer_share_cents INTEGER;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS other_share_cents INTEGER;
 
--- Legacy revisions stored money as integer cents. Convert once into exact NUMERIC(12,2).
+ALTER TABLE expenses ALTER COLUMN amount TYPE NUMERIC(12,2) USING amount::NUMERIC(12,2);
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'expenses' AND column_name = 'created_by'
+  ) THEN
+    EXECUTE 'UPDATE expenses SET paid_by_user_id = created_by WHERE paid_by_user_id IS NULL AND created_by IS NOT NULL';
+  END IF;
+END $$;
+
 UPDATE expenses
    SET amount = ROUND(total_cents::numeric / 100, 2)
  WHERE amount IS NULL
    AND total_cents IS NOT NULL;
 
--- Authenticated users and parent profiles deliberately share the same UUID.
 UPDATE expenses e
    SET paid_by_user_id = e.paid_by_parent_id
  WHERE e.paid_by_user_id IS NULL
    AND e.paid_by_parent_id IS NOT NULL
    AND EXISTS (SELECT 1 FROM users u WHERE u.id = e.paid_by_parent_id);
 
--- Replace the old pending/paid/rejected state model with approval states.
+UPDATE expenses
+   SET expense_date = COALESCE(expense_date, created_at::date, CURRENT_DATE)
+ WHERE expense_date IS NULL;
+
+ALTER TABLE expenses ALTER COLUMN expense_date SET DEFAULT CURRENT_DATE;
+ALTER TABLE expenses ALTER COLUMN status SET DEFAULT 'pending_approval';
+
 ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_status_check;
-UPDATE expenses SET status = 'pending_approval' WHERE status = 'pending';
+ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_category_check;
+
+UPDATE expenses SET status = 'pending_approval' WHERE status IN ('pending', 'declared');
 UPDATE expenses SET status = 'declined' WHERE status = 'rejected';
 UPDATE expenses SET status = 'approved' WHERE status = 'paid';
 
@@ -183,30 +329,16 @@ BEGIN
       ADD CONSTRAINT expenses_status_check
       CHECK (status IN ('pending_approval', 'approved', 'declined')) NOT VALID;
   END IF;
-END $$;
-
-DO $$
-BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'expenses_category_check') THEN
     ALTER TABLE expenses
       ADD CONSTRAINT expenses_category_check
-      CHECK (category IN ('Scuola', 'Salute', 'Sport', 'Svago')) NOT VALID;
+      CHECK (category IS NULL OR category IN ('Scuola', 'Salute', 'Sport', 'Svago')) NOT VALID;
   END IF;
-END $$;
-
-DO $$
-BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'expenses_amount_positive_check') THEN
     ALTER TABLE expenses
       ADD CONSTRAINT expenses_amount_positive_check
       CHECK (amount > 0) NOT VALID;
   END IF;
-END $$;
-
--- Enforce required values for every new/updated expense while preserving any
--- incomplete legacy rows that predate the authenticated expense model.
-DO $$
-BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'expenses_amount_required_check') THEN
     ALTER TABLE expenses
       ADD CONSTRAINT expenses_amount_required_check
@@ -219,8 +351,6 @@ BEGIN
   END IF;
 END $$;
 
--- Old share columns are retained only for backwards-compatible data migration.
--- New writes use the exact amount column and derive the 50/50 balance dynamically.
 ALTER TABLE expenses ALTER COLUMN total_cents DROP NOT NULL;
 ALTER TABLE expenses ALTER COLUMN payer_share_cents DROP NOT NULL;
 ALTER TABLE expenses ALTER COLUMN other_share_cents DROP NOT NULL;
@@ -246,28 +376,31 @@ CREATE TABLE IF NOT EXISTS documents (
   file_data BYTEA,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  -- Legacy field retained only for in-place upgrades from older revisions.
   notes TEXT
 );
 
--- Upgrade databases created by earlier DueCase revisions without losing metadata.
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS family_id UUID REFERENCES families(id) ON DELETE CASCADE;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS title TEXT;
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'Altro';
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_url TEXT;
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS uploaded_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS mime_type TEXT;
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS filename TEXT;
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_size_bytes INTEGER;
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_data BYTEA;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS notes TEXT;
 
--- Preserve legacy descriptions that were previously stored in notes.
 UPDATE documents
    SET description = notes
  WHERE description IS NULL
    AND notes IS NOT NULL;
 
--- Normalize legacy free-form categories to the protected archive categories.
 ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_category_check;
 UPDATE documents
-   SET category = CASE LOWER(category)
+   SET category = CASE LOWER(COALESCE(category, 'altro'))
      WHEN 'salute' THEN 'Salute'
      WHEN 'health' THEN 'Salute'
      WHEN 'scuola' THEN 'Scuola'
