@@ -13,7 +13,38 @@ import type {
   SwapRequestStatus,
 } from '../types/models';
 
-const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000/api').replace(/\/$/, '');
+/**
+ * DueCase API configuration.
+ *
+ * Production/preview builds use the Render API by default.
+ * During local development, EXPO_PUBLIC_API_URL can override the endpoint:
+ * - iOS simulator / web: http://localhost:10000/api
+ * - Android emulator:    http://10.0.2.2:10000/api
+ * - Physical device:     http://<YOUR_LAN_IP>:10000/api
+ */
+const PRODUCTION_API_URL = 'https://duecase-api.onrender.com/api';
+const LOCAL_DEFAULT_API_URL = 'http://localhost:10000/api';
+
+function normalizeApiUrl(value: string): string {
+  const normalized = value.trim().replace(/\/+$/, '');
+
+  if (!/^https?:\/\//i.test(normalized)) {
+    throw new Error('EXPO_PUBLIC_API_URL must start with http:// or https://');
+  }
+
+  if (!normalized.endsWith('/api')) {
+    throw new Error('EXPO_PUBLIC_API_URL must end with /api');
+  }
+
+  return normalized;
+}
+
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
+
+export const API_URL = normalizeApiUrl(
+  configuredApiUrl || (__DEV__ ? LOCAL_DEFAULT_API_URL : PRODUCTION_API_URL),
+);
+
 let accessToken: string | null = null;
 
 export class ApiClientError extends Error {
