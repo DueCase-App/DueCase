@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { getAuth, requireAuth, signAccessToken, type ParentRole } from '../auth.js';
 import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
+import { isValidExpoPushToken } from '../services/notificationService.js';
 
 const router = Router();
 const BCRYPT_ROUNDS = 12;
@@ -22,6 +23,10 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: emailSchema,
   password: z.string().min(1).max(72),
+});
+
+const pushTokenSchema = z.object({
+  expoPushToken: z.string().trim().min(1).max(255).nullable(),
 });
 
 type UserRow = {
@@ -127,6 +132,45 @@ router.get('/me', requireAuth, asyncHandler(async (req, res) => {
       inviteCode: auth.inviteCode,
     } : null,
   });
+}));
+
+router.put('/push-token', requireAuth, asyncHandler(async (req, res) => {
+  const auth = getAuth(req);
+  const body = pushTokenSchema.parse(req.body);
+
+  if (body.expoPushToken && !isValidExpoPushToken(body.expoPushToken)) {
+    throw new ApiError(400, 'Expo push token non valido', 'INVALID_EXPO_PUSH_TOKEN');
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // A device token belongs to the account currently signed in on that device.
+    if (body.expoPushToken) {
+      await client.query(
+        `UPDATE users
+            SET expo_push_token = NULL, updated_at = NOW()
+          WHERE expo_push_token = $1 AND id <> $2`,
+        [body.expoPushToken, auth.userId],
+      );
+    }
+
+    await client.query(
+      `UPDATE users
+          SET expo_push_token = $1, updated_at = NOW()
+        WHERE id = $2`,
+      [body.expoPushToken, auth.userId],
+    );
+
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }));
 
 export default router;
