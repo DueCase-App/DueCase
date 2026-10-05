@@ -4,6 +4,12 @@ import { z } from 'zod';
 import { requireAuth, requireFamily, type ParentRole } from '../auth.js';
 import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
+import {
+  formatItalianDate,
+  parentRoleLabel,
+  sendPushToOtherParent,
+  sendPushToUser,
+} from '../services/notificationService.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -138,6 +144,12 @@ router.post('/', asyncHandler(async (req, res) => {
       [id, auth.familyId, auth.userId, body.targetDate, body.proposedDate, body.notes ?? null],
     );
 
+    await sendPushToOtherParent(auth.familyId, auth.userId, {
+      title: 'Richiesta cambio turno',
+      body: `La ${parentRoleLabel(auth.role)} ha richiesto uno scambio di turno per il ${formatItalianDate(body.targetDate)}.`,
+      data: { type: 'swap_requested', screen: 'calendar', swapRequestId: id },
+    });
+
     res.status(201).json({ ...rows[0], canRespond: false });
   } catch (error) {
     if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23505') {
@@ -151,6 +163,9 @@ router.post('/:id/approve', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const requestId = uuid.parse(req.params.id);
   const client = await pool.connect();
+  let requesterId: string | null = null;
+  let targetDateForNotification: string | null = null;
+  let responseRow: SwapRequestRow | undefined;
 
   try {
     await client.query('BEGIN');
@@ -241,14 +256,26 @@ router.post('/:id/approve', asyncHandler(async (req, res) => {
       [requestId],
     );
 
+    requesterId = swap.requestedBy;
+    targetDateForNotification = swap.targetDate;
+    responseRow = rows[0];
     await client.query('COMMIT');
-    res.json({ ...rows[0], canRespond: false });
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
   } finally {
     client.release();
   }
+
+  if (requesterId && targetDateForNotification) {
+    await sendPushToUser(requesterId, {
+      title: 'Scambio approvato',
+      body: `Il ${parentRoleLabel(auth.role)} ha approvato lo scambio del ${formatItalianDate(targetDateForNotification)}.`,
+      data: { type: 'swap_approved', screen: 'calendar', swapRequestId: requestId },
+    });
+  }
+
+  res.json({ ...responseRow, canRespond: false });
 }));
 
 router.post('/:id/reject', asyncHandler(async (req, res) => {
@@ -286,7 +313,8 @@ router.post('/:id/reject', asyncHandler(async (req, res) => {
     [auth.userId, requestId, auth.familyId],
   );
 
-  if (!rows[0]) {
+  const rejected = rows[0];
+  if (!rejected) {
     const existing = await pool.query<{ requestedBy: string; status: string }>(
       `SELECT requested_by AS "requestedBy", status
          FROM swap_requests
@@ -298,7 +326,13 @@ router.post('/:id/reject', asyncHandler(async (req, res) => {
     throw new ApiError(409, 'This request has already been reviewed', 'SWAP_ALREADY_REVIEWED');
   }
 
-  res.json({ ...rows[0], canRespond: false });
+  await sendPushToUser(rejected.requestedBy, {
+    title: 'Scambio rifiutato',
+    body: `Il ${parentRoleLabel(auth.role)} ha rifiutato lo scambio del ${formatItalianDate(rejected.targetDate)}.`,
+    data: { type: 'swap_rejected', screen: 'calendar', swapRequestId: requestId },
+  });
+
+  res.json({ ...rejected, canRespond: false });
 }));
 
 export default router;
