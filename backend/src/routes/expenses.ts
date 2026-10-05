@@ -5,6 +5,12 @@ import { z } from 'zod';
 import { requireAuth, requireFamily, type ParentRole } from '../auth.js';
 import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
+import {
+  formatEuroAmount,
+  parentRoleLabel,
+  sendPushToOtherParent,
+  sendPushToUser,
+} from '../services/notificationService.js';
 
 const router = Router();
 const uuid = z.string().uuid();
@@ -221,6 +227,13 @@ router.post('/', uploadReceipt, asyncHandler(async (req, res) => {
     `${expenseSelect} WHERE e.id = $1 AND e.family_id = $2`,
     [id, auth.familyId],
   );
+
+  await sendPushToOtherParent(auth.familyId, auth.userId, {
+    title: 'Nuova spesa da approvare',
+    body: `Il ${parentRoleLabel(auth.role)} ha inserito una spesa di ${formatEuroAmount(body.amount)}. Approvala!`,
+    data: { type: 'expense_created', screen: 'expenses', expenseId: id },
+  });
+
   res.status(201).json(serializeExpense(rows[0] as Record<string, unknown>, auth.userId));
 }));
 
@@ -264,7 +277,25 @@ async function reviewExpense(
     `${expenseSelect} WHERE e.id = $1 AND e.family_id = $2`,
     [expenseId, auth.familyId],
   );
-  return serializeExpense(rows[0] as Record<string, unknown>, auth.userId);
+
+  const updated = rows[0] as Record<string, unknown> | undefined;
+  if (!updated) throw new ApiError(500, 'Impossibile rileggere la spesa aggiornata', 'EXPENSE_REFRESH_ERROR');
+
+  const paidByUserId = updated.paidByUserId as string | null;
+  if (paidByUserId) {
+    const verb = status === 'approved' ? 'approvata' : 'contestata';
+    await sendPushToUser(paidByUserId, {
+      title: status === 'approved' ? 'Spesa approvata' : 'Spesa contestata',
+      body: `La spesa “${String(updated.title)}” di ${formatEuroAmount(String(updated.amount))} è stata ${verb} dal ${parentRoleLabel(auth.role)}.`,
+      data: {
+        type: status === 'approved' ? 'expense_approved' : 'expense_declined',
+        screen: 'expenses',
+        expenseId,
+      },
+    });
+  }
+
+  return serializeExpense(updated, auth.userId);
 }
 
 router.post('/:id/approve', asyncHandler(async (req, res) => {
