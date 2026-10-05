@@ -8,6 +8,7 @@ import { ApiError, asyncHandler } from '../http.js';
 import {
   formatEuroAmount,
   parentRoleLabel,
+  parentRoleSubject,
   sendPushToOtherParent,
   sendPushToUser,
 } from '../services/notificationService.js';
@@ -230,7 +231,7 @@ router.post('/', uploadReceipt, asyncHandler(async (req, res) => {
 
   await sendPushToOtherParent(auth.familyId, auth.userId, {
     title: 'Nuova spesa da approvare',
-    body: `Il ${parentRoleLabel(auth.role)} ha inserito una spesa di ${formatEuroAmount(body.amount)}. Approvala!`,
+    body: `${parentRoleSubject(auth.role)} ha inserito una spesa di ${formatEuroAmount(body.amount)}. Approvala!`,
     data: { type: 'expense_created', screen: 'expenses', expenseId: id },
   });
 
@@ -286,7 +287,7 @@ async function reviewExpense(
     const verb = status === 'approved' ? 'approvata' : 'contestata';
     await sendPushToUser(paidByUserId, {
       title: status === 'approved' ? 'Spesa approvata' : 'Spesa contestata',
-      body: `La spesa “${String(updated.title)}” di ${formatEuroAmount(String(updated.amount))} è stata ${verb} dal ${parentRoleLabel(auth.role)}.`,
+      body: `La spesa “${String(updated.title)}” di ${formatEuroAmount(String(updated.amount))} è stata ${verb} da ${parentRoleLabel(auth.role)}.`,
       data: {
         type: status === 'approved' ? 'expense_approved' : 'expense_declined',
         screen: 'expenses',
