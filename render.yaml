@@ -2,6 +2,8 @@ services:
   - type: web
     name: duecase-api
     runtime: node
+    plan: free
+    region: frankfurt
     rootDir: backend
     branch: main
     autoDeployTrigger: commit
@@ -28,5 +30,7 @@ services:
 
 databases:
   - name: duecase-db
+    plan: free
+    region: frankfurt
     databaseName: duecase
     user: duecase
