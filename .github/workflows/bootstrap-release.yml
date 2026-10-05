@@ -1,0 +1,40 @@
+name: Bootstrap release repository
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct DueCase project
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat bootstrap/chunk_* | base64 --decode > /tmp/duecase.zip
+          rm -rf /tmp/duecase-extract
+          mkdir -p /tmp/duecase-extract
+          unzip -q /tmp/duecase.zip -d /tmp/duecase-extract
+          rm -rf bootstrap .gitkeep
+          cp -a /tmp/duecase-extract/. .
+          rm -f .github/workflows/bootstrap-release.yml
+
+      - name: Commit release-ready project
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "tecnico-elios"
+          git config user.email "tecnico@eliostech.org"
+          git add -A
+          git commit -m "chore: import release-ready DueCase project"
+          git push origin main
