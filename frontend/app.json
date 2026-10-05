@@ -10,6 +10,7 @@
     "plugins": [
       "expo-secure-store",
       "expo-document-picker",
+      "expo-notifications",
       [
         "expo-image-picker",
         {
