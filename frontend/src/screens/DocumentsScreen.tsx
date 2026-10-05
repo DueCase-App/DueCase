@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { fetch as expoFetch } from 'expo/fetch';
 import * as DocumentPicker from 'expo-document-picker';
 import { File, Paths } from 'expo-file-system';
@@ -5,42 +6,88 @@ import * as Sharing from 'expo-sharing';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api } from '../services/api';
+import { cardShadow, ui } from '../theme/ui';
 import type { DocumentCategory, FamilyDocument } from '../types/models';
 
 const categories: DocumentCategory[]=['Salute','Scuola','Legale','Altro'];
-const icons:Record<DocumentCategory,string>={Salute:'🩺',Scuola:'🎓',Legale:'⚖️',Altro:'📁'};
+const categoryIcons:Record<DocumentCategory,keyof typeof Ionicons.glyphMap>={Salute:'medkit-outline',Scuola:'school-outline',Legale:'briefcase-outline',Altro:'folder-outline'};
 type Picked={uri:string;name:string;type:string;size:number|null;file?:Blob};
-const size=(n:number|null)=>!n?'':n<1048576?`${Math.max(1,Math.round(n/1024))} KB`:`${(n/1048576).toFixed(1)} MB`;
+const formatSize=(n:number|null)=>!n?'':n<1048576?`${Math.max(1,Math.round(n/1024))} KB`:`${(n/1048576).toFixed(1)} MB`;
 const safe=(n:string)=>n.replace(/[^a-zA-Z0-9._-]+/g,'_').slice(-120)||'documento';
 
 export function DocumentsScreen():React.JSX.Element{
-  const [items,setItems]=useState<FamilyDocument[]>([]); const [loading,setLoading]=useState(true); const [refreshing,setRefreshing]=useState(false); const [form,setForm]=useState(false); const [preview,setPreview]=useState<FamilyDocument|null>(null); const [busy,setBusy]=useState<string|null>(null);
+  const [items,setItems]=useState<FamilyDocument[]>([]);
+  const [loading,setLoading]=useState(true);
+  const [refreshing,setRefreshing]=useState(false);
+  const [form,setForm]=useState(false);
+  const [preview,setPreview]=useState<FamilyDocument|null>(null);
+  const [busy,setBusy]=useState<string|null>(null);
   const grouped=useMemo(()=>categories.map(category=>({category,items:items.filter(i=>i.category===category)})),[items]);
-  async function load(){try{setItems(await api.documents.list());}catch(e){Alert.alert('Documenti',e instanceof Error?e.message:'Errore di caricamento');}finally{setLoading(false);setRefreshing(false);}}
+
+  async function load(){try{setItems(await api.documents.list());}catch(error){Alert.alert('Documenti',error instanceof Error?error.message:'Errore di caricamento');}finally{setLoading(false);setRefreshing(false);}}
   useEffect(()=>{void load();},[]);
+
   async function open(item:FamilyDocument,download=false){
-    try{setBusy(item.id);const req=api.documents.fileRequest(item.fileUrl,download);
-      if(Platform.OS==='web'){const r=await fetch(req.url,{headers:req.headers});if(!r.ok)throw new Error(`HTTP ${r.status}`);const blob=await r.blob();const url=URL.createObjectURL(blob);if(download){const a=document.createElement('a');a.href=url;a.download=item.filename??'documento';a.click();}else window.open(url,'_blank','noopener,noreferrer');setTimeout(()=>URL.revokeObjectURL(url),60000);return;}
-      const r=await expoFetch(req.url,{headers:req.headers});if(!r.ok)throw new Error(`Impossibile aprire il documento (HTTP ${r.status}).`);const f=new File(Paths.cache,`${Date.now()}-${safe(item.filename??item.title)}`);f.create({overwrite:true});f.write(await r.bytes());if(!await Sharing.isAvailableAsync())throw new Error('Nessuna app disponibile per aprire il file.');await Sharing.shareAsync(f.uri,{mimeType:item.mimeType??undefined,dialogTitle:download?'Salva o condividi documento':'Apri documento'});
-    }catch(e){Alert.alert('Documento',e instanceof Error?e.message:'Impossibile aprire il documento');}finally{setBusy(null);}
+    try{
+      setBusy(item.id);
+      const req=api.documents.fileRequest(item.fileUrl,download);
+      if(Platform.OS==='web'){
+        const response=await fetch(req.url,{headers:req.headers});
+        if(!response.ok)throw new Error(`HTTP ${response.status}`);
+        const blob=await response.blob();
+        const url=URL.createObjectURL(blob);
+        if(download){const anchor=document.createElement('a');anchor.href=url;anchor.download=item.filename??'documento';anchor.click();}else window.open(url,'_blank','noopener,noreferrer');
+        setTimeout(()=>URL.revokeObjectURL(url),60000);
+        return;
+      }
+      const response=await expoFetch(req.url,{headers:req.headers});
+      if(!response.ok)throw new Error(`Impossibile aprire il documento (HTTP ${response.status}).`);
+      const file=new File(Paths.cache,`${Date.now()}-${safe(item.filename??item.title)}`);
+      file.create({overwrite:true});
+      file.write(await response.bytes());
+      if(!await Sharing.isAvailableAsync())throw new Error('Nessuna app disponibile per aprire il file.');
+      await Sharing.shareAsync(file.uri,{mimeType:item.mimeType??undefined,dialogTitle:download?'Salva o condividi documento':'Apri documento'});
+    }catch(error){Alert.alert('Documento',error instanceof Error?error.message:'Impossibile aprire il documento');}finally{setBusy(null);}
   }
-  if(loading)return <View style={s.center}><ActivityIndicator size="large"/><Text>Caricamento documenti…</Text></View>;
-  return <View style={s.screen}><ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{setRefreshing(true);void load();}}/>}>
-    <View style={s.head}><View style={{flex:1}}><Text style={s.title}>Documenti</Text><Text style={s.muted}>Archivio protetto dei documenti sensibili dei figli.</Text></View><Pressable style={s.add} onPress={()=>setForm(true)}><Text style={s.addT}>+ Carica</Text></Pressable></View>
-    <View style={s.sec}><Text style={s.bold}>🔒 Archivio privato</Text><Text style={s.muted}>Ogni file è accessibile solo agli utenti autenticati della stessa famiglia.</Text></View>
-    {items.length===0?<View style={s.card}><Text style={s.bold}>Nessun documento</Text><Text style={s.muted}>Carica un PDF o un’immagine per iniziare.</Text></View>:grouped.map(g=><View key={g.category} style={{gap:8}}><Text style={s.section}>{icons[g.category]} {g.category} · {g.items.length}</Text>{g.items.map(item=><View key={item.id} style={s.card}>
-      <View style={s.fileRow}><View style={s.fileIcon}><Text style={s.fileIconT}>{item.mimeType==='application/pdf'?'PDF':'IMG'}</Text></View><View style={{flex:1,gap:3}}><Text style={s.bold}>{item.title}</Text>{item.description?<Text style={s.muted}>{item.description}</Text>:null}<Text style={s.meta}>{[item.filename,size(item.fileSizeBytes),item.uploadedByName?`da ${item.uploadedByName}`:''].filter(Boolean).join(' · ')}</Text></View></View>
-      <View style={s.actions}><Pressable disabled={busy===item.id} style={s.secondary} onPress={()=>item.mimeType?.startsWith('image/')&&Platform.OS!=='web'?setPreview(item):void open(item,false)}><Text style={s.secondaryT}>Visualizza</Text></Pressable><Pressable disabled={busy===item.id} style={s.primary} onPress={()=>void open(item,true)}>{busy===item.id?<ActivityIndicator color="#FFF"/>:<Text style={s.primaryT}>Scarica</Text>}</Pressable></View>
-    </View>)}</View>)}
-  </ScrollView><UploadModal visible={form} onClose={()=>setForm(false)} onDone={d=>{setItems(v=>[d,...v]);setForm(false);}}/>
-  <Modal visible={preview!==null} transparent animationType="fade" onRequestClose={()=>setPreview(null)}><View style={s.backdrop}><View style={s.preview}><View style={s.head}><Text style={s.bold}>{preview?.title}</Text><Pressable onPress={()=>setPreview(null)}><Text style={s.close}>×</Text></Pressable></View>{preview?<Image source={api.documents.fileSource(preview.fileUrl)} style={s.image} resizeMode="contain"/>:null}</View></View></Modal></View>;
+
+  if(loading)return <View style={styles.center}><ActivityIndicator size="large" color={ui.colors.primary}/><Text style={styles.muted}>Caricamento documenti…</Text></View>;
+
+  return <View style={styles.screen}>
+    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} tintColor={ui.colors.primary} onRefresh={()=>{setRefreshing(true);void load();}}/>}>
+      <View style={styles.header}><View style={styles.headerCopy}><Text style={styles.title}>Documenti</Text><Text style={styles.muted}>Archivio protetto e condiviso della famiglia.</Text></View><Pressable style={styles.add} onPress={()=>setForm(true)}><Ionicons name="add" size={20} color="#FFF"/><Text style={styles.addText}>Carica</Text></Pressable></View>
+      <View style={styles.securityCard}><View style={styles.securityIcon}><Ionicons name="lock-closed-outline" size={22} color={ui.colors.primary}/></View><View style={styles.flex}><Text style={styles.bold}>Archivio privato</Text><Text style={styles.muted}>Ogni file è disponibile solo agli utenti autenticati della stessa famiglia.</Text></View></View>
+      {items.length===0?<View style={[styles.emptyCard,cardShadow]}><View style={styles.emptyIcon}><Ionicons name="document-text-outline" size={27} color={ui.colors.primary}/></View><Text style={styles.bold}>Nessun documento</Text><Text style={styles.muted}>Carica un PDF o un’immagine per iniziare.</Text></View>:grouped.filter(group=>group.items.length>0).map(group=><View key={group.category} style={styles.group}><View style={styles.sectionHeader}><Ionicons name={categoryIcons[group.category]} size={21} color={ui.colors.primary}/><Text style={styles.section}>{group.category}</Text><View style={styles.countBadge}><Text style={styles.countText}>{group.items.length}</Text></View></View>{group.items.map(item=><View key={item.id} style={[styles.card,cardShadow]}>
+        <View style={styles.fileRow}><View style={styles.fileIcon}><Ionicons name={item.mimeType==='application/pdf'?'document-text-outline':'image-outline'} size={24} color={ui.colors.primary}/></View><View style={styles.flex}><Text style={styles.bold}>{item.title}</Text>{item.description?<Text style={styles.muted}>{item.description}</Text>:null}<Text style={styles.meta}>{[item.filename,formatSize(item.fileSizeBytes),item.uploadedByName?`da ${item.uploadedByName}`:''].filter(Boolean).join(' · ')}</Text></View></View>
+        <View style={styles.actions}><Pressable disabled={busy===item.id} style={styles.secondary} onPress={()=>item.mimeType?.startsWith('image/')&&Platform.OS!=='web'?setPreview(item):void open(item,false)}><Ionicons name="eye-outline" size={18} color={ui.colors.primary}/><Text style={styles.secondaryText}>Visualizza</Text></Pressable><Pressable disabled={busy===item.id} style={styles.primary} onPress={()=>void open(item,true)}>{busy===item.id?<ActivityIndicator color="#FFF"/>:<><Ionicons name="download-outline" size={18} color="#FFF"/><Text style={styles.primaryText}>Scarica</Text></>}</Pressable></View>
+      </View>)}</View>)}
+    </ScrollView>
+    <UploadModal visible={form} onClose={()=>setForm(false)} onDone={document=>{setItems(current=>[document,...current]);setForm(false);}}/>
+    <Modal visible={preview!==null} transparent animationType="fade" onRequestClose={()=>setPreview(null)}><View style={styles.backdrop}><View style={styles.preview}><View style={styles.modalHead}><Text style={styles.modalTitle}>{preview?.title}</Text><Pressable onPress={()=>setPreview(null)}><Ionicons name="close" size={26} color={ui.colors.text}/></Pressable></View>{preview?<Image source={api.documents.fileSource(preview.fileUrl)} style={styles.image} resizeMode="contain"/>:null}</View></View></Modal>
+  </View>;
 }
 
-function UploadModal({visible,onClose,onDone}:{visible:boolean;onClose:()=>void;onDone:(d:FamilyDocument)=>void}):React.JSX.Element{
-  const [title,setTitle]=useState('');const [description,setDescription]=useState('');const [category,setCategory]=useState<DocumentCategory>('Salute');const [picked,setPicked]=useState<Picked|null>(null);const [busy,setBusy]=useState(false);
-  async function choose(){const r=await DocumentPicker.getDocumentAsync({type:['application/pdf','image/*'],copyToCacheDirectory:true,multiple:false});if(r.canceled)return;const a=r.assets[0];if(!a)return;setPicked({uri:a.uri,name:a.name??'documento',type:a.mimeType??'application/octet-stream',size:a.size??null,file:a.file});if(!title.trim())setTitle((a.name??'Documento').replace(/\.[^.]+$/,''));}
-  async function save(){if(!title.trim()||!picked){Alert.alert('Documento','Inserisci un titolo e seleziona un file.');return;}try{setBusy(true);const d=await api.documents.create({title:title.trim(),description:description.trim()||undefined,category,file:picked});onDone(d);setTitle('');setDescription('');setPicked(null);}catch(e){Alert.alert('Upload',e instanceof Error?e.message:'Caricamento non riuscito');}finally{setBusy(false);}}
-  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><View style={s.backdrop}><View style={s.modal}><Text style={s.modalTitle}>Carica documento</Text><Text style={s.label}>Titolo</Text><TextInput style={s.input} value={title} onChangeText={setTitle}/><Text style={s.label}>Categoria</Text><View style={s.chips}>{categories.map(c=><Pressable key={c} onPress={()=>setCategory(c)} style={[s.chip,category===c&&s.chipOn]}><Text>{c}</Text></Pressable>)}</View><Text style={s.label}>Descrizione</Text><TextInput style={[s.input,{minHeight:80}]} multiline value={description} onChangeText={setDescription}/><Pressable style={s.secondary} onPress={()=>void choose()}><Text style={s.secondaryT}>{picked?`${picked.name} ${size(picked.size)}`:'Seleziona PDF o immagine'}</Text></Pressable><View style={s.actions}><Pressable style={s.secondary} onPress={onClose}><Text>Annulla</Text></Pressable><Pressable disabled={busy} style={s.primary} onPress={()=>void save()}><Text style={s.primaryT}>{busy?'Caricamento…':'Carica'}</Text></Pressable></View></View></View></Modal>;
+function UploadModal({visible,onClose,onDone}:{visible:boolean;onClose:()=>void;onDone:(document:FamilyDocument)=>void}):React.JSX.Element{
+  const [title,setTitle]=useState('');
+  const [description,setDescription]=useState('');
+  const [category,setCategory]=useState<DocumentCategory>('Salute');
+  const [picked,setPicked]=useState<Picked|null>(null);
+  const [busy,setBusy]=useState(false);
+
+  async function choose(){const result=await DocumentPicker.getDocumentAsync({type:['application/pdf','image/*'],copyToCacheDirectory:true,multiple:false});if(result.canceled)return;const asset=result.assets[0];if(!asset)return;setPicked({uri:asset.uri,name:asset.name??'documento',type:asset.mimeType??'application/octet-stream',size:asset.size??null,file:asset.file});if(!title.trim())setTitle((asset.name??'Documento').replace(/\.[^.]+$/,''));}
+  async function save(){if(!title.trim()||!picked){Alert.alert('Documento','Inserisci un titolo e seleziona un file.');return;}try{setBusy(true);const document=await api.documents.create({title:title.trim(),description:description.trim()||undefined,category,file:picked});onDone(document);setTitle('');setDescription('');setPicked(null);}catch(error){Alert.alert('Upload',error instanceof Error?error.message:'Caricamento non riuscito');}finally{setBusy(false);}}
+
+  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><View style={styles.backdrop}><View style={styles.modal}><View style={styles.modalHead}><Text style={styles.modalTitle}>Carica documento</Text><Pressable onPress={onClose}><Ionicons name="close" size={26} color={ui.colors.text}/></Pressable></View><Text style={styles.label}>Titolo</Text><TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="Titolo del documento" placeholderTextColor={ui.colors.muted}/><Text style={styles.label}>Categoria</Text><View style={styles.chips}>{categories.map(item=><Pressable key={item} onPress={()=>setCategory(item)} style={[styles.chip,category===item&&styles.chipSelected]}><Text style={[styles.chipText,category===item&&styles.chipTextSelected]}>{item}</Text></Pressable>)}</View><Text style={styles.label}>Descrizione</Text><TextInput style={[styles.input,styles.description]} multiline value={description} onChangeText={setDescription} placeholder="Descrizione facoltativa" placeholderTextColor={ui.colors.muted}/><Pressable style={styles.filePicker} onPress={()=>void choose()}><Ionicons name="attach-outline" size={20} color={ui.colors.primary}/><Text style={styles.secondaryText}>{picked?`${picked.name} ${formatSize(picked.size)}`:'Seleziona PDF o immagine'}</Text></Pressable><View style={styles.actions}><Pressable style={styles.secondary} onPress={onClose}><Text style={styles.secondaryText}>Annulla</Text></Pressable><Pressable disabled={busy} style={styles.primary} onPress={()=>void save()}>{busy?<ActivityIndicator color="#FFF"/>:<Text style={styles.primaryText}>Carica</Text>}</Pressable></View></View></View></Modal>;
 }
 
-const s=StyleSheet.create({screen:{flex:1},center:{flex:1,alignItems:'center',justifyContent:'center',gap:10},content:{padding:18,gap:16,paddingBottom:36},head:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12},title:{fontSize:28,fontWeight:'900',color:'#0F172A'},muted:{color:'#64748B',lineHeight:20},bold:{fontWeight:'900',color:'#0F172A'},add:{backgroundColor:'#4F46E5',paddingHorizontal:15,paddingVertical:11,borderRadius:12},addT:{color:'#FFF',fontWeight:'900'},sec:{backgroundColor:'#EFF6FF',borderWidth:1,borderColor:'#BFDBFE',padding:14,borderRadius:16,gap:4},section:{fontSize:19,fontWeight:'900',color:'#0F172A'},card:{backgroundColor:'#FFF',borderWidth:1,borderColor:'#E2E8F0',borderRadius:17,padding:15,gap:12},fileRow:{flexDirection:'row',gap:12},fileIcon:{width:48,height:48,borderRadius:12,backgroundColor:'#EEF2FF',alignItems:'center',justifyContent:'center'},fileIconT:{fontWeight:'900',color:'#4338CA'},meta:{fontSize:12,color:'#94A3B8'},actions:{flexDirection:'row',gap:10},secondary:{flex:1,minHeight:44,borderRadius:12,borderWidth:1,borderColor:'#CBD5E1',backgroundColor:'#F8FAFC',alignItems:'center',justifyContent:'center',paddingHorizontal:10},secondaryT:{color:'#475569',fontWeight:'800'},primary:{flex:1,minHeight:44,borderRadius:12,backgroundColor:'#4F46E5',alignItems:'center',justifyContent:'center',paddingHorizontal:10},primaryT:{color:'#FFF',fontWeight:'900'},backdrop:{flex:1,justifyContent:'flex-end',backgroundColor:'rgba(15,23,42,.5)'},modal:{backgroundColor:'#FFF',padding:20,borderTopLeftRadius:26,borderTopRightRadius:26,gap:10},modalTitle:{fontSize:22,fontWeight:'900'},label:{fontWeight:'800',color:'#334155'},input:{borderWidth:1,borderColor:'#CBD5E1',borderRadius:12,minHeight:48,paddingHorizontal:12,textAlignVertical:'top'},chips:{flexDirection:'row',flexWrap:'wrap',gap:8},chip:{paddingHorizontal:10,paddingVertical:8,borderRadius:999,backgroundColor:'#F1F5F9'},chipOn:{backgroundColor:'#C7D2FE'},preview:{backgroundColor:'#FFF',margin:18,borderRadius:20,padding:14,gap:12,maxHeight:'85%'},close:{fontSize:28},image:{width:'100%',height:500,borderRadius:12,backgroundColor:'#F8FAFC'}});
+const styles=StyleSheet.create({
+  screen:{flex:1,backgroundColor:ui.colors.background},center:{flex:1,alignItems:'center',justifyContent:'center',gap:10,backgroundColor:ui.colors.background},content:{padding:18,gap:15,paddingBottom:34},
+  header:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12},headerCopy:{flex:1,gap:3},title:{fontSize:28,fontWeight:'900',color:ui.colors.primaryDark},muted:{color:ui.colors.muted,lineHeight:20},bold:{fontWeight:'900',color:ui.colors.text},
+  add:{backgroundColor:ui.colors.primary,minHeight:44,paddingHorizontal:13,borderRadius:ui.radius.md,flexDirection:'row',alignItems:'center',gap:5},addText:{color:'#FFF',fontWeight:'900'},
+  securityCard:{backgroundColor:ui.colors.card,borderWidth:1,borderColor:ui.colors.border,borderRadius:ui.radius.lg,padding:14,flexDirection:'row',alignItems:'center',gap:12},securityIcon:{width:44,height:44,borderRadius:13,backgroundColor:ui.colors.primarySoft,alignItems:'center',justifyContent:'center'},
+  flex:{flex:1},group:{gap:9},sectionHeader:{flexDirection:'row',alignItems:'center',gap:7},section:{fontSize:20,fontWeight:'900',color:ui.colors.primaryDark},countBadge:{minWidth:24,height:24,borderRadius:12,backgroundColor:ui.colors.primarySoft,alignItems:'center',justifyContent:'center',paddingHorizontal:6},countText:{fontSize:11,fontWeight:'900',color:ui.colors.primary},
+  emptyCard:{backgroundColor:ui.colors.card,borderRadius:ui.radius.lg,padding:20,borderWidth:1,borderColor:ui.colors.border,alignItems:'center',gap:7},emptyIcon:{width:54,height:54,borderRadius:16,backgroundColor:ui.colors.primarySoft,alignItems:'center',justifyContent:'center'},
+  card:{backgroundColor:ui.colors.card,borderWidth:1,borderColor:ui.colors.border,borderRadius:ui.radius.lg,padding:15,gap:12},fileRow:{flexDirection:'row',gap:12},fileIcon:{width:48,height:48,borderRadius:14,backgroundColor:ui.colors.primarySoft,alignItems:'center',justifyContent:'center'},meta:{fontSize:12,color:ui.colors.muted,marginTop:3},
+  actions:{flexDirection:'row',gap:9},secondary:{flex:1,minHeight:44,borderRadius:ui.radius.md,borderWidth:1,borderColor:ui.colors.border,backgroundColor:ui.colors.input,alignItems:'center',justifyContent:'center',paddingHorizontal:10,flexDirection:'row',gap:6},secondaryText:{color:ui.colors.primaryDark,fontWeight:'800'},primary:{flex:1,minHeight:44,borderRadius:ui.radius.md,backgroundColor:ui.colors.primary,alignItems:'center',justifyContent:'center',paddingHorizontal:10,flexDirection:'row',gap:6},primaryText:{color:'#FFF',fontWeight:'900'},
+  backdrop:{flex:1,justifyContent:'flex-end',backgroundColor:'rgba(10,50,103,.35)'},modal:{backgroundColor:ui.colors.card,padding:20,borderTopLeftRadius:28,borderTopRightRadius:28,gap:10},modalHead:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12},modalTitle:{fontSize:22,fontWeight:'900',color:ui.colors.primaryDark},label:{fontWeight:'800',color:ui.colors.text},input:{borderWidth:1,borderColor:ui.colors.border,backgroundColor:ui.colors.input,borderRadius:ui.radius.md,minHeight:50,paddingHorizontal:13,color:ui.colors.text,textAlignVertical:'top'},description:{minHeight:82,paddingTop:12},chips:{flexDirection:'row',flexWrap:'wrap',gap:8},chip:{paddingHorizontal:10,paddingVertical:8,borderRadius:999,backgroundColor:ui.colors.input,borderWidth:1,borderColor:ui.colors.border},chipSelected:{backgroundColor:ui.colors.primarySoft,borderColor:ui.colors.primary},chipText:{color:ui.colors.muted,fontWeight:'700'},chipTextSelected:{color:ui.colors.primary,fontWeight:'900'},filePicker:{minHeight:50,borderRadius:ui.radius.md,backgroundColor:ui.colors.input,borderWidth:1,borderColor:ui.colors.border,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:7,paddingHorizontal:12},
+  preview:{backgroundColor:ui.colors.card,margin:18,borderRadius:20,padding:14,gap:12,maxHeight:'85%'},image:{width:'100%',height:500,borderRadius:12,backgroundColor:ui.colors.input}
+});
