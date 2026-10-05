@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "DueCase",
+    "slug": "duecase",
+    "scheme": "duecase",
+    "version": "0.2.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "plugins": [
+      "expo-secure-store",
+      "expo-document-picker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Consenti a DueCase di selezionare foto e ricevute da allegare ai documenti e alle spese.",
+          "cameraPermission": "Consenti a DueCase di usare la fotocamera per fotografare ricevute e documenti.",
+          "microphonePermission": false
+        }
+      ]
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tecnicoelios.duecase",
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.tecnicoelios.duecase",
+      "edgeToEdgeEnabled": true
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "separated-parents-app",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": { "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck", "build:backend": "npm --prefix backend run build" }
+}

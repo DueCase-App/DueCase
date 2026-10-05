@@ -1,0 +1,126 @@
+@baseUrl = http://localhost:4000/api
+@token = REPLACE_WITH_JWT
+
+### Health
+GET {{baseUrl}}/health
+
+### Register first parent
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "displayName": "Mario Rossi",
+  "email": "mario@example.com",
+  "password": "Password123!",
+  "role": "father"
+}
+
+### Login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "mario@example.com",
+  "password": "Password123!"
+}
+
+### Current user
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{token}}
+
+### Create a family (first parent)
+POST {{baseUrl}}/family/create
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Famiglia Rossi"
+}
+
+### Join a family (second parent)
+POST {{baseUrl}}/family/join
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "inviteCode": "ABCDEF2345"
+}
+
+### Family turns - family is derived from the JWT user
+GET {{baseUrl}}/turns
+Authorization: Bearer {{token}}
+
+### Family expense balance (approved expenses only)
+GET {{baseUrl}}/expenses/balance
+Authorization: Bearer {{token}}
+
+### List family expenses
+GET {{baseUrl}}/expenses
+Authorization: Bearer {{token}}
+
+### Create expense without receipt
+POST {{baseUrl}}/expenses
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=DueCaseBoundary
+
+--DueCaseBoundary
+Content-Disposition: form-data; name="title"
+
+Libri scolastici
+--DueCaseBoundary
+Content-Disposition: form-data; name="amount"
+
+100.00
+--DueCaseBoundary
+Content-Disposition: form-data; name="category"
+
+Scuola
+--DueCaseBoundary
+Content-Disposition: form-data; name="expenseDate"
+
+2026-10-05
+--DueCaseBoundary--
+
+### Approve an expense (replace EXPENSE_ID)
+POST {{baseUrl}}/expenses/EXPENSE_ID/approve
+Authorization: Bearer {{token}}
+
+### Decline/contest an expense (replace EXPENSE_ID)
+POST {{baseUrl}}/expenses/EXPENSE_ID/decline
+Authorization: Bearer {{token}}
+
+### List protected family documents
+GET {{baseUrl}}/documents
+Authorization: Bearer {{token}}
+
+### Upload protected document (example multipart body)
+POST {{baseUrl}}/documents
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=DueCaseDocumentBoundary
+
+--DueCaseDocumentBoundary
+Content-Disposition: form-data; name="title"
+
+Tessera sanitaria Rebecca
+--DueCaseDocumentBoundary
+Content-Disposition: form-data; name="description"
+
+Fronte tessera sanitaria aggiornata
+--DueCaseDocumentBoundary
+Content-Disposition: form-data; name="category"
+
+Salute
+--DueCaseDocumentBoundary
+Content-Disposition: form-data; name="file"; filename="tessera.pdf"
+Content-Type: application/pdf
+
+< ./tessera.pdf
+--DueCaseDocumentBoundary--
+
+### Open protected document (replace DOCUMENT_ID)
+GET {{baseUrl}}/documents/DOCUMENT_ID/file
+Authorization: Bearer {{token}}
+
+### Download protected document (replace DOCUMENT_ID)
+GET {{baseUrl}}/documents/DOCUMENT_ID/file?download=1
+Authorization: Bearer {{token}}
