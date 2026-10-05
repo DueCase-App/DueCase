@@ -8,6 +8,7 @@ import authRouter from './routes/auth.js';
 import documentsRouter from './routes/documents.js';
 import eventsRouter from './routes/events.js';
 import expensesRouter from './routes/expenses.js';
+import familyChildrenRouter from './routes/familyChildren.js';
 import familyRouter from './routes/family.js';
 import turnsRouter from './routes/turns.js';
 import swapRequestsRouter from './routes/swapRequests.js';
@@ -27,6 +28,7 @@ app.get('/api/health', asyncHandler(async (_req, res) => {
 }));
 
 app.use('/api/auth', authRouter);
+app.use('/api/family/children', familyChildrenRouter);
 app.use('/api/family', familyRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/turns', turnsRouter);
