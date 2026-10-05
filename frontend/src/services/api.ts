@@ -7,64 +7,39 @@ import type {
   ExpenseCategory,
   FamilyBalance,
   FamilyActionResponse,
+  FamilyChild,
   FamilyDocument,
+  FamilyEvent,
   ParentRole,
+  RegisterInput,
   SwapRequest,
   SwapRequestStatus,
 } from '../types/models';
 
-/**
- * DueCase API configuration.
- *
- * Production/preview builds use the Render API by default.
- * During local development, EXPO_PUBLIC_API_URL can override the endpoint:
- * - iOS simulator / web: http://localhost:10000/api
- * - Android emulator:    http://10.0.2.2:10000/api
- * - Physical device:     http://<YOUR_LAN_IP>:10000/api
- */
 const PRODUCTION_API_URL = 'https://duecase-api.onrender.com/api';
 const LOCAL_DEFAULT_API_URL = 'http://localhost:10000/api';
 
 function normalizeApiUrl(value: string): string {
   const normalized = value.trim().replace(/\/+$/, '');
-
-  if (!/^https?:\/\//i.test(normalized)) {
-    throw new Error('EXPO_PUBLIC_API_URL must start with http:// or https://');
-  }
-
-  if (!normalized.endsWith('/api')) {
-    throw new Error('EXPO_PUBLIC_API_URL must end with /api');
-  }
-
+  if (!/^https?:\/\//i.test(normalized)) throw new Error('EXPO_PUBLIC_API_URL must start with http:// or https://');
+  if (!normalized.endsWith('/api')) throw new Error('EXPO_PUBLIC_API_URL must end with /api');
   return normalized;
 }
 
 const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
-
-export const API_URL = normalizeApiUrl(
-  configuredApiUrl || (__DEV__ ? LOCAL_DEFAULT_API_URL : PRODUCTION_API_URL),
-);
+export const API_URL = normalizeApiUrl(configuredApiUrl || (__DEV__ ? LOCAL_DEFAULT_API_URL : PRODUCTION_API_URL));
 
 let accessToken: string | null = null;
-
-function authHeaders(): Record<string, string> {
-  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
-}
+function authHeaders(): Record<string, string> { return accessToken ? { Authorization: `Bearer ${accessToken}` } : {}; }
 
 export class ApiClientError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-    public readonly code?: string,
-  ) {
+  constructor(message: string, public readonly status: number, public readonly code?: string) {
     super(message);
     this.name = 'ApiClientError';
   }
 }
 
-export function setApiToken(token: string | null): void {
-  accessToken = token;
-}
+export function setApiToken(token: string | null): void { accessToken = token; }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData = typeof FormData !== 'undefined' && init?.body instanceof FormData;
@@ -76,34 +51,28 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   });
-
   const payload = await response.json().catch(() => null) as { error?: string; code?: string } | T | null;
-
   if (!response.ok) {
     const errorPayload = payload as { error?: string; code?: string } | null;
-    throw new ApiClientError(
-      errorPayload?.error ?? `HTTP ${response.status}`,
-      response.status,
-      errorPayload?.code,
-    );
+    throw new ApiClientError(errorPayload?.error ?? `HTTP ${response.status}`, response.status, errorPayload?.code);
   }
-
   return payload as T;
 }
 
 export const api = {
   auth: {
-    register: (input: { displayName: string; email: string; password: string; role: ParentRole }) =>
-      request<AuthResponse>('/auth/register', { method: 'POST', body: JSON.stringify(input) }),
-    login: (input: { email: string; password: string }) =>
-      request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify(input) }),
+    register: (input: RegisterInput) => request<AuthResponse>('/auth/register', { method: 'POST', body: JSON.stringify(input) }),
+    login: (input: { email: string; password: string }) => request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify(input) }),
     me: () => request<AuthUser>('/auth/me'),
-    setPushToken: (expoPushToken: string | null) =>
-      request<{ ok: true }>('/auth/push-token', { method: 'PUT', body: JSON.stringify({ expoPushToken }) }),
+    setPushToken: (expoPushToken: string | null) => request<{ ok: true }>('/auth/push-token', { method: 'PUT', body: JSON.stringify({ expoPushToken }) }),
   },
   family: {
     create: (name?: string) => request<FamilyActionResponse>('/family/create', { method: 'POST', body: JSON.stringify(name?.trim() ? { name: name.trim() } : {}) }),
     join: (inviteCode: string) => request<FamilyActionResponse>('/family/join', { method: 'POST', body: JSON.stringify({ inviteCode }) }),
+    children: () => request<FamilyChild[]>('/family/children'),
+  },
+  events: {
+    listUpcoming: (limit = 3) => request<FamilyEvent[]>(`/events/upcoming?limit=${encodeURIComponent(String(limit))}`),
   },
   turns: {
     list: (from: string, to: string) => request<DailyCustody[]>(`/turns?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
@@ -120,7 +89,9 @@ export const api = {
     balance: () => request<FamilyBalance>('/expenses/balance'),
     create: (input: { title: string; amount: string; category: ExpenseCategory; expenseDate?: string; notes?: string; receipt?: { uri: string; name: string; type: string; file?: Blob } }) => {
       const form = new FormData();
-      form.append('title', input.title); form.append('amount', input.amount); form.append('category', input.category);
+      form.append('title', input.title);
+      form.append('amount', input.amount);
+      form.append('category', input.category);
       if (input.expenseDate) form.append('expenseDate', input.expenseDate);
       if (input.notes?.trim()) form.append('notes', input.notes.trim());
       if (input.receipt) {
@@ -129,7 +100,8 @@ export const api = {
       }
       return request<Expense>('/expenses', { method: 'POST', body: form });
     },
-    approve: (id: string) => request<Expense>(`/expenses/${encodeURIComponent(id)}/approve`, { method: 'POST' }),
+    requestApprovalOtp: (id: string) => request<{ ok: true; expiresInSeconds: number }>(`/expenses/${encodeURIComponent(id)}/request-approval-otp`, { method: 'POST' }),
+    approve: (id: string, otp: string) => request<Expense>(`/expenses/${encodeURIComponent(id)}/approve`, { method: 'POST', body: JSON.stringify({ otp }) }),
     decline: (id: string) => request<Expense>(`/expenses/${encodeURIComponent(id)}/decline`, { method: 'POST' }),
     receiptSource: (path: string) => ({ uri: `${API_URL}${path}`, headers: authHeaders() }),
   },
@@ -137,7 +109,8 @@ export const api = {
     list: () => request<FamilyDocument[]>('/documents'),
     create: (input: { title: string; description?: string; category: DocumentCategory; file: { uri: string; name: string; type: string; file?: Blob } }) => {
       const form = new FormData();
-      form.append('title', input.title); form.append('category', input.category);
+      form.append('title', input.title);
+      form.append('category', input.category);
       if (input.description?.trim()) form.append('description', input.description.trim());
       if (input.file.file) form.append('file', input.file.file, input.file.name);
       else form.append('file', { uri: input.file.uri, name: input.file.name, type: input.file.type } as unknown as Blob);
