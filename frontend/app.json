@@ -7,15 +7,40 @@
     "version": "0.2.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "backgroundColor": "#2b5891",
+    "primaryColor": "#2b5891",
+    "icon": "./assets/icon.png",
     "plugins": [
       "expo-secure-store",
       "expo-document-picker",
-      "expo-notifications",
+      "expo-system-ui",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#2b5891",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#2b5891",
+            "image": "./assets/splash-icon.png"
+          }
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#2b5891",
+          "defaultChannel": "duecase-events",
+          "enableBackgroundRemoteNotifications": false
+        }
+      ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Consenti a DueCase di selezionare foto e ricevute da allegare ai documenti e alle spese.",
-          "cameraPermission": "Consenti a DueCase di usare la fotocamera per fotografare ricevute e documenti.",
+          "photosPermission": "DueCase accede alle tue foto esclusivamente per permetterti di selezionare ricevute e documenti da allegare.",
+          "cameraPermission": "DueCase usa la fotocamera esclusivamente per fotografare ricevute e documenti che scegli di allegare.",
           "microphonePermission": false
         }
       ]
@@ -23,12 +48,31 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tecnicoelios.duecase",
+      "icon": "./assets/icon.png",
+      "backgroundColor": "#2b5891",
+      "infoPlist": {
+        "NSCameraUsageDescription": "DueCase usa la fotocamera esclusivamente per fotografare ricevute e documenti che scegli di allegare.",
+        "NSPhotoLibraryUsageDescription": "DueCase accede alla libreria foto esclusivamente per permetterti di selezionare ricevute e documenti da allegare."
+      },
       "config": {
         "usesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.tecnicoelios.duecase",
+      "icon": "./assets/icon.png",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "monochromeImage": "./assets/adaptive-icon-monochrome.png",
+        "backgroundColor": "#2b5891"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.POST_NOTIFICATIONS"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
       "edgeToEdgeEnabled": true
     },
     "extra": {

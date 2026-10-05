@@ -28,6 +28,11 @@ frontend/.env.example
 frontend/App.tsx
 frontend/README.md
 frontend/app.json
+frontend/assets/adaptive-icon-monochrome.png
+frontend/assets/adaptive-icon.png
+frontend/assets/icon.png
+frontend/assets/notification-icon.png
+frontend/assets/splash-icon.png
 frontend/eas.json
 frontend/expo-env.d.ts
 frontend/package.json
