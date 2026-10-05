@@ -6,7 +6,7 @@ import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
 import {
   formatItalianDate,
-  parentRoleLabel,
+  parentRoleSubject,
   sendPushToOtherParent,
   sendPushToUser,
 } from '../services/notificationService.js';
@@ -146,7 +146,7 @@ router.post('/', asyncHandler(async (req, res) => {
 
     await sendPushToOtherParent(auth.familyId, auth.userId, {
       title: 'Richiesta cambio turno',
-      body: `La ${parentRoleLabel(auth.role)} ha richiesto uno scambio di turno per il ${formatItalianDate(body.targetDate)}.`,
+      body: `${parentRoleSubject(auth.role)} ha richiesto uno scambio di turno per il ${formatItalianDate(body.targetDate)}.`,
       data: { type: 'swap_requested', screen: 'calendar', swapRequestId: id },
     });
 
@@ -270,7 +270,7 @@ router.post('/:id/approve', asyncHandler(async (req, res) => {
   if (requesterId && targetDateForNotification) {
     await sendPushToUser(requesterId, {
       title: 'Scambio approvato',
-      body: `Il ${parentRoleLabel(auth.role)} ha approvato lo scambio del ${formatItalianDate(targetDateForNotification)}.`,
+      body: `${parentRoleSubject(auth.role)} ha approvato lo scambio del ${formatItalianDate(targetDateForNotification)}.`,
       data: { type: 'swap_approved', screen: 'calendar', swapRequestId: requestId },
     });
   }
@@ -328,7 +328,7 @@ router.post('/:id/reject', asyncHandler(async (req, res) => {
 
   await sendPushToUser(rejected.requestedBy, {
     title: 'Scambio rifiutato',
-    body: `Il ${parentRoleLabel(auth.role)} ha rifiutato lo scambio del ${formatItalianDate(rejected.targetDate)}.`,
+    body: `${parentRoleSubject(auth.role)} ha rifiutato lo scambio del ${formatItalianDate(rejected.targetDate)}.`,
     data: { type: 'swap_rejected', screen: 'calendar', swapRequestId: requestId },
   });
 
