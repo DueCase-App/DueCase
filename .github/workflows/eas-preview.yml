@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -25,8 +25,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -38,7 +36,6 @@ jobs:
         run: |
           if [ -z "$EXPO_TOKEN" ]; then
             echo "EXPO_TOKEN is not configured in GitHub Actions secrets."
-            echo "Create an Expo access token and save it as repository secret EXPO_TOKEN, then re-run this job."
             exit 1
           fi
 
@@ -51,59 +48,15 @@ jobs:
       - name: Verify Expo public configuration
         env:
           EXPO_PUBLIC_API_URL: https://duecase-api.onrender.com/api
-        run: npx expo config --type public >/tmp/expo-config.txt && cat /tmp/expo-config.txt
+        run: npx expo config --type public
 
       - name: Authenticate with Expo
         run: npx eas-cli@latest whoami
 
-      - name: Initialize or link EAS project
-        run: npx eas-cli@latest init --force --non-interactive
-
-      - name: Persist generated EAS projectId
-        working-directory: .
-        shell: bash
-        run: |
-          git add frontend/app.json frontend/app.config.js 2>/dev/null || true
-          if git diff --cached --quiet; then
-            echo "No EAS project configuration change to commit."
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -m "chore: link Expo EAS project [skip eas]"
-            git push origin HEAD:main
-          fi
-
-      - name: Install expect for first Android credential prompt
-        working-directory: .
-        run: sudo apt-get update -qq && sudo apt-get install -y expect
-
-      - name: Create Android credentials if needed and start Preview APK build
+      - name: Start Preview APK build
         env:
           EXPO_PUBLIC_API_URL: https://duecase-api.onrender.com/api
-        shell: bash
-        run: |
-          cat > /tmp/eas-build.exp <<'EOF'
-          set timeout -1
-          spawn npx eas-cli@latest build --profile preview --platform android --no-wait
-          expect {
-            -re {Generate a new Android Keystore.*} {
-              send "y\r"
-              exp_continue
-            }
-            -re {Would you like.*\(Y/n\).*} {
-              send "y\r"
-              exp_continue
-            }
-            -re {Would you like.*\(y/N\).*} {
-              send "y\r"
-              exp_continue
-            }
-            eof
-          }
-          catch wait result
-          exit [lindex $result 3]
-          EOF
-          expect /tmp/eas-build.exp
+        run: npx eas-cli@latest build --profile preview --platform android --non-interactive --no-wait
 
       - name: Show recent EAS builds
         run: npx eas-cli@latest build:list --platform android --limit 3 --non-interactive
