@@ -47,6 +47,10 @@ export const API_URL = normalizeApiUrl(
 
 let accessToken: string | null = null;
 
+function authHeaders(): Record<string, string> {
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+}
+
 export class ApiClientError extends Error {
   constructor(
     message: string,
@@ -68,7 +72,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...authHeaders(),
       ...(init?.headers ?? {}),
     },
   });
@@ -125,7 +129,7 @@ export const api = {
     },
     approve: (id: string) => request<Expense>(`/expenses/${encodeURIComponent(id)}/approve`, { method: 'POST' }),
     decline: (id: string) => request<Expense>(`/expenses/${encodeURIComponent(id)}/decline`, { method: 'POST' }),
-    receiptSource: (path: string) => ({ uri: `${API_URL}${path}`, headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {} }),
+    receiptSource: (path: string) => ({ uri: `${API_URL}${path}`, headers: authHeaders() }),
   },
   documents: {
     list: () => request<FamilyDocument[]>('/documents'),
@@ -137,7 +141,7 @@ export const api = {
       else form.append('file', { uri: input.file.uri, name: input.file.name, type: input.file.type } as unknown as Blob);
       return request<FamilyDocument>('/documents', { method: 'POST', body: form });
     },
-    fileRequest: (path: string, download = false) => ({ url: `${API_URL}${path}${download ? `${path.includes('?') ? '&' : '?'}download=1` : ''}`, headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {} }),
-    fileSource: (path: string) => ({ uri: `${API_URL}${path}`, headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {} }),
+    fileRequest: (path: string, download = false) => ({ url: `${API_URL}${path}${download ? `${path.includes('?') ? '&' : '?'}download=1` : ''}`, headers: authHeaders() }),
+    fileSource: (path: string) => ({ uri: `${API_URL}${path}`, headers: authHeaders() }),
   },
 };
