@@ -98,6 +98,8 @@ export const api = {
     login: (input: { email: string; password: string }) =>
       request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify(input) }),
     me: () => request<AuthUser>('/auth/me'),
+    setPushToken: (expoPushToken: string | null) =>
+      request<{ ok: true }>('/auth/push-token', { method: 'PUT', body: JSON.stringify({ expoPushToken }) }),
   },
   family: {
     create: (name?: string) => request<FamilyActionResponse>('/family/create', { method: 'POST', body: JSON.stringify(name?.trim() ? { name: name.trim() } : {}) }),
