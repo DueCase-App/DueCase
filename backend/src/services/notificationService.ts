@@ -17,6 +17,10 @@ export function parentRoleLabel(role: 'father' | 'mother'): 'Padre' | 'Madre' {
   return role === 'father' ? 'Padre' : 'Madre';
 }
 
+export function parentRoleSubject(role: 'father' | 'mother'): 'Il Padre' | 'La Madre' {
+  return role === 'father' ? 'Il Padre' : 'La Madre';
+}
+
 export function formatItalianDate(value: string): string {
   const [year, month, day] = value.split('-').map(Number);
   if (!year || !month || !day) return value;
