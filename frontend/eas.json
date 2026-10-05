@@ -12,6 +12,9 @@
     "preview": {
       "distribution": "internal",
       "environment": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://duecase-api.onrender.com/api"
+      },
       "android": {
         "buildType": "apk"
       }
@@ -19,7 +22,10 @@
     "production": {
       "distribution": "store",
       "environment": "production",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://duecase-api.onrender.com/api"
+      }
     }
   },
   "submit": {
