@@ -42,7 +42,7 @@ export function CalendarScreen(): React.JSX.Element {
   const byDate = useMemo(()=>new Map(days.map(d=>[d.custodyDate,d])),[days]);
   const ownDays = useMemo(()=>days.filter(d=>d.custodianRole===user?.role).map(d=>d.custodyDate).sort(),[days,user?.role]);
   const pendingDates = useMemo(()=>new Set(requests.flatMap(r=>[r.targetDate,r.proposedDate])),[requests]);
-  const markedDates = useMemo(()=>Object.fromEntries(days.map(d=>[d.custodyDate,{customStyles:{container:{backgroundColor:COLORS[d.custodianRole],borderRadius:9,...(pendingDates.has(d.custodyDate)?{borderWidth:3,borderColor:'#F59E0B'}:{})},text:{color:'#FFF',fontWeight:'800'}}}])),[days,pendingDates]);
+  const markedDates = useMemo(()=>Object.fromEntries(days.map(d=>[d.custodyDate,{customStyles:{container:{backgroundColor:COLORS[d.custodianRole],borderRadius:9,...(pendingDates.has(d.custodyDate)?{borderWidth:3,borderColor:'#F59E0B'}:{})},text:{color:'#FFF',fontWeight:'800' as const}}}])),[days,pendingDates]);
 
   function selectDay(date:string){
     if(!user) return; const d=byDate.get(date);
