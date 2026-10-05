@@ -6,6 +6,7 @@ import { checkDatabase } from './db.js';
 import { asyncHandler, errorHandler } from './http.js';
 import authRouter from './routes/auth.js';
 import documentsRouter from './routes/documents.js';
+import eventsRouter from './routes/events.js';
 import expensesRouter from './routes/expenses.js';
 import familyRouter from './routes/family.js';
 import turnsRouter from './routes/turns.js';
@@ -27,6 +28,7 @@ app.get('/api/health', asyncHandler(async (_req, res) => {
 
 app.use('/api/auth', authRouter);
 app.use('/api/family', familyRouter);
+app.use('/api/events', eventsRouter);
 app.use('/api/turns', turnsRouter);
 app.use('/api/swap-requests', swapRequestsRouter);
 app.use('/api/expenses', expensesRouter);
