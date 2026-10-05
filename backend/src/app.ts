@@ -6,10 +6,10 @@ import { checkDatabase } from './db.js';
 import { asyncHandler, errorHandler } from './http.js';
 import authRouter from './routes/auth.js';
 import documentsRouter from './routes/documents.js';
-import eventsRouter from './routes/events.js';
 import expensesRouter from './routes/expenses.js';
-import familyChildrenRouter from './routes/familyChildren.js';
 import familyRouter from './routes/family.js';
+import messagesRouter from './routes/messages.js';
+import reportsRouter from './routes/reports.js';
 import turnsRouter from './routes/turns.js';
 import swapRequestsRouter from './routes/swapRequests.js';
 
@@ -28,13 +28,13 @@ app.get('/api/health', asyncHandler(async (_req, res) => {
 }));
 
 app.use('/api/auth', authRouter);
-app.use('/api/family/children', familyChildrenRouter);
 app.use('/api/family', familyRouter);
-app.use('/api/events', eventsRouter);
 app.use('/api/turns', turnsRouter);
 app.use('/api/swap-requests', swapRequestsRouter);
 app.use('/api/expenses', expensesRouter);
 app.use('/api/documents', documentsRouter);
+app.use('/api/messages', messagesRouter);
+app.use('/api/reports', reportsRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' });
