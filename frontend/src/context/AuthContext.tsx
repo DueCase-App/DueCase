@@ -2,14 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { api, setApiToken } from '../services/api';
 import { registerPushNotificationsAsync, unregisterPushNotificationsAsync } from '../services/notifications';
 import { clearStoredToken, getStoredToken, storeToken } from '../services/tokenStorage';
-import type { AuthUser, ParentRole } from '../types/models';
-
-type RegisterInput = {
-  displayName: string;
-  email: string;
-  password: string;
-  role: ParentRole;
-};
+import type { AuthUser, RegisterInput } from '../types/models';
 
 type AuthContextValue = {
   user: AuthUser | null;

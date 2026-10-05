@@ -1,6 +1,40 @@
 export type ParentRole = 'father' | 'mother';
 export type FamilyInfo = { id: string; name: string | null; inviteCode: string | null; };
-export type AuthUser = { id: string; email: string; displayName: string; role: ParentRole; familyId: string | null; family: FamilyInfo | null; };
+
+export type RegistrationChildInput = {
+  displayName: string;
+  birthDate?: string | null;
+};
+
+export type RegisterInput = {
+  displayName: string;
+  firstName: string;
+  lastName: string;
+  birthDate: string;
+  taxCode: string;
+  email: string;
+  phone: string;
+  password: string;
+  role: ParentRole;
+  familyName: string;
+  children: RegistrationChildInput[];
+  inviteOtherParent: boolean;
+};
+
+export type AuthUser = {
+  id: string;
+  email: string;
+  displayName: string;
+  firstName: string | null;
+  lastName: string | null;
+  birthDate: string | null;
+  taxCode: string | null;
+  phone: string | null;
+  role: ParentRole;
+  familyId: string | null;
+  family: FamilyInfo | null;
+};
+
 export type AuthResponse = { token: string; user: AuthUser; };
 export type FamilyActionResponse = { family: FamilyInfo; memberCount: number; };
 export type DailyCustody = { id: string; familyId: string; custodyDate: string; custodianRole: ParentRole; parentId: string | null; notes: string | null; createdAt: string; updatedAt: string; };

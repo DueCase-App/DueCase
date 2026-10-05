@@ -10,6 +10,11 @@ export type AuthContext = {
   userId: string;
   email: string;
   displayName: string;
+  firstName: string | null;
+  lastName: string | null;
+  birthDate: string | null;
+  taxCode: string | null;
+  phone: string | null;
   role: ParentRole;
   familyId: string | null;
   familyName: string | null;
@@ -63,6 +68,11 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
       `SELECT u.id AS "userId",
               u.email,
               u.display_name AS "displayName",
+              u.first_name AS "firstName",
+              u.last_name AS "lastName",
+              u.birth_date::text AS "birthDate",
+              u.tax_code AS "taxCode",
+              u.phone,
               u.role,
               u.family_id AS "familyId",
               f.name AS "familyName",
