@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 
 const COLORS = {
@@ -30,6 +31,7 @@ type LoginScreenProps = {
 
 export function LoginScreen({ onShowRegister }: LoginScreenProps): React.JSX.Element {
   const { login } = useAuth();
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -53,8 +55,6 @@ export function LoginScreen({ onShowRegister }: LoginScreenProps): React.JSX.Ele
       setLoading(true);
       setError(null);
       await login(normalizedEmail, password);
-      // AuthContext salva il JWT in Expo SecureStore e aggiorna `user`.
-      // App.tsx reagisce al nuovo stato autenticato e lascia automaticamente lo stack Login/SignUp.
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Accesso non riuscito. Riprova.');
     } finally {
@@ -63,122 +63,128 @@ export function LoginScreen({ onShowRegister }: LoginScreenProps): React.JSX.Ele
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={0}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-        showsVerticalScrollIndicator={false}
+    <SafeAreaView style={styles.safeArea} edges={['top', 'right', 'bottom', 'left']}>
+      <KeyboardAvoidingView
+        style={styles.screen}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
-        <View style={styles.card}>
-          <View style={styles.logoBadge}>
-            <Ionicons name="home-outline" size={30} color="#FFFFFF" />
-          </View>
-
-          <View style={styles.heading}>
-            <Text style={styles.title}>Accedi a DueCase</Text>
-            <Text style={styles.subtitle}>Inserisci email e password per continuare.</Text>
-          </View>
-
-          <View style={styles.fieldBlock}>
-            <Text style={styles.label}>Email</Text>
-            <View style={styles.inputShell}>
-              <Ionicons name="mail-outline" size={22} color={COLORS.muted} />
-              <TextInput
-                value={email}
-                onChangeText={setEmail}
-                placeholder="nome@email.it"
-                placeholderTextColor="#7892B5"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="email"
-                textContentType="emailAddress"
-                selectionColor={COLORS.blue}
-                style={styles.input}
-                returnKeyType="next"
-                editable={!loading}
-              />
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: Math.max(28, insets.top + 16), paddingBottom: Math.max(48, insets.bottom + 32) },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.card}>
+            <View style={styles.logoBadge}>
+              <Ionicons name="home-outline" size={30} color="#FFFFFF" />
             </View>
-          </View>
 
-          <View style={styles.fieldBlock}>
-            <Text style={styles.label}>Password</Text>
-            <View style={styles.inputShell}>
-              <Ionicons name="lock-closed-outline" size={22} color={COLORS.muted} />
-              <TextInput
-                value={password}
-                onChangeText={setPassword}
-                placeholder="La tua password"
-                placeholderTextColor="#7892B5"
-                secureTextEntry={!passwordVisible}
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="current-password"
-                textContentType="password"
-                selectionColor={COLORS.blue}
-                style={styles.input}
-                returnKeyType="done"
-                editable={!loading}
-                onSubmitEditing={() => void submit()}
-              />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={passwordVisible ? 'Nascondi password' : 'Mostra password'}
-                onPress={() => setPasswordVisible((value) => !value)}
-                hitSlop={10}
-              >
-                <Ionicons
-                  name={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
-                  size={23}
-                  color={COLORS.muted}
+            <View style={styles.heading}>
+              <Text style={styles.title}>Accedi a DueCase</Text>
+              <Text style={styles.subtitle}>Inserisci email e password per continuare.</Text>
+            </View>
+
+            <View style={styles.fieldBlock}>
+              <Text style={styles.label}>Email</Text>
+              <View style={styles.inputShell}>
+                <Ionicons name="mail-outline" size={22} color={COLORS.muted} />
+                <TextInput
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="nome@email.it"
+                  placeholderTextColor="#7892B5"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="email"
+                  textContentType="emailAddress"
+                  selectionColor={COLORS.blue}
+                  style={styles.input}
+                  returnKeyType="next"
+                  editable={!loading}
                 />
-              </Pressable>
+              </View>
             </View>
+
+            <View style={styles.fieldBlock}>
+              <Text style={styles.label}>Password</Text>
+              <View style={styles.inputShell}>
+                <Ionicons name="lock-closed-outline" size={22} color={COLORS.muted} />
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="La tua password"
+                  placeholderTextColor="#7892B5"
+                  secureTextEntry={!passwordVisible}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="current-password"
+                  textContentType="password"
+                  selectionColor={COLORS.blue}
+                  style={styles.input}
+                  returnKeyType="done"
+                  editable={!loading}
+                  onSubmitEditing={() => void submit()}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={passwordVisible ? 'Nascondi password' : 'Mostra password'}
+                  onPress={() => setPasswordVisible((value) => !value)}
+                  hitSlop={10}
+                >
+                  <Ionicons
+                    name={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
+                    size={23}
+                    color={COLORS.muted}
+                  />
+                </Pressable>
+              </View>
+            </View>
+
+            {error ? (
+              <View style={styles.errorBox} accessibilityLiveRegion="polite">
+                <Ionicons name="alert-circle-outline" size={20} color={COLORS.danger} />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: loading }}
+              disabled={loading}
+              onPress={() => void submit()}
+              style={({ pressed }) => [
+                styles.loginButton,
+                pressed && !loading && styles.loginButtonPressed,
+                loading && styles.loginButtonDisabled,
+              ]}
+            >
+              <Text style={styles.loginButtonText}>{loading ? 'Accesso in corso…' : 'Accedi'}</Text>
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Vai alla registrazione"
+              onPress={onShowRegister}
+              style={({ pressed }) => [styles.registerLink, pressed && styles.registerLinkPressed]}
+            >
+              <Text style={styles.registerText}>
+                Non hai un account? <Text style={styles.registerStrong}>Registrati</Text>
+              </Text>
+            </Pressable>
           </View>
-
-          {error ? (
-            <View style={styles.errorBox} accessibilityLiveRegion="polite">
-              <Ionicons name="alert-circle-outline" size={20} color={COLORS.danger} />
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ disabled: loading }}
-            disabled={loading}
-            onPress={() => void submit()}
-            style={({ pressed }) => [
-              styles.loginButton,
-              pressed && !loading && styles.loginButtonPressed,
-              loading && styles.loginButtonDisabled,
-            ]}
-          >
-            <Text style={styles.loginButtonText}>{loading ? 'Accesso in corso…' : 'Accedi'}</Text>
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Vai alla registrazione"
-            onPress={onShowRegister}
-            style={({ pressed }) => [styles.registerLink, pressed && styles.registerLinkPressed]}
-          >
-            <Text style={styles.registerText}>
-              Non hai un account? <Text style={styles.registerStrong}>Registrati</Text>
-            </Text>
-          </Pressable>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: COLORS.background },
   screen: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -187,7 +193,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 32,
   },
   card: {
     width: '100%',
