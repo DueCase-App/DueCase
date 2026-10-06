@@ -20,12 +20,12 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { cardShadow, ui } from '../theme/ui';
-import type { Expense, ExpenseCategory, ExpensePayment, FamilyBalance, FamilyChild, ParentRole } from '../types/models';
+import type { Expense, ExpenseCategory, ExpensePayment, FamilyActivity, FamilyBalance, FamilyChild, ParentRole } from '../types/models';
 
 const categories: ExpenseCategory[] = ['Scuola', 'Salute', 'Sport', 'Svago'];
 type Receipt = { uri: string; name: string; type: string; file?: Blob };
 const euro = (value: string | number) => `${Number(value || 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
-const roleLabel = (role: ParentRole | null | undefined) => role === 'father' ? 'Papà' : role === 'mother' ? 'Mamma' : 'Genitore';
+const roleLabel = (role: ParentRole | null | undefined) => role === 'father' ? 'Papà' : role === 'mother' ? 'Mamma' : 'Account non disponibile';
 
 const expenseStatusLabel: Record<Expense['status'], string> = {
   draft: 'Bozza',
@@ -47,6 +47,32 @@ function statusTone(status: Expense['status']): 'success' | 'danger' | 'warning'
   return 'info';
 }
 
+function historyActionLabel(action: string): string {
+  const labels: Record<string, string> = {
+    created: 'Spesa inserita',
+    submitted: 'Spesa inviata',
+    approved: 'Spesa approvata',
+    declined: 'Spesa rifiutata',
+    disputed: 'Spesa contestata',
+    otp_verified: 'Firma OTP verificata',
+    payment_declared: 'Pagamento dichiarato',
+    payment_confirmed: 'Pagamento ricevuto',
+    payment_rejected: 'Pagamento rifiutato',
+    updated: 'Spesa modificata',
+  };
+  return labels[action] ?? action.replace(/_/g, ' ');
+}
+
+function historyDetails(item: FamilyActivity): string | null {
+  const details = item.details ?? {};
+  if (typeof details.reason === 'string' && details.reason.trim()) return `Motivazione: ${details.reason}`;
+  const amount = typeof details.amount === 'string' || typeof details.amount === 'number' ? Number(details.amount) : null;
+  if (amount !== null && Number.isFinite(amount)) return `Importo: ${euro(amount)}`;
+  if (typeof details.note === 'string' && details.note.trim()) return details.note;
+  if (typeof details.status === 'string' && details.status.trim()) return `Stato: ${details.status}`;
+  return null;
+}
+
 export function ExpensesScreen(): React.JSX.Element {
   const { user } = useAuth();
   const { width } = useWindowDimensions();
@@ -63,6 +89,11 @@ export function ExpensesScreen(): React.JSX.Element {
   const [otpExpense, setOtpExpense] = useState<Expense | null>(null);
   const [otpEmail, setOtpEmail] = useState<string | null>(null);
   const [paymentExpense, setPaymentExpense] = useState<Expense | null>(null);
+  const [disputeExpense, setDisputeExpense] = useState<Expense | null>(null);
+  const [disputeReason, setDisputeReason] = useState('');
+  const [historyExpense, setHistoryExpense] = useState<Expense | null>(null);
+  const [historyItems, setHistoryItems] = useState<FamilyActivity[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -97,6 +128,37 @@ export function ExpensesScreen(): React.JSX.Element {
     } catch (error) {
       Alert.alert('Spesa', error instanceof Error ? error.message : 'Operazione non riuscita');
     } finally { setBusy(null); }
+  }
+
+  async function dispute(): Promise<void> {
+    if (!disputeExpense) return;
+    const reason = disputeReason.trim();
+    if (reason.length < 3) {
+      Alert.alert('Contestazione', 'Scrivi una breve motivazione della contestazione.');
+      return;
+    }
+    try {
+      setBusy(disputeExpense.id);
+      await api.expenses.dispute(disputeExpense.id, reason);
+      setDisputeExpense(null);
+      setDisputeReason('');
+      await load();
+      Alert.alert('Spesa contestata', 'La motivazione è stata registrata nello storico e notificata all’altro genitore.');
+    } catch (error) {
+      Alert.alert('Contestazione', error instanceof Error ? error.message : 'Contestazione non riuscita.');
+    } finally { setBusy(null); }
+  }
+
+  async function openHistory(expense: Expense): Promise<void> {
+    setHistoryExpense(expense);
+    setHistoryItems([]);
+    setHistoryLoading(true);
+    try {
+      setHistoryItems(await api.expenses.history(expense.id));
+    } catch (error) {
+      setHistoryExpense(null);
+      Alert.alert('Storico spesa', error instanceof Error ? error.message : 'Impossibile caricare lo storico.');
+    } finally { setHistoryLoading(false); }
   }
 
   async function approveOrdinary(expense: Expense): Promise<void> {
@@ -166,7 +228,7 @@ export function ExpensesScreen(): React.JSX.Element {
       >
         <View style={styles.content}>
           <View style={styles.header}>
-            <View style={styles.headerCopy}><Text style={styles.title}>Spese</Text><Text style={styles.muted}>Quote personalizzabili, ricevute, approvazioni e rimborsi tracciati.</Text></View>
+            <View style={styles.headerCopy}><Text style={styles.title}>Spese</Text><Text style={styles.muted}>Quote personalizzabili, ricevute, approvazioni, contestazioni e rimborsi tracciati.</Text></View>
             <Pressable style={styles.addButton} onPress={() => setFormVisible(true)}><Ionicons name="add" size={20} color="#FFF" /><Text style={styles.addText}>Aggiungi</Text></Pressable>
           </View>
 
@@ -235,9 +297,11 @@ export function ExpensesScreen(): React.JSX.Element {
                     ) : null}
 
                     <View style={styles.actions}>
+                      <Pressable style={styles.secondaryButton} onPress={() => void openHistory(expense)}><Ionicons name="time-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Storico</Text></Pressable>
                       {expense.receiptUrl ? <Pressable style={styles.secondaryButton} onPress={() => setReceipt(expense)}><Ionicons name="image-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Ricevuta</Text></Pressable> : null}
                       {canPay ? <Pressable style={styles.secondaryButton} onPress={() => setPaymentExpense(expense)}><Ionicons name="card-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Registra pagamento</Text></Pressable> : null}
                       {expense.canReview ? <>
+                        <Pressable disabled={busy === expense.id} style={styles.disputeButton} onPress={() => { setDisputeExpense(expense); setDisputeReason(''); }}><Text style={styles.disputeText}>Contesta</Text></Pressable>
                         <Pressable disabled={busy === expense.id} style={styles.declineButton} onPress={() => void decline(expense)}><Text style={styles.declineText}>Rifiuta</Text></Pressable>
                         <Pressable disabled={busy === expense.id} style={styles.approveButton} onPress={() => void (expense.isExtraordinary ? requestOtp(expense) : approveOrdinary(expense))}>{busy === expense.id ? <ActivityIndicator color="#FFF" /> : <><Ionicons name={expense.isExtraordinary ? 'shield-checkmark-outline' : 'checkmark-circle-outline'} size={18} color="#FFF" /><Text style={styles.approveText}>Approva</Text></>}</Pressable>
                       </> : null}
@@ -264,6 +328,34 @@ export function ExpensesScreen(): React.JSX.Element {
           setOtpEmail(result.maskedEmail);
         }}
       />
+
+      <Modal visible={disputeExpense !== null} transparent animationType="fade" onRequestClose={() => setDisputeExpense(null)}>
+        <View style={styles.backdrop}><View style={styles.disputeModal}>
+          <View style={styles.modalHead}><View style={{ flex: 1 }}><Text style={styles.modalTitle}>Contesta la spesa</Text><Text style={styles.meta}>{disputeExpense?.title}</Text></View><Pressable onPress={() => setDisputeExpense(null)}><Ionicons name="close" size={26} color={ui.colors.text} /></Pressable></View>
+          <View style={styles.disputeNotice}><Ionicons name="alert-circle-outline" size={22} color={ui.colors.warning} /><Text style={styles.disputeNoticeText}>La contestazione è diversa dal rifiuto: la motivazione resterà nello storico della spesa e sarà notificata all’altro genitore.</Text></View>
+          <Text style={styles.label}>Motivazione</Text>
+          <TextInput value={disputeReason} onChangeText={setDisputeReason} maxLength={2000} multiline textAlignVertical="top" placeholder="Spiega in modo chiaro perché contesti questa spesa…" placeholderTextColor={ui.colors.muted} style={[styles.input, styles.disputeInput]} />
+          <View style={styles.actions}><Pressable style={styles.cancelButton} onPress={() => setDisputeExpense(null)}><Text style={styles.cancelText}>Annulla</Text></Pressable><Pressable disabled={!disputeReason.trim() || busy === disputeExpense?.id} onPress={() => void dispute()} style={[styles.disputeConfirmButton, (!disputeReason.trim() || busy === disputeExpense?.id) && styles.disabledButton]}>{busy === disputeExpense?.id ? <ActivityIndicator color="#FFF" /> : <Text style={styles.disputeConfirmText}>Conferma contestazione</Text>}</Pressable></View>
+        </View></View>
+      </Modal>
+
+      <Modal visible={historyExpense !== null} transparent animationType="fade" onRequestClose={() => setHistoryExpense(null)}>
+        <View style={styles.backdrop}><View style={styles.historyModal}>
+          <View style={styles.modalHead}><View style={{ flex: 1 }}><Text style={styles.modalTitle}>Storico spesa</Text><Text style={styles.meta}>{historyExpense?.title}</Text></View><Pressable onPress={() => setHistoryExpense(null)}><Ionicons name="close" size={26} color={ui.colors.text} /></Pressable></View>
+          {historyLoading ? <ActivityIndicator style={{ marginVertical: 36 }} color={ui.colors.primary} /> : (
+            <ScrollView style={styles.historyScroll} contentContainerStyle={styles.historyList}>
+              {historyItems.length === 0 ? <View style={styles.historyEmpty}><Ionicons name="time-outline" size={32} color={ui.colors.primary} /><Text style={styles.cardTitle}>Nessuna voce disponibile</Text><Text style={styles.muted}>Le prossime operazioni compariranno qui.</Text></View> : historyItems.map((item, index) => {
+                const detail = historyDetails(item);
+                return <View key={item.id} style={[styles.historyRow, index < historyItems.length - 1 && styles.historyDivider]}>
+                  <View style={styles.historyIcon}><Ionicons name="checkmark" size={15} color="#FFF" /></View>
+                  <View style={{ flex: 1, minWidth: 0 }}><View style={styles.historyTop}><Text style={styles.historyAction}>{historyActionLabel(item.action)}</Text><Text style={styles.historyDate}>{new Date(item.createdAt).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</Text></View><Text style={styles.historyActor}>{item.actorName ?? 'Account non disponibile'} · {roleLabel(item.actorRole)}</Text>{detail ? <Text style={styles.historyDetail}>{detail}</Text> : null}</View>
+                </View>;
+              })}
+            </ScrollView>
+          )}
+          <View style={styles.historyNotice}><Ionicons name="shield-checkmark-outline" size={19} color={ui.colors.primary} /><Text style={styles.historyNoticeText}>Questo storico proviene dal registro append-only DueCase e include anche i pagamenti collegati alla spesa.</Text></View>
+        </View></View>
+      </Modal>
 
       <Modal visible={receipt !== null} transparent animationType="fade" onRequestClose={() => setReceipt(null)}>
         <View style={styles.backdrop}><View style={styles.preview}><View style={styles.modalHead}><Text style={styles.modalTitle}>Ricevuta spesa</Text><Pressable onPress={() => setReceipt(null)}><Ionicons name="close" size={26} color={ui.colors.text} /></Pressable></View>{receipt?.receiptUrl ? <Image source={api.expenses.receiptSource(receipt.receiptUrl)} resizeMode="contain" style={styles.image} /> : null}</View></View>
@@ -474,6 +566,8 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   secondaryButton: { flex: 1, minWidth: 110, minHeight: 44, borderRadius: ui.radius.md, borderWidth: 1, borderColor: ui.colors.border, backgroundColor: ui.colors.input, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 10 },
   secondaryText: { color: ui.colors.primaryDark, fontWeight: '800' },
+  disputeButton: { flex: 1, minWidth: 100, minHeight: 44, borderRadius: ui.radius.md, backgroundColor: ui.colors.warningSoft, alignItems: 'center', justifyContent: 'center' },
+  disputeText: { color: ui.colors.warning, fontWeight: '900' },
   declineButton: { flex: 1, minWidth: 100, minHeight: 44, borderRadius: ui.radius.md, backgroundColor: ui.colors.dangerSoft, alignItems: 'center', justifyContent: 'center' },
   declineText: { color: ui.colors.danger, fontWeight: '900' },
   approveButton: { flex: 1, minWidth: 130, minHeight: 46, borderRadius: ui.radius.md, backgroundColor: ui.colors.primary, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
@@ -492,6 +586,26 @@ const styles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(10,50,103,.35)' },
   formModal: { backgroundColor: ui.colors.card, padding: 20, paddingBottom: 30, borderTopLeftRadius: 28, borderTopRightRadius: 28, gap: 10, width: '100%', maxWidth: 720, alignSelf: 'center' },
   paymentModal: { backgroundColor: ui.colors.card, padding: 20, paddingBottom: 30, borderTopLeftRadius: 28, borderTopRightRadius: 28, gap: 10, width: '100%', maxWidth: 650, alignSelf: 'center' },
+  disputeModal: { backgroundColor: ui.colors.card, padding: 20, paddingBottom: 28, borderTopLeftRadius: 28, borderTopRightRadius: 28, gap: 12, width: '100%', maxWidth: 650, alignSelf: 'center' },
+  disputeNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, padding: 12, borderRadius: 13, backgroundColor: ui.colors.warningSoft },
+  disputeNoticeText: { flex: 1, color: ui.colors.text, fontSize: 12, lineHeight: 18 },
+  disputeInput: { minHeight: 110, paddingTop: 12 },
+  disputeConfirmButton: { flex: 1, minHeight: 46, minWidth: 170, borderRadius: ui.radius.md, backgroundColor: ui.colors.warning, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
+  disputeConfirmText: { color: '#FFF', fontWeight: '900' },
+  historyModal: { backgroundColor: ui.colors.card, padding: 18, paddingBottom: 22, borderTopLeftRadius: 28, borderTopRightRadius: 28, gap: 12, width: '100%', maxWidth: 760, maxHeight: '86%', alignSelf: 'center' },
+  historyScroll: { maxHeight: 520 },
+  historyList: { paddingVertical: 4 },
+  historyEmpty: { alignItems: 'center', justifyContent: 'center', paddingVertical: 34, gap: 7 },
+  historyRow: { flexDirection: 'row', gap: 10, paddingVertical: 12 },
+  historyDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: ui.colors.border },
+  historyIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: ui.colors.primary, alignItems: 'center', justifyContent: 'center' },
+  historyTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' },
+  historyAction: { color: ui.colors.primaryDark, fontWeight: '900', flexShrink: 1 },
+  historyDate: { color: ui.colors.muted, fontSize: 10 },
+  historyActor: { color: ui.colors.muted, fontSize: 11, marginTop: 2 },
+  historyDetail: { color: ui.colors.text, fontSize: 12, lineHeight: 18, marginTop: 4 },
+  historyNotice: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderRadius: 13, backgroundColor: ui.colors.primarySoft, padding: 12 },
+  historyNoticeText: { flex: 1, color: ui.colors.text, fontSize: 11, lineHeight: 17 },
   otpModal: { backgroundColor: ui.colors.card, padding: 22, paddingBottom: 28, borderTopLeftRadius: 28, borderTopRightRadius: 28, gap: 14, alignItems: 'center', width: '100%', maxWidth: 620, alignSelf: 'center' },
   otpIcon: { width: 58, height: 58, borderRadius: 18, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
   modalHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
