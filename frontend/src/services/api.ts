@@ -19,6 +19,7 @@ import type {
   FamilyChildInput,
   FamilyDocument,
   FamilyEvent,
+  FamilyEventStatus,
   FamilyEventType,
   InAppNotification,
   LegalMessage,
@@ -89,8 +90,17 @@ export const api = {
     updateChild: (id: string, input: Partial<FamilyChildInput>) => request<FamilyChild>(`/family/children/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(input) }),
   },
   events: {
+    list: (from?: string, to?: string, status?: FamilyEventStatus) => {
+      const query = new URLSearchParams();
+      if (from) query.set('from', from);
+      if (to) query.set('to', to);
+      if (status) query.set('status', status);
+      const suffix = query.toString();
+      return request<FamilyEvent[]>(`/events${suffix ? `?${suffix}` : ''}`);
+    },
     listUpcoming: (limit = 3) => request<FamilyEvent[]>(`/events/upcoming?limit=${encodeURIComponent(String(limit))}`),
     create: (input: { title: string; startsAt: string; endsAt?: string | null; location?: string | null; notes?: string | null; childId?: string | null; eventType?: FamilyEventType; requiresApproval?: boolean }) => request<FamilyEvent>('/events', { method: 'POST', body: JSON.stringify(input) }),
+    respond: (id: string, status: 'confirmed' | 'rejected', note?: string | null) => request<FamilyEvent>(`/events/${encodeURIComponent(id)}/respond`, { method: 'POST', body: JSON.stringify({ status, note }) }),
   },
   turns: {
     list: (from: string, to: string) => request<DailyCustody[]>(`/turns?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
