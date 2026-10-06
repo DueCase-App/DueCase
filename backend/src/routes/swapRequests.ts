@@ -26,6 +26,10 @@ const createSchema = z.object({
   path: ['proposedDate'],
 });
 
+const responseSchema = z.object({
+  note: z.string().trim().max(2000).nullish(),
+});
+
 const listSchema = z.object({
   status: z.enum(['pending', 'approved', 'rejected']).optional(),
 });
@@ -40,6 +44,7 @@ type SwapRequestRow = {
   proposedDate: string;
   status: 'pending' | 'approved' | 'rejected';
   notes: string | null;
+  responseNote: string | null;
   reviewedBy: string | null;
   reviewedAt: string | null;
   createdAt: string;
@@ -56,6 +61,7 @@ const swapSelect = `
          sr.proposed_date::text AS "proposedDate",
          sr.status,
          sr.notes,
+         sr.response_note AS "responseNote",
          sr.reviewed_by AS "reviewedBy",
          sr.reviewed_at AS "reviewedAt",
          sr.created_at AS "createdAt",
@@ -135,6 +141,7 @@ router.post('/', asyncHandler(async (req, res) => {
               i.proposed_date::text AS "proposedDate",
               i.status,
               i.notes,
+              i.response_note AS "responseNote",
               i.reviewed_by AS "reviewedBy",
               i.reviewed_at AS "reviewedAt",
               i.created_at AS "createdAt",
@@ -162,6 +169,7 @@ router.post('/', asyncHandler(async (req, res) => {
 router.post('/:id/approve', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const requestId = uuid.parse(req.params.id);
+  const body = responseSchema.parse(req.body ?? {});
   const client = await pool.connect();
   let requesterId: string | null = null;
   let targetDateForNotification: string | null = null;
@@ -244,11 +252,19 @@ router.post('/:id/approve', asyncHandler(async (req, res) => {
     await client.query(
       `UPDATE swap_requests
           SET status = 'approved',
-              reviewed_by = $1,
+              response_note = $1,
+              reviewed_by = $2,
               reviewed_at = NOW(),
               updated_at = NOW()
-        WHERE id = $2`,
-      [auth.userId, requestId],
+        WHERE id = $3`,
+      [body.note ?? null, auth.userId, requestId],
+    );
+
+    await client.query(
+      `INSERT INTO family_activity_history
+        (id, family_id, actor_user_id, entity_type, entity_id, action, details)
+       VALUES ($1,$2,$3,'swap_request',$4,'approved',$5::jsonb)`,
+      [randomUUID(), auth.familyId, auth.userId, requestId, JSON.stringify({ responseNote: body.note ?? null })],
     );
 
     const { rows } = await client.query<SwapRequestRow>(
@@ -281,49 +297,70 @@ router.post('/:id/approve', asyncHandler(async (req, res) => {
 router.post('/:id/reject', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const requestId = uuid.parse(req.params.id);
+  const body = responseSchema.parse(req.body ?? {});
+  const client = await pool.connect();
+  let rejected: SwapRequestRow | undefined;
 
-  const { rows } = await pool.query<SwapRequestRow>(
-    `WITH updated AS (
-       UPDATE swap_requests
-          SET status = 'rejected',
-              reviewed_by = $1,
-              reviewed_at = NOW(),
-              updated_at = NOW()
-        WHERE id = $2
-          AND family_id = $3
-          AND status = 'pending'
-          AND requested_by <> $1
-       RETURNING *
-     )
-     SELECT u2.id,
-            u2.family_id AS "familyId",
-            u2.requested_by AS "requestedBy",
-            usr.display_name AS "requestedByName",
-            usr.role AS "requestedByRole",
-            u2.target_date::text AS "targetDate",
-            u2.proposed_date::text AS "proposedDate",
-            u2.status,
-            u2.notes,
-            u2.reviewed_by AS "reviewedBy",
-            u2.reviewed_at AS "reviewedAt",
-            u2.created_at AS "createdAt",
-            u2.updated_at AS "updatedAt"
-       FROM updated u2
-       JOIN users usr ON usr.id = u2.requested_by`,
-    [auth.userId, requestId, auth.familyId],
-  );
-
-  const rejected = rows[0];
-  if (!rejected) {
-    const existing = await pool.query<{ requestedBy: string; status: string }>(
-      `SELECT requested_by AS "requestedBy", status
-         FROM swap_requests
-        WHERE id = $1 AND family_id = $2`,
-      [requestId, auth.familyId],
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query<SwapRequestRow>(
+      `WITH updated AS (
+         UPDATE swap_requests
+            SET status = 'rejected',
+                response_note = $1,
+                reviewed_by = $2,
+                reviewed_at = NOW(),
+                updated_at = NOW()
+          WHERE id = $3
+            AND family_id = $4
+            AND status = 'pending'
+            AND requested_by <> $2
+         RETURNING *
+       )
+       SELECT u2.id,
+              u2.family_id AS "familyId",
+              u2.requested_by AS "requestedBy",
+              usr.display_name AS "requestedByName",
+              usr.role AS "requestedByRole",
+              u2.target_date::text AS "targetDate",
+              u2.proposed_date::text AS "proposedDate",
+              u2.status,
+              u2.notes,
+              u2.response_note AS "responseNote",
+              u2.reviewed_by AS "reviewedBy",
+              u2.reviewed_at AS "reviewedAt",
+              u2.created_at AS "createdAt",
+              u2.updated_at AS "updatedAt"
+         FROM updated u2
+         JOIN users usr ON usr.id = u2.requested_by`,
+      [body.note ?? null, auth.userId, requestId, auth.familyId],
     );
-    if (!existing.rows[0]) throw new ApiError(404, 'Swap request not found', 'SWAP_NOT_FOUND');
-    if (existing.rows[0].requestedBy === auth.userId) throw new ApiError(403, 'You cannot reject your own request', 'CANNOT_REVIEW_OWN_REQUEST');
-    throw new ApiError(409, 'This request has already been reviewed', 'SWAP_ALREADY_REVIEWED');
+
+    rejected = rows[0];
+    if (!rejected) {
+      const existing = await client.query<{ requestedBy: string; status: string }>(
+        `SELECT requested_by AS "requestedBy", status
+           FROM swap_requests
+          WHERE id = $1 AND family_id = $2`,
+        [requestId, auth.familyId],
+      );
+      if (!existing.rows[0]) throw new ApiError(404, 'Swap request not found', 'SWAP_NOT_FOUND');
+      if (existing.rows[0].requestedBy === auth.userId) throw new ApiError(403, 'You cannot reject your own request', 'CANNOT_REVIEW_OWN_REQUEST');
+      throw new ApiError(409, 'This request has already been reviewed', 'SWAP_ALREADY_REVIEWED');
+    }
+
+    await client.query(
+      `INSERT INTO family_activity_history
+        (id, family_id, actor_user_id, entity_type, entity_id, action, details)
+       VALUES ($1,$2,$3,'swap_request',$4,'rejected',$5::jsonb)`,
+      [randomUUID(), auth.familyId, auth.userId, requestId, JSON.stringify({ responseNote: body.note ?? null })],
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
   }
 
   await sendPushToUser(rejected.requestedBy, {
