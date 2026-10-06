@@ -38,14 +38,75 @@ async function insertFamilyWithUniqueCode(client: import('pg').PoolClient, id: s
       );
       return inviteCode;
     } catch (error) {
-      if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23505') {
-        continue;
-      }
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23505') continue;
       throw error;
     }
   }
   throw new ApiError(500, 'Unable to generate a unique family code');
 }
+
+router.get('/subscription', asyncHandler(async (req, res) => {
+  const auth = getAuth(req);
+  if (!auth.familyId) {
+    res.json({
+      planCode: 'premium_monthly',
+      priceCents: 499,
+      currency: 'EUR',
+      billingPeriod: 'month',
+      trial: false,
+      status: 'inactive',
+      currentPeriodStart: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      entitled: false,
+    });
+    return;
+  }
+
+  const { rows } = await pool.query<{
+    planCode: string;
+    priceCents: number;
+    currency: string;
+    billingPeriod: string;
+    status: 'inactive' | 'active' | 'past_due' | 'canceled';
+    currentPeriodStart: string | null;
+    currentPeriodEnd: string | null;
+    cancelAtPeriodEnd: boolean;
+  }>(
+    `SELECT plan_code AS "planCode",
+            price_cents AS "priceCents",
+            currency,
+            billing_period AS "billingPeriod",
+            status,
+            current_period_start AS "currentPeriodStart",
+            current_period_end AS "currentPeriodEnd",
+            cancel_at_period_end AS "cancelAtPeriodEnd"
+       FROM family_subscriptions
+      WHERE family_id = $1
+      LIMIT 1`,
+    [auth.familyId],
+  );
+
+  const subscription = rows[0] ?? {
+    planCode: 'premium_monthly',
+    priceCents: 499,
+    currency: 'EUR',
+    billingPeriod: 'month',
+    status: 'inactive' as const,
+    currentPeriodStart: null,
+    currentPeriodEnd: null,
+    cancelAtPeriodEnd: false,
+  };
+  const periodEnd = subscription.currentPeriodEnd ? new Date(subscription.currentPeriodEnd) : null;
+  const entitled = Boolean(
+    (subscription.status === 'active' || subscription.status === 'canceled')
+    && periodEnd
+    && !Number.isNaN(periodEnd.getTime())
+    && periodEnd.getTime() > Date.now(),
+  );
+
+  res.json({ ...subscription, trial: false, entitled });
+}));
 
 router.post('/create', asyncHandler(async (req, res) => {
   const auth = getAuth(req);
@@ -77,14 +138,10 @@ router.post('/create', asyncHandler(async (req, res) => {
     const inviteCode = await insertFamilyWithUniqueCode(client, familyId, familyName);
 
     const updated = await client.query(
-      `UPDATE users
-          SET family_id = $1, updated_at = NOW()
-        WHERE id = $2 AND family_id IS NULL`,
+      `UPDATE users SET family_id = $1, updated_at = NOW() WHERE id = $2 AND family_id IS NULL`,
       [familyId, user.id],
     );
-    if (updated.rowCount !== 1) {
-      throw new ApiError(409, 'Family setup has already changed', 'FAMILY_STATE_CHANGED');
-    }
+    if (updated.rowCount !== 1) throw new ApiError(409, 'Family setup has already changed', 'FAMILY_STATE_CHANGED');
 
     await client.query(
       `INSERT INTO parents (id, family_id, display_name, role)
@@ -97,10 +154,7 @@ router.post('/create', asyncHandler(async (req, res) => {
     );
 
     await client.query('COMMIT');
-    res.status(201).json({
-      family: { id: familyId, name: familyName, inviteCode },
-      memberCount: 1,
-    });
+    res.status(201).json({ family: { id: familyId, name: familyName, inviteCode }, memberCount: 1 });
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -135,13 +189,9 @@ router.post('/join', asyncHandler(async (req, res) => {
     if (user.familyId) throw new ApiError(409, 'You already belong to a family', 'ALREADY_IN_FAMILY');
 
     const familyResult = await client.query<{ id: string; name: string; inviteCode: string }>(
-      `SELECT id, name, invite_code AS "inviteCode"
-         FROM families
-        WHERE invite_code = $1
-        FOR UPDATE`,
+      `SELECT id, name, invite_code AS "inviteCode" FROM families WHERE invite_code = $1 FOR UPDATE`,
       [body.inviteCode],
     );
-
     const family = familyResult.rows[0];
     if (!family) throw new ApiError(404, 'Family code not found', 'INVALID_INVITE_CODE');
 
@@ -149,20 +199,13 @@ router.post('/join', asyncHandler(async (req, res) => {
       `SELECT role FROM users WHERE family_id = $1 FOR UPDATE`,
       [family.id],
     );
-
-    if (membersResult.rowCount !== null && membersResult.rowCount >= 2) {
-      throw new ApiError(409, 'This family already has two parents', 'FAMILY_FULL');
-    }
+    if (membersResult.rowCount !== null && membersResult.rowCount >= 2) throw new ApiError(409, 'This family already has two parents', 'FAMILY_FULL');
     if (membersResult.rows.some((member) => member.role === user.role)) {
       const roleLabel = user.role === 'father' ? 'father' : 'mother';
       throw new ApiError(409, `This family already has a ${roleLabel}`, 'ROLE_ALREADY_PRESENT');
     }
 
-    await client.query(
-      `UPDATE users SET family_id = $1, updated_at = NOW() WHERE id = $2`,
-      [family.id, user.id],
-    );
-
+    await client.query(`UPDATE users SET family_id = $1, updated_at = NOW() WHERE id = $2`, [family.id, user.id]);
     await client.query(
       `INSERT INTO parents (id, family_id, display_name, role)
        VALUES ($1, $2, $3, $4)
@@ -174,10 +217,7 @@ router.post('/join', asyncHandler(async (req, res) => {
     );
 
     await client.query('COMMIT');
-    res.json({
-      family,
-      memberCount: (membersResult.rowCount ?? membersResult.rows.length) + 1,
-    });
+    res.json({ family, memberCount: (membersResult.rowCount ?? membersResult.rows.length) + 1 });
   } catch (error) {
     await client.query('ROLLBACK');
     if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23505') {
