@@ -31,6 +31,12 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - name: Verify Expo token is configured
         shell: bash
         run: |
@@ -53,7 +59,7 @@ jobs:
           EXPO_PUBLIC_API_URL: https://duecase-api.onrender.com/api
         run: npx expo config --type public
 
-      - name: Verify Android prebuild locally
+      - name: Verify Android Gradle build locally
         env:
           EXPO_PUBLIC_API_URL: https://duecase-api.onrender.com/api
           CI: '1'
@@ -63,6 +69,9 @@ jobs:
           tar --exclude='./android' --exclude='./ios' --exclude='./.git' -cf - . | tar -xf - -C "$TMP_DIR"
           cd "$TMP_DIR"
           npx expo prebuild --platform android --no-install --clean
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --stacktrace --no-daemon
 
       - name: Verify Android JavaScript bundle locally
         env:
