@@ -1,4 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Notifications from 'expo-notifications';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, View } from 'react-native';
@@ -9,19 +11,24 @@ import { ExpensesScreen } from './src/screens/ExpensesScreen';
 import { FamilyOnboardingScreen } from './src/screens/FamilyOnboardingScreen';
 import { HomeScreen, type HomeDestination } from './src/screens/HomeScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
-import { RegisterScreen } from './src/screens/RegisterScreen';
+import { SignUpScreen } from './src/screens/SignUpScreen';
 import { initializePushNotificationsAsync } from './src/services/notifications';
 import { ui } from './src/theme/ui';
 
 type PrimaryTab = 'home' | 'calendar' | 'agreements' | 'expenses' | 'settings';
 type AppRoute = PrimaryTab | 'documents' | 'messages' | 'dossier' | 'family';
-type AuthPage = 'login' | 'register';
+type AuthStackParamList = {
+  Login: undefined;
+  SignUp: undefined;
+};
 
 type ForegroundNotification = {
   title: string;
   body: string;
   target: AppRoute | null;
 };
+
+const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 
 const tabs: Array<{ key: PrimaryTab; label: string; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap }> = [
   { key: 'home', label: 'Oggi', icon: 'home-outline', activeIcon: 'home' },
@@ -38,12 +45,17 @@ function routeFromNotificationData(data: Record<string, unknown> | undefined): A
 }
 
 export default function App(): React.JSX.Element {
-  return <AuthProvider><Root /></AuthProvider>;
+  return (
+    <AuthProvider>
+      <NavigationContainer>
+        <Root />
+      </NavigationContainer>
+    </AuthProvider>
+  );
 }
 
 function Root(): React.JSX.Element {
   const { user, booting } = useAuth();
-  const [authPage, setAuthPage] = useState<AuthPage>('login');
   const [requestedRoute, setRequestedRoute] = useState<AppRoute | null>(null);
   const [foregroundNotification, setForegroundNotification] = useState<ForegroundNotification | null>(null);
 
@@ -62,11 +74,15 @@ function Root(): React.JSX.Element {
         body: content.body?.trim() || 'Hai un nuovo aggiornamento.',
         target,
       });
-      hideTimer = setTimeout(() => { if (active) setForegroundNotification(null); }, 6500);
+      hideTimer = setTimeout(() => {
+        if (active) setForegroundNotification(null);
+      }, 6500);
     });
 
     const handleResponse = (response: Notifications.NotificationResponse): void => {
-      const target = routeFromNotificationData(response.notification.request.content.data as Record<string, unknown> | undefined);
+      const target = routeFromNotificationData(
+        response.notification.request.content.data as Record<string, unknown> | undefined,
+      );
       if (target && active) setRequestedRoute(target);
     };
 
@@ -89,15 +105,23 @@ function Root(): React.JSX.Element {
 
   let content: React.JSX.Element;
   if (booting) {
-    content = <View style={styles.loading}><ActivityIndicator size="large" color={ui.colors.primary} /><Text style={styles.loadingText}>Apertura di DueCase…</Text></View>;
+    content = (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color={ui.colors.primary} />
+        <Text style={styles.loadingText}>Apertura di DueCase…</Text>
+      </View>
+    );
   } else if (!user) {
-    content = authPage === 'login'
-      ? <LoginScreen onShowRegister={() => setAuthPage('register')} />
-      : <RegisterScreen onShowLogin={() => setAuthPage('login')} />;
+    content = <AuthenticationNavigator />;
   } else if (!user.familyId) {
     content = <FamilyOnboardingScreen />;
   } else {
-    content = <AuthenticatedApp requestedRoute={requestedRoute} onRequestedRouteHandled={() => setRequestedRoute(null)} />;
+    content = (
+      <AuthenticatedApp
+        requestedRoute={requestedRoute}
+        onRequestedRouteHandled={() => setRequestedRoute(null)}
+      />
+    );
   }
 
   return (
@@ -123,6 +147,34 @@ function Root(): React.JSX.Element {
       ) : null}
     </View>
   );
+}
+
+function AuthenticationNavigator(): React.JSX.Element {
+  return (
+    <AuthStack.Navigator
+      initialRouteName="Login"
+      screenOptions={{
+        headerShown: false,
+        animation: 'fade',
+        gestureEnabled: true,
+        contentStyle: { backgroundColor: '#EEF4FA' },
+      }}
+    >
+      <AuthStack.Screen name="Login" component={LoginRoute} />
+      <AuthStack.Screen name="SignUp" component={SignUpRoute} />
+    </AuthStack.Navigator>
+  );
+}
+
+type LoginRouteProps = NativeStackScreenProps<AuthStackParamList, 'Login'>;
+type SignUpRouteProps = NativeStackScreenProps<AuthStackParamList, 'SignUp'>;
+
+function LoginRoute({ navigation }: LoginRouteProps): React.JSX.Element {
+  return <LoginScreen onShowRegister={() => navigation.navigate('SignUp')} />;
+}
+
+function SignUpRoute({ navigation }: SignUpRouteProps): React.JSX.Element {
+  return <SignUpScreen onShowLogin={() => navigation.navigate('Login')} />;
 }
 
 function AuthenticatedApp({ requestedRoute, onRequestedRouteHandled }: { requestedRoute: AppRoute | null; onRequestedRouteHandled: () => void }): React.JSX.Element {
@@ -154,7 +206,13 @@ function AuthenticatedApp({ requestedRoute, onRequestedRouteHandled }: { request
         {route === 'dossier' ? <SimpleScreen icon="bar-chart-outline" title="Dossier" subtitle="Cronologia ordinata di documenti, spese, accordi e attività della famiglia." /> : null}
         {route === 'family' ? <SimpleScreen icon="people-outline" title="Famiglia" subtitle={`${user?.family?.name ?? 'La tua famiglia'} · Codice ${user?.family?.inviteCode ?? '—'}`} /> : null}
         {route === 'settings' ? (
-          <SimpleScreen icon="settings-outline" title="Impostazioni" subtitle={`${user?.displayName ?? ''} · ${user?.email ?? ''}`} actionLabel="Esci dall'account" onAction={() => void logout()} />
+          <SimpleScreen
+            icon="settings-outline"
+            title="Impostazioni"
+            subtitle={`${user?.displayName ?? ''} · ${user?.email ?? ''}`}
+            actionLabel="Esci dall'account"
+            onAction={() => void logout()}
+          />
         ) : null}
       </View>
 
@@ -169,7 +227,11 @@ function AuthenticatedApp({ requestedRoute, onRequestedRouteHandled }: { request
               onPress={() => setRoute(item.key)}
               style={[styles.navItem, selected && styles.navItemSelected]}
             >
-              <Ionicons name={selected ? item.activeIcon : item.icon} size={23} color={selected ? ui.colors.primary : ui.colors.muted} />
+              <Ionicons
+                name={selected ? item.activeIcon : item.icon}
+                size={23}
+                color={selected ? ui.colors.primary : ui.colors.muted}
+              />
               <Text numberOfLines={1} style={[styles.navText, selected && styles.navTextSelected]}>{item.label}</Text>
             </Pressable>
           );
@@ -179,14 +241,24 @@ function AuthenticatedApp({ requestedRoute, onRequestedRouteHandled }: { request
   );
 }
 
-function SimpleScreen({ icon, title, subtitle, actionLabel, onAction }: { icon: keyof typeof Ionicons.glyphMap; title: string; subtitle: string; actionLabel?: string; onAction?: () => void }): React.JSX.Element {
+function SimpleScreen({ icon, title, subtitle, actionLabel, onAction }: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  subtitle: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}): React.JSX.Element {
   return (
     <View style={styles.simpleScreen}>
       <View style={styles.simpleCard}>
         <View style={styles.simpleIcon}><Ionicons name={icon} size={32} color={ui.colors.primary} /></View>
         <Text style={styles.simpleTitle}>{title}</Text>
         <Text style={styles.simpleSubtitle}>{subtitle}</Text>
-        {actionLabel && onAction ? <Pressable style={styles.simpleAction} onPress={onAction}><Text style={styles.simpleActionText}>{actionLabel}</Text></Pressable> : null}
+        {actionLabel && onAction ? (
+          <Pressable style={styles.simpleAction} onPress={onAction}>
+            <Text style={styles.simpleActionText}>{actionLabel}</Text>
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
