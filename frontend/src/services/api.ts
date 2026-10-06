@@ -1,19 +1,32 @@
 import type {
+  AgreementCategory,
+  AgreementHistoryItem,
+  AgreementStatus,
   AuthResponse,
   AuthUser,
+  CustodyCurrent,
+  CustodyException,
+  CustodyPattern,
   DailyCustody,
   DocumentCategory,
   Expense,
   ExpenseCategory,
+  FamilyAgreement,
   FamilyBalance,
   FamilyActionResponse,
   FamilyChild,
+  FamilyChildInput,
   FamilyDocument,
   FamilyEvent,
+  FamilyEventType,
+  InAppNotification,
+  LegalMessage,
   ParentRole,
+  ParentingTimeReport,
   RegisterInput,
   SwapRequest,
   SwapRequestStatus,
+  ToneAnalysis,
 } from '../types/models';
 
 const PRODUCTION_API_URL = 'https://duecase-api.onrender.com/api';
@@ -65,18 +78,30 @@ export const api = {
     login: (input: { email: string; password: string }) => request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify(input) }),
     me: () => request<AuthUser>('/auth/me'),
     setPushToken: (expoPushToken: string | null) => request<{ ok: true }>('/auth/push-token', { method: 'PUT', body: JSON.stringify({ expoPushToken }) }),
+    deleteAccount: () => request<{ deleted: true }>('/auth/delete-account', { method: 'DELETE' }),
   },
   family: {
     create: (name?: string) => request<FamilyActionResponse>('/family/create', { method: 'POST', body: JSON.stringify(name?.trim() ? { name: name.trim() } : {}) }),
     join: (inviteCode: string) => request<FamilyActionResponse>('/family/join', { method: 'POST', body: JSON.stringify({ inviteCode }) }),
     children: () => request<FamilyChild[]>('/family/children'),
+    createChild: (input: FamilyChildInput) => request<FamilyChild>('/family/children', { method: 'POST', body: JSON.stringify(input) }),
+    updateChild: (id: string, input: Partial<FamilyChildInput>) => request<FamilyChild>(`/family/children/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(input) }),
   },
   events: {
     listUpcoming: (limit = 3) => request<FamilyEvent[]>(`/events/upcoming?limit=${encodeURIComponent(String(limit))}`),
+    create: (input: { title: string; startsAt: string; endsAt?: string | null; location?: string | null; notes?: string | null; childId?: string | null; eventType?: FamilyEventType; requiresApproval?: boolean }) => request<FamilyEvent>('/events', { method: 'POST', body: JSON.stringify(input) }),
   },
   turns: {
     list: (from: string, to: string) => request<DailyCustody[]>(`/turns?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
     setDay: (date: string, custodianRole: ParentRole, notes?: string) => request<DailyCustody>(`/turns/${encodeURIComponent(date)}`, { method: 'PUT', body: JSON.stringify({ custodianRole, notes }) }),
+  },
+  permanence: {
+    current: (date?: string) => request<CustodyCurrent>(`/permanence/current${date ? `?date=${encodeURIComponent(date)}` : ''}`),
+    pattern: () => request<CustodyPattern[]>('/permanence/pattern'),
+    setPatternDay: (childId: string, weekday: number, input: { custodianRole: ParentRole; overnight?: boolean; notes?: string | null }) => request<CustodyPattern>(`/permanence/pattern/${encodeURIComponent(childId)}/${weekday}`, { method: 'PUT', body: JSON.stringify(input) }),
+    exceptions: () => request<CustodyException[]>('/permanence/exceptions'),
+    createException: (input: { childId: string; custodyDate: string; custodianRole: ParentRole; overnight?: boolean; notes?: string | null }) => request<CustodyException>('/permanence/exceptions', { method: 'POST', body: JSON.stringify(input) }),
+    respondException: (id: string, status: 'approved' | 'rejected') => request<CustodyException>(`/permanence/exceptions/${encodeURIComponent(id)}/respond`, { method: 'POST', body: JSON.stringify({ status }) }),
   },
   swapRequests: {
     list: (status?: SwapRequestStatus) => request<SwapRequest[]>(`/swap-requests${status ? `?status=${encodeURIComponent(status)}` : ''}`),
@@ -87,7 +112,7 @@ export const api = {
   expenses: {
     list: () => request<Expense[]>('/expenses'),
     balance: () => request<FamilyBalance>('/expenses/balance'),
-    create: (input: { title: string; amount: string; category: ExpenseCategory; expenseDate?: string; notes?: string; isExtraordinary?: boolean; receipt?: { uri: string; name: string; type: string; file?: Blob } }) => {
+    create: (input: { title: string; amount: string; category: ExpenseCategory; expenseDate?: string; notes?: string; isExtraordinary?: boolean; fatherPercentage?: number; motherPercentage?: number; childIds?: string[]; receipt?: { uri: string; name: string; type: string; file?: Blob } }) => {
       const form = new FormData();
       form.append('title', input.title);
       form.append('amount', input.amount);
@@ -95,6 +120,9 @@ export const api = {
       form.append('isExtraordinary', input.isExtraordinary ? 'true' : 'false');
       if (input.expenseDate) form.append('expenseDate', input.expenseDate);
       if (input.notes?.trim()) form.append('notes', input.notes.trim());
+      if (input.fatherPercentage !== undefined) form.append('fatherPercentage', String(input.fatherPercentage));
+      if (input.motherPercentage !== undefined) form.append('motherPercentage', String(input.motherPercentage));
+      if (input.childIds?.length) form.append('childIds', JSON.stringify(input.childIds));
       if (input.receipt) {
         if (input.receipt.file) form.append('receipt', input.receipt.file, input.receipt.name);
         else form.append('receipt', { uri: input.receipt.uri, name: input.receipt.name, type: input.receipt.type } as unknown as Blob);
@@ -106,6 +134,18 @@ export const api = {
     approve: (id: string) => request<Expense>(`/expenses/${encodeURIComponent(id)}/approve`, { method: 'POST', body: JSON.stringify({}) }),
     decline: (id: string) => request<Expense>(`/expenses/${encodeURIComponent(id)}/decline`, { method: 'POST' }),
     receiptSource: (path: string) => ({ uri: `${API_URL}${path}`, headers: authHeaders() }),
+  },
+  agreements: {
+    list: (status?: AgreementStatus) => request<FamilyAgreement[]>(`/agreements${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+    create: (input: { category: AgreementCategory; title: string; body: string }) => request<FamilyAgreement>('/agreements', { method: 'POST', body: JSON.stringify(input) }),
+    respond: (id: string, status: 'approved' | 'rejected' | 'changes_requested', note?: string | null) => request<FamilyAgreement>(`/agreements/${encodeURIComponent(id)}/respond`, { method: 'POST', body: JSON.stringify({ status, note }) }),
+    history: (id: string) => request<AgreementHistoryItem[]>(`/agreements/${encodeURIComponent(id)}/history`),
+  },
+  messages: {
+    list: (limit = 100) => request<LegalMessage[]>(`/messages?limit=${encodeURIComponent(String(limit))}`),
+    send: (text: string) => request<LegalMessage>('/messages', { method: 'POST', body: JSON.stringify({ text }) }),
+    markRead: (id: string) => request<LegalMessage>(`/messages/${encodeURIComponent(id)}/read`, { method: 'PUT' }),
+    analyzeTone: (text: string) => request<ToneAnalysis>('/messages/analyze-tone', { method: 'POST', body: JSON.stringify({ text }) }),
   },
   documents: {
     list: () => request<FamilyDocument[]>('/documents'),
@@ -120,5 +160,19 @@ export const api = {
     },
     fileRequest: (path: string, download = false) => ({ url: `${API_URL}${path}${download ? `${path.includes('?') ? '&' : '?'}download=1` : ''}`, headers: authHeaders() }),
     fileSource: (path: string) => ({ uri: `${API_URL}${path}`, headers: authHeaders() }),
+  },
+  reports: {
+    parentingTime: (from?: string, to?: string) => {
+      const query = new URLSearchParams();
+      if (from) query.set('from', from);
+      if (to) query.set('to', to);
+      const suffix = query.toString();
+      return request<ParentingTimeReport>(`/reports/parenting-time${suffix ? `?${suffix}` : ''}`);
+    },
+  },
+  notifications: {
+    list: (unreadOnly = false) => request<InAppNotification[]>(`/notifications${unreadOnly ? '?unread=1' : ''}`),
+    markRead: (id: string) => request<{ id: string; readAt: string }>(`/notifications/${encodeURIComponent(id)}/read`, { method: 'PUT' }),
+    readAll: () => request<{ ok: true; updated: number }>('/notifications/read-all', { method: 'PUT' }),
   },
 };
