@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { requireAuth, requireFamily } from '../auth.js';
 import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
-import { parentRoleSubject, sendPushToOtherParent } from '../services/notificationService.js';
+import { parentRoleSubject, sendPushToOtherParent, sendPushToUser } from '../services/notificationService.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -57,6 +57,28 @@ async function appendHistory(input: {
      VALUES ($1,$2,$3,$4,$5,$6::jsonb)`,
     [randomUUID(), input.agreementId, input.familyId, input.actorUserId, input.action, JSON.stringify(input.snapshot)],
   );
+}
+
+function responseNotification(status: 'approved' | 'rejected' | 'changes_requested', title: string, role: 'father' | 'mother') {
+  if (status === 'approved') {
+    return {
+      title: 'Accordo approvato',
+      body: `${parentRoleSubject(role)} ha approvato l’accordo “${title}”.`,
+      type: 'agreement_approved',
+    };
+  }
+  if (status === 'rejected') {
+    return {
+      title: 'Accordo rifiutato',
+      body: `${parentRoleSubject(role)} ha rifiutato l’accordo “${title}”.`,
+      type: 'agreement_rejected',
+    };
+  }
+  return {
+    title: 'Modifiche richieste',
+    body: `${parentRoleSubject(role)} ha richiesto modifiche all’accordo “${title}”.`,
+    type: 'agreement_changes_requested',
+  };
 }
 
 router.get('/', asyncHandler(async (req, res) => {
@@ -119,8 +141,16 @@ router.post('/:id/respond', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const agreementId = uuid.parse(req.params.id);
   const body = responseSchema.parse(req.body);
-  const existingResult = await pool.query(
-    `SELECT id, created_by AS "createdBy", status FROM family_agreements WHERE id = $1 AND family_id = $2 FOR UPDATE`,
+  const existingResult = await pool.query<{
+    id: string;
+    createdBy: string;
+    status: string;
+    title: string;
+  }>(
+    `SELECT id, created_by AS "createdBy", status, title
+       FROM family_agreements
+      WHERE id = $1 AND family_id = $2
+      FOR UPDATE`,
     [agreementId, auth.familyId],
   );
   const existing = existingResult.rows[0];
@@ -144,6 +174,14 @@ router.post('/:id/respond', asyncHandler(async (req, res) => {
      VALUES ($1,$2,$3,'agreement',$4,$5,$6::jsonb)`,
     [randomUUID(), auth.familyId, auth.userId, agreementId, body.status, JSON.stringify({ note: body.note ?? null, role: auth.role })],
   );
+
+  const notification = responseNotification(body.status, existing.title, auth.role);
+  await sendPushToUser(existing.createdBy, {
+    title: notification.title,
+    body: notification.body,
+    data: { type: notification.type, screen: 'agreements', agreementId },
+  });
+
   res.json({ ...agreement, reviewedByName: auth.displayName, canRespond: false });
 }));
 
