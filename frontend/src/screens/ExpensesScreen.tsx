@@ -10,6 +10,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -32,6 +33,7 @@ export function ExpensesScreen(): React.JSX.Element {
   const [busy, setBusy] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<Expense | null>(null);
   const [otpExpense, setOtpExpense] = useState<Expense | null>(null);
+  const [otpEmail, setOtpEmail] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -60,10 +62,24 @@ export function ExpensesScreen(): React.JSX.Element {
     }
   }
 
+  async function approveOrdinary(expense: Expense): Promise<void> {
+    try {
+      setBusy(expense.id);
+      await api.expenses.approve(expense.id);
+      await load();
+      Alert.alert('Spesa approvata', 'La spesa è stata approvata.');
+    } catch (error) {
+      Alert.alert('Spesa', error instanceof Error ? error.message : 'Operazione non riuscita');
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function requestOtp(expense: Expense): Promise<void> {
     try {
       setBusy(expense.id);
-      await api.expenses.requestApprovalOtp(expense.id);
+      const result = await api.expenses.requestOtp(expense.id);
+      setOtpEmail(result.maskedEmail);
       setOtpExpense(expense);
     } catch (error) {
       Alert.alert('Firma OTP', error instanceof Error ? error.message : 'Impossibile inviare il codice OTP.');
@@ -76,10 +92,11 @@ export function ExpensesScreen(): React.JSX.Element {
     if (!otpExpense) return;
     try {
       setBusy(otpExpense.id);
-      await api.expenses.approve(otpExpense.id, code);
+      await api.expenses.verifyOtp(otpExpense.id, code);
       setOtpExpense(null);
+      setOtpEmail(null);
       await load();
-      Alert.alert('Spesa approvata', 'La firma OTP è stata verificata correttamente.');
+      Alert.alert('Spesa approvata', 'La firma OTP è stata verificata e registrata correttamente.');
     } catch (error) {
       Alert.alert('Firma OTP', error instanceof Error ? error.message : 'Codice OTP non valido.');
       throw error;
@@ -125,16 +142,20 @@ export function ExpensesScreen(): React.JSX.Element {
               <Text style={styles.amount}>{euro(expense.amount)}</Text>
             </View>
 
-            <View style={[styles.statusPill, expense.status === 'approved' ? styles.statusApproved : expense.status === 'declined' ? styles.statusDeclined : styles.statusPending]}>
-              <Text style={[styles.statusText, expense.status === 'approved' ? styles.statusApprovedText : expense.status === 'declined' ? styles.statusDeclinedText : styles.statusPendingText]}>{statusLabel(expense.status)}</Text>
+            <View style={styles.badgeRow}>
+              <View style={[styles.statusPill, expense.status === 'approved' ? styles.statusApproved : expense.status === 'declined' ? styles.statusDeclined : styles.statusPending]}>
+                <Text style={[styles.statusText, expense.status === 'approved' ? styles.statusApprovedText : expense.status === 'declined' ? styles.statusDeclinedText : styles.statusPendingText]}>{statusLabel(expense.status)}</Text>
+              </View>
+              {expense.isExtraordinary ? <View style={styles.extraordinaryPill}><Ionicons name="shield-checkmark-outline" size={14} color={ui.colors.primary} /><Text style={styles.extraordinaryText}>Straordinaria</Text></View> : null}
             </View>
 
             {expense.notes ? <Text style={styles.muted}>{expense.notes}</Text> : null}
+            {expense.otpSignatureMetadata ? <Text style={styles.signedText}>Firma OTP verificata il {new Date(expense.otpSignatureMetadata.verifiedAt).toLocaleString('it-IT')}</Text> : null}
             <View style={styles.actions}>
               {expense.receiptUrl ? <Pressable style={styles.secondaryButton} onPress={() => setReceipt(expense)}><Ionicons name="image-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Ricevuta</Text></Pressable> : null}
               {expense.canReview ? <>
                 <Pressable disabled={busy === expense.id} style={styles.declineButton} onPress={() => void decline(expense)}><Text style={styles.declineText}>Contesta</Text></Pressable>
-                <Pressable disabled={busy === expense.id} style={styles.approveButton} onPress={() => void requestOtp(expense)}>{busy === expense.id ? <ActivityIndicator color="#FFF" /> : <><Ionicons name="shield-checkmark-outline" size={18} color="#FFF" /><Text style={styles.approveText}>Approva con OTP</Text></>}</Pressable>
+                <Pressable disabled={busy === expense.id} style={styles.approveButton} onPress={() => void (expense.isExtraordinary ? requestOtp(expense) : approveOrdinary(expense))}>{busy === expense.id ? <ActivityIndicator color="#FFF" /> : <><Ionicons name={expense.isExtraordinary ? 'shield-checkmark-outline' : 'checkmark-circle-outline'} size={18} color="#FFF" /><Text style={styles.approveText}>Approva</Text></>}</Pressable>
               </> : null}
             </View>
           </View>
@@ -144,10 +165,15 @@ export function ExpensesScreen(): React.JSX.Element {
       <ExpenseModal visible={formVisible} onClose={() => setFormVisible(false)} onDone={(expense) => { setItems((current) => [expense, ...current]); setFormVisible(false); void load(); }} />
       <OtpApprovalModal
         expense={otpExpense}
+        maskedEmail={otpEmail}
         busy={otpExpense ? busy === otpExpense.id : false}
-        onClose={() => setOtpExpense(null)}
+        onClose={() => { setOtpExpense(null); setOtpEmail(null); }}
         onConfirm={approveWithOtp}
-        onResend={async () => { if (otpExpense) await api.expenses.requestApprovalOtp(otpExpense.id); }}
+        onResend={async () => {
+          if (!otpExpense) return;
+          const result = await api.expenses.requestOtp(otpExpense.id);
+          setOtpEmail(result.maskedEmail);
+        }}
       />
 
       <Modal visible={receipt !== null} transparent animationType="fade" onRequestClose={() => setReceipt(null)}>
@@ -157,7 +183,7 @@ export function ExpensesScreen(): React.JSX.Element {
   );
 }
 
-function OtpApprovalModal({ expense, busy, onClose, onConfirm, onResend }: { expense: Expense | null; busy: boolean; onClose: () => void; onConfirm: (otp: string) => Promise<void>; onResend: () => Promise<void> }): React.JSX.Element {
+function OtpApprovalModal({ expense, maskedEmail, busy, onClose, onConfirm, onResend }: { expense: Expense | null; maskedEmail: string | null; busy: boolean; onClose: () => void; onConfirm: (otp: string) => Promise<void>; onResend: () => Promise<void> }): React.JSX.Element {
   const [digits, setDigits] = useState(['', '', '', '', '', '']);
   const [resending, setResending] = useState(false);
   const refs = useRef<Array<TextInput | null>>([]);
@@ -177,7 +203,8 @@ function OtpApprovalModal({ expense, busy, onClose, onConfirm, onResend }: { exp
         <View style={styles.otpModal}>
           <View style={styles.otpIcon}><Ionicons name="shield-checkmark-outline" size={30} color={ui.colors.primary} /></View>
           <Text style={styles.modalTitle}>Firma OTP</Text>
-          <Text style={styles.otpSubtitle}>Per approvare la spesa straordinaria “{expense?.title}” inserisci il codice a 6 cifre inviato tramite notifica DueCase. Il codice scade in 5 minuti.</Text>
+          <Text style={styles.otpSubtitle}>Inserisci il codice di sicurezza a 6 cifre inviato per firmare l'approvazione di questa spesa straordinaria.</Text>
+          <Text style={styles.otpDelivery}>Codice inviato via email{maskedEmail ? ` a ${maskedEmail}` : ''}. Scade dopo 5 minuti.</Text>
           <View style={styles.otpRow}>
             {digits.map((digit, index) => (
               <TextInput
@@ -197,9 +224,9 @@ function OtpApprovalModal({ expense, busy, onClose, onConfirm, onResend }: { exp
           </View>
           <View style={styles.otpActions}>
             <Pressable style={styles.cancelButton} onPress={onClose}><Text style={styles.cancelText}>Annulla</Text></Pressable>
-            <Pressable disabled={busy || code.length !== 6} style={[styles.approveButton, (busy || code.length !== 6) && styles.disabledButton]} onPress={() => void onConfirm(code)}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.approveText}>Firma e approva</Text>}</Pressable>
+            <Pressable disabled={busy || code.length !== 6} style={[styles.approveButton, (busy || code.length !== 6) && styles.disabledButton]} onPress={() => void onConfirm(code)}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.approveText}>Conferma e Firma</Text>}</Pressable>
           </View>
-          <Pressable disabled={resending} onPress={() => void (async () => { try { setResending(true); await onResend(); Alert.alert('Firma OTP', 'Nuovo codice inviato.'); } catch (error) { Alert.alert('Firma OTP', error instanceof Error ? error.message : 'Invio non riuscito'); } finally { setResending(false); } })()}>
+          <Pressable disabled={resending} onPress={() => void (async () => { try { setResending(true); await onResend(); Alert.alert('Firma OTP', 'Nuovo codice inviato via email.'); } catch (error) { Alert.alert('Firma OTP', error instanceof Error ? error.message : 'Invio non riuscito'); } finally { setResending(false); } })()}>
             <Text style={styles.resendText}>{resending ? 'Invio…' : 'Invia un nuovo codice'}</Text>
           </Pressable>
         </View>
@@ -213,6 +240,7 @@ function ExpenseModal({ visible, onClose, onDone }: { visible: boolean; onClose:
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState<ExpenseCategory>('Scuola');
   const [notes, setNotes] = useState('');
+  const [isExtraordinary, setIsExtraordinary] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -239,9 +267,9 @@ function ExpenseModal({ visible, onClose, onDone }: { visible: boolean; onClose:
     if (!title.trim() || !/^\d{1,10}(?:\.\d{1,2})?$/.test(normalized) || Number(normalized) <= 0) { Alert.alert('Spesa', 'Inserisci titolo e importo valido.'); return; }
     try {
       setBusy(true);
-      const expense = await api.expenses.create({ title: title.trim(), amount: normalized, category, notes: notes.trim() || undefined, receipt: receipt ?? undefined });
+      const expense = await api.expenses.create({ title: title.trim(), amount: normalized, category, notes: notes.trim() || undefined, isExtraordinary, receipt: receipt ?? undefined });
       onDone(expense);
-      setTitle(''); setAmount(''); setNotes(''); setReceipt(null);
+      setTitle(''); setAmount(''); setNotes(''); setIsExtraordinary(false); setReceipt(null);
     } catch (error) {
       Alert.alert('Spesa', error instanceof Error ? error.message : 'Salvataggio non riuscito');
     } finally { setBusy(false); }
@@ -255,6 +283,10 @@ function ExpenseModal({ visible, onClose, onDone }: { visible: boolean; onClose:
           <Text style={styles.label}>Titolo</Text><TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="Es. Libri scolastici" placeholderTextColor={ui.colors.muted} />
           <Text style={styles.label}>Importo (€)</Text><TextInput style={styles.input} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={ui.colors.muted} />
           <Text style={styles.label}>Categoria</Text><View style={styles.chips}>{categories.map((item) => <Pressable key={item} onPress={() => setCategory(item)} style={[styles.chip, category === item && styles.chipSelected]}><Text style={[styles.chipText, category === item && styles.chipTextSelected]}>{item}</Text></Pressable>)}</View>
+          <View style={styles.extraordinaryToggle}>
+            <View style={styles.extraordinaryCopy}><Text style={styles.cardTitle}>Spesa straordinaria</Text><Text style={styles.meta}>Richiede la firma OTP dell’altro genitore per l’approvazione.</Text></View>
+            <Switch value={isExtraordinary} onValueChange={setIsExtraordinary} trackColor={{ false: '#D5DFEA', true: ui.colors.primary }} thumbColor="#FFF" />
+          </View>
           <Text style={styles.label}>Nota</Text><TextInput style={[styles.input, styles.notesInput]} multiline value={notes} onChangeText={setNotes} placeholder="Aggiungi una nota" placeholderTextColor={ui.colors.muted} />
           <Text style={styles.label}>Ricevuta (facoltativa)</Text>
           <View style={styles.actions}><Pressable style={styles.secondaryButton} onPress={() => void fromCamera()}><Ionicons name="camera-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Scatta foto</Text></Pressable><Pressable style={styles.secondaryButton} onPress={() => void fromLibrary()}><Ionicons name="images-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Galleria</Text></Pressable></View>
@@ -288,11 +320,15 @@ const styles = StyleSheet.create({
   cardTitle: { color: ui.colors.text, fontWeight: '900', fontSize: 16 },
   meta: { color: ui.colors.muted, fontSize: 12, lineHeight: 17 },
   amount: { color: ui.colors.text, fontWeight: '900', fontSize: 17 },
+  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   statusPill: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   statusText: { fontWeight: '900', fontSize: 12 },
   statusApproved: { backgroundColor: ui.colors.successSoft }, statusApprovedText: { color: ui.colors.success },
   statusDeclined: { backgroundColor: ui.colors.dangerSoft }, statusDeclinedText: { color: ui.colors.danger },
   statusPending: { backgroundColor: ui.colors.warningSoft }, statusPendingText: { color: ui.colors.warning },
+  extraordinaryPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.colors.primarySoft, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
+  extraordinaryText: { color: ui.colors.primary, fontWeight: '900', fontSize: 12 },
+  signedText: { color: ui.colors.success, fontWeight: '800', fontSize: 12 },
   actions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   secondaryButton: { flex: 1, minWidth: 100, minHeight: 44, borderRadius: ui.radius.md, borderWidth: 1, borderColor: ui.colors.border, backgroundColor: ui.colors.input, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 10 },
   secondaryText: { color: ui.colors.primaryDark, fontWeight: '800' },
@@ -317,9 +353,12 @@ const styles = StyleSheet.create({
   chipSelected: { backgroundColor: ui.colors.primarySoft, borderColor: ui.colors.primary },
   chipText: { color: ui.colors.muted, fontWeight: '700' },
   chipTextSelected: { color: ui.colors.primary, fontWeight: '900' },
-  otpSubtitle: { color: ui.colors.muted, textAlign: 'center', lineHeight: 20 },
+  extraordinaryToggle: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: ui.colors.input, borderWidth: 1, borderColor: ui.colors.border, borderRadius: ui.radius.md, padding: 13 },
+  extraordinaryCopy: { flex: 1, gap: 3 },
+  otpSubtitle: { color: ui.colors.text, textAlign: 'center', lineHeight: 21, fontWeight: '700' },
+  otpDelivery: { color: ui.colors.muted, textAlign: 'center', lineHeight: 19, fontSize: 13 },
   otpRow: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', gap: 7, marginVertical: 4 },
-  otpInput: { flex: 1, maxWidth: 54, minHeight: 58, borderRadius: 13, backgroundColor: ui.colors.input, borderWidth: 1, borderColor: ui.colors.border, color: ui.colors.text, fontSize: 24, fontWeight: '900' },
+  otpInput: { flex: 1, maxWidth: 54, minHeight: 58, borderRadius: 13, backgroundColor: '#E9F0F8', borderWidth: 1, borderColor: ui.colors.border, color: ui.colors.text, fontSize: 24, fontWeight: '900' },
   otpInputFilled: { borderColor: ui.colors.primary, backgroundColor: ui.colors.primarySoft },
   otpActions: { width: '100%', flexDirection: 'row', gap: 9 },
   resendText: { color: ui.colors.primary, fontWeight: '900' },
