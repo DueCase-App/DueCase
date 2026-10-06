@@ -91,7 +91,8 @@ BEGIN
 END $$;
 
 -- Le ricevute di lettura diventano record append-only separati: il messaggio resta intatto.
-CREATE TABLE IF NOT EXISTS message_reads (
+-- Nome dedicato per evitare collisioni con eventuali tabelle legacy chiamate message_reads.
+CREATE TABLE IF NOT EXISTS message_read_receipts (
   message_id UUID NOT NULL,
   family_id UUID NOT NULL,
   reader_id UUID NOT NULL,
@@ -99,11 +100,11 @@ CREATE TABLE IF NOT EXISTS message_reads (
   PRIMARY KEY (message_id, reader_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_message_reads_family_message
-  ON message_reads(family_id, message_id, read_at);
+CREATE INDEX IF NOT EXISTS idx_message_read_receipts_family_message
+  ON message_read_receipts(family_id, message_id, read_at);
 
 -- Migra le vecchie read_at verso la tabella append-only quando e' possibile individuare l'altro genitore.
-INSERT INTO message_reads (message_id, family_id, reader_id, read_at)
+INSERT INTO message_read_receipts (message_id, family_id, reader_id, read_at)
 SELECT m.id,
        m.family_id,
        other_parent.id,
@@ -136,7 +137,7 @@ BEFORE UPDATE OR DELETE ON messages
 FOR EACH ROW
 EXECUTE FUNCTION duecase_messages_strict_immutable_guard();
 
-CREATE OR REPLACE FUNCTION duecase_message_reads_append_only_guard()
+CREATE OR REPLACE FUNCTION duecase_message_read_receipts_append_only_guard()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
@@ -146,11 +147,11 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS trg_message_reads_append_only ON message_reads;
-CREATE TRIGGER trg_message_reads_append_only
-BEFORE UPDATE OR DELETE ON message_reads
+DROP TRIGGER IF EXISTS trg_message_read_receipts_append_only ON message_read_receipts;
+CREATE TRIGGER trg_message_read_receipts_append_only
+BEFORE UPDATE OR DELETE ON message_read_receipts
 FOR EACH ROW
-EXECUTE FUNCTION duecase_message_reads_append_only_guard();
+EXECUTE FUNCTION duecase_message_read_receipts_append_only_guard();
 
 -- 3) Le esportazioni probatorie restano append-only ma non devono impedire
 -- la cancellazione fisica dell'account o della famiglia. Gli UUID restano opachi.
