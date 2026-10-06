@@ -4,7 +4,7 @@
     "slug": "duecase",
     "owner": "tecnicoelioss-team",
     "scheme": "duecase",
-    "version": "0.2.3",
+    "version": "0.2.4",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#2b5891",
@@ -54,6 +54,8 @@
     },
     "android": {
       "package": "com.tecnicoelios.duecase",
+      "softwareKeyboardLayoutMode": "resize",
+      "edgeToEdgeEnabled": false,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.POST_NOTIFICATIONS"
