@@ -51,7 +51,7 @@ const messageSelect = `
     LEFT JOIN users u ON u.id = m.sender_id
     LEFT JOIN LATERAL (
       SELECT MIN(mr.read_at) AS read_at
-        FROM message_reads mr
+        FROM message_read_receipts mr
        WHERE mr.message_id = m.id
          AND mr.family_id = m.family_id
     ) r ON TRUE
@@ -146,7 +146,7 @@ router.put('/:id/read', asyncHandler(async (req, res) => {
   serializeMessage(existing, auth.userId);
   if (!existing.readAt) {
     await pool.query(
-      `INSERT INTO message_reads (message_id, family_id, reader_id, read_at)
+      `INSERT INTO message_read_receipts (message_id, family_id, reader_id, read_at)
        VALUES ($1, $2, $3, clock_timestamp())
        ON CONFLICT (message_id, reader_id) DO NOTHING`,
       [messageId, auth.familyId, auth.userId],
