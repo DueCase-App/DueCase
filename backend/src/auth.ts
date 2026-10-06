@@ -23,7 +23,13 @@ export type AuthContext = {
 
 type AuthenticatedRequest = Request & { auth?: AuthContext };
 
+type SubscriptionRow = {
+  status: 'inactive' | 'active' | 'past_due' | 'canceled';
+  currentPeriodEnd: string | null;
+};
+
 const expiresIn = config.JWT_EXPIRES_IN as SignOptions['expiresIn'];
+const PREMIUM_MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 export function signAccessToken(userId: string): string {
   return jwt.sign({}, config.JWT_SECRET, {
@@ -109,4 +115,64 @@ export function requireFamily(req: Request): AuthContext & { familyId: string } 
     throw new ApiError(409, 'Complete family setup first', 'FAMILY_REQUIRED');
   }
   return auth as AuthContext & { familyId: string };
+}
+
+export async function checkPremiumStatus(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!PREMIUM_MUTATION_METHODS.has(req.method.toUpperCase())) {
+      next();
+      return;
+    }
+
+    const auth = getAuth(req);
+    if (!auth.familyId) {
+      throw new ApiError(
+        403,
+        'Abbonamento Premium richiesto',
+        'PREMIUM_REQUIRED',
+        { priceCents: 499, currency: 'EUR', billingPeriod: 'month', trial: false },
+      );
+    }
+
+    const { rows } = await pool.query<SubscriptionRow>(
+      `SELECT status,
+              CASE WHEN current_period_end IS NULL THEN NULL
+                   ELSE to_char(current_period_end AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+               END AS "currentPeriodEnd"
+         FROM family_subscriptions
+        WHERE family_id = $1
+        LIMIT 1`,
+      [auth.familyId],
+    );
+
+    const subscription = rows[0];
+    const periodEnd = subscription?.currentPeriodEnd ? new Date(subscription.currentPeriodEnd) : null;
+    const entitled = Boolean(
+      subscription
+      && (subscription.status === 'active' || subscription.status === 'canceled')
+      && periodEnd
+      && !Number.isNaN(periodEnd.getTime())
+      && periodEnd.getTime() > Date.now(),
+    );
+
+    if (!entitled) {
+      throw new ApiError(
+        403,
+        'Abbonamento Premium richiesto',
+        'PREMIUM_REQUIRED',
+        {
+          priceCents: 499,
+          currency: 'EUR',
+          billingPeriod: 'month',
+          trial: false,
+          status: subscription?.status ?? 'inactive',
+          currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
+        },
+      );
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
 }
