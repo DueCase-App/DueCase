@@ -158,17 +158,27 @@ export const api = {
   },
   messages: {
     list: (limit = 100) => request<LegalMessage[]>(`/messages?limit=${encodeURIComponent(String(limit))}`),
-    send: (text: string) => request<LegalMessage>('/messages', { method: 'POST', body: JSON.stringify({ text }) }),
+    send: (text: string, attachment?: { uri: string; name: string; type: string; file?: Blob }) => {
+      const form = new FormData();
+      form.append('text', text);
+      if (attachment) {
+        if (attachment.file) form.append('attachment', attachment.file, attachment.name);
+        else form.append('attachment', { uri: attachment.uri, name: attachment.name, type: attachment.type } as unknown as Blob);
+      }
+      return request<LegalMessage>('/messages', { method: 'POST', body: form });
+    },
     markRead: (id: string) => request<LegalMessage>(`/messages/${encodeURIComponent(id)}/read`, { method: 'PUT' }),
     analyzeTone: (text: string) => request<ToneAnalysis>('/messages/analyze-tone', { method: 'POST', body: JSON.stringify({ text }) }),
+    attachmentSource: (path: string) => ({ uri: `${API_URL}${path}`, headers: authHeaders() }),
   },
   documents: {
     list: () => request<FamilyDocument[]>('/documents'),
-    create: (input: { title: string; description?: string; category: DocumentCategory; file: { uri: string; name: string; type: string; file?: Blob } }) => {
+    create: (input: { title: string; description?: string; category: DocumentCategory; childIds?: string[]; file: { uri: string; name: string; type: string; file?: Blob } }) => {
       const form = new FormData();
       form.append('title', input.title);
       form.append('category', input.category);
       if (input.description?.trim()) form.append('description', input.description.trim());
+      if (input.childIds?.length) form.append('childIds', JSON.stringify(input.childIds));
       if (input.file.file) form.append('file', input.file.file, input.file.name);
       else form.append('file', { uri: input.file.uri, name: input.file.name, type: input.file.type } as unknown as Blob);
       return request<FamilyDocument>('/documents', { method: 'POST', body: form });
