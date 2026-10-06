@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { ui } from '../theme/ui';
@@ -11,6 +12,7 @@ function roleLabel(role: 'father' | 'mother' | undefined): string {
 
 export function SettingsScreen(): React.JSX.Element {
   const { user, logout } = useAuth();
+  const insets = useSafeAreaInsets();
   const [deleting, setDeleting] = useState(false);
 
   const confirmDelete = (): void => {
@@ -26,45 +28,79 @@ export function SettingsScreen(): React.JSX.Element {
 
   const deleteAccount = async (): Promise<void> => {
     setDeleting(true);
-    try { await api.auth.deleteAccount(); await logout(); }
-    catch (error) { Alert.alert('Elimina account', error instanceof Error ? error.message : 'Impossibile eliminare l’account.'); }
-    finally { setDeleting(false); }
+    try {
+      await api.auth.deleteAccount();
+      await logout();
+    } catch (error) {
+      Alert.alert('Elimina account', error instanceof Error ? error.message : 'Impossibile eliminare l’account.');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <View><Text style={styles.eyebrow}>ACCOUNT E PRIVACY</Text><Text style={styles.title}>Impostazioni</Text><Text style={styles.subtitle}>Profilo, famiglia e gestione dell’account.</Text></View>
+    <SafeAreaView style={styles.safeArea} edges={['bottom', 'left', 'right']}>
+      <ScrollView
+        style={styles.screen}
+        contentContainerStyle={[styles.content, { paddingBottom: Math.max(72, insets.bottom + 52) }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <Text style={styles.eyebrow}>ACCOUNT E PRIVACY</Text>
+          <Text style={styles.title}>Impostazioni</Text>
+          <Text style={styles.subtitle}>Profilo, famiglia e gestione dell’account.</Text>
+        </View>
 
-      <View style={styles.profileCard}>
-        <View style={styles.avatar}><Ionicons name={user?.role === 'mother' ? 'woman-outline' : 'man-outline'} size={30} color={ui.colors.primary} /></View>
-        <View style={{ flex: 1 }}><Text style={styles.profileName}>{user?.displayName}</Text><Text style={styles.profileMeta}>{roleLabel(user?.role)} · {user?.email}</Text><Text style={styles.familyMeta}>{user?.family?.name ?? 'Famiglia'} · codice {user?.family?.inviteCode ?? '—'}</Text></View>
-      </View>
+        <View style={styles.profileCard}>
+          <View style={styles.avatar}><Ionicons name={user?.role === 'mother' ? 'woman-outline' : 'man-outline'} size={30} color={ui.colors.primary} /></View>
+          <View style={styles.flex}>
+            <Text style={styles.profileName}>{user?.displayName}</Text>
+            <Text style={styles.profileMeta}>{roleLabel(user?.role)} · {user?.email}</Text>
+            <Text style={styles.familyMeta}>{user?.family?.name ?? 'Famiglia'} · codice {user?.family?.inviteCode ?? '—'}</Text>
+          </View>
+        </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Accesso</Text>
-        <SettingRow icon="log-out-outline" title="Esci dall’account" subtitle="Il tuo account resterà attivo." onPress={() => void logout()} />
-      </View>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Accesso</Text>
+          <SettingRow icon="log-out-outline" title="Esci dall’account" subtitle="Il tuo account resterà attivo." onPress={() => void logout()} />
+        </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Privacy</Text>
-        <View style={styles.infoBox}><Ionicons name="shield-checkmark-outline" size={22} color={ui.colors.primary} /><Text style={styles.infoText}>DueCase separa i dati per famiglia. Le informazioni di una famiglia non sono accessibili da utenti appartenenti a famiglie diverse.</Text></View>
-        <Pressable disabled={deleting} onPress={confirmDelete} style={styles.deleteRow}>
-          <View style={styles.deleteIcon}><Ionicons name="trash-outline" size={21} color={ui.colors.danger} /></View>
-          <View style={{ flex: 1 }}><Text style={styles.deleteTitle}>Elimina account</Text><Text style={styles.deleteSubtitle}>Cancella definitivamente il tuo profilo e i dati personali eliminabili.</Text></View>
-          {deleting ? <ActivityIndicator color={ui.colors.danger} /> : <Ionicons name="chevron-forward" size={19} color={ui.colors.danger} />}
-        </Pressable>
-      </View>
-    </ScrollView>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Privacy</Text>
+          <View style={styles.infoBox}>
+            <Ionicons name="shield-checkmark-outline" size={22} color={ui.colors.primary} />
+            <Text style={styles.infoText}>DueCase separa i dati per famiglia. Le informazioni di una famiglia non sono accessibili da utenti appartenenti a famiglie diverse.</Text>
+          </View>
+          <Pressable disabled={deleting} onPress={confirmDelete} style={styles.deleteRow}>
+            <View style={styles.deleteIcon}><Ionicons name="trash-outline" size={21} color={ui.colors.danger} /></View>
+            <View style={styles.flex}>
+              <Text style={styles.deleteTitle}>Elimina account</Text>
+              <Text style={styles.deleteSubtitle}>Cancella definitivamente il tuo profilo e i dati personali eliminabili.</Text>
+            </View>
+            {deleting ? <ActivityIndicator color={ui.colors.danger} /> : <Ionicons name="chevron-forward" size={19} color={ui.colors.danger} />}
+          </Pressable>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 function SettingRow({ icon, title, subtitle, onPress }: { icon: keyof typeof Ionicons.glyphMap; title: string; subtitle: string; onPress: () => void }): React.JSX.Element {
-  return <Pressable onPress={onPress} style={styles.settingRow}><View style={styles.settingIcon}><Ionicons name={icon} size={21} color={ui.colors.primary} /></View><View style={{ flex: 1 }}><Text style={styles.settingTitle}>{title}</Text><Text style={styles.settingSubtitle}>{subtitle}</Text></View><Ionicons name="chevron-forward" size={19} color={ui.colors.muted} /></Pressable>;
+  return (
+    <Pressable onPress={onPress} style={styles.settingRow}>
+      <View style={styles.settingIcon}><Ionicons name={icon} size={21} color={ui.colors.primary} /></View>
+      <View style={styles.flex}><Text style={styles.settingTitle}>{title}</Text><Text style={styles.settingSubtitle}>{subtitle}</Text></View>
+      <Ionicons name="chevron-forward" size={19} color={ui.colors.muted} />
+    </Pressable>
+  );
 }
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: ui.colors.background },
   screen: { flex: 1, backgroundColor: ui.colors.background },
-  content: { padding: 20, paddingBottom: 42, gap: 16, maxWidth: 850, width: '100%', alignSelf: 'center' },
+  content: { paddingHorizontal: 20, paddingTop: 22, gap: 16, maxWidth: 850, width: '100%', alignSelf: 'center' },
+  header: { gap: 3 },
+  flex: { flex: 1, minWidth: 0 },
   eyebrow: { fontSize: 10, fontWeight: '900', color: ui.colors.orange, letterSpacing: 1 },
   title: { fontSize: 30, fontWeight: '900', color: ui.colors.primaryDark },
   subtitle: { color: ui.colors.muted, marginTop: 3 },
