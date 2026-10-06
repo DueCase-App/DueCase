@@ -9,7 +9,6 @@
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#2b5891",
     "primaryColor": "#2b5891",
-    "icon": "./assets/icon.png",
     "plugins": [
       "expo-secure-store",
       "expo-document-picker",
@@ -18,19 +17,14 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#2b5891",
-          "image": "./assets/splash-icon.png",
-          "imageWidth": 220,
-          "resizeMode": "contain",
           "dark": {
-            "backgroundColor": "#2b5891",
-            "image": "./assets/splash-icon.png"
+            "backgroundColor": "#2b5891"
           }
         }
       ],
       [
         "expo-notifications",
         {
-          "icon": "./assets/notification-icon.png",
           "color": "#2b5891",
           "defaultChannel": "duecase-events",
           "enableBackgroundRemoteNotifications": false
@@ -48,7 +42,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tecnicoelios.duecase",
-      "icon": "./assets/icon.png",
       "backgroundColor": "#2b5891",
       "infoPlist": {
         "NSCameraUsageDescription": "DueCase usa la fotocamera esclusivamente per fotografare ricevute e documenti che scegli di allegare.",
@@ -60,12 +53,6 @@
     },
     "android": {
       "package": "com.tecnicoelios.duecase",
-      "icon": "./assets/icon.png",
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "monochromeImage": "./assets/adaptive-icon-monochrome.png",
-        "backgroundColor": "#2b5891"
-      },
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.POST_NOTIFICATIONS"
