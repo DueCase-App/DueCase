@@ -37,7 +37,6 @@ function uploadDocument(req: Request, res: Response, next: NextFunction): void {
       next();
       return;
     }
-
     const message = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE'
       ? 'Il documento non può superare 20 MB.'
       : error instanceof Error ? error.message : 'Documento non valido.';
@@ -45,10 +44,25 @@ function uploadDocument(req: Request, res: Response, next: NextFunction): void {
   });
 }
 
+const childIdsSchema = z.preprocess((value) => {
+  if (value === undefined || value === null || value === '') return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}, z.array(uuid).max(12));
+
 const createDocumentSchema = z.object({
   title: z.string().trim().min(1).max(180),
   description: z.string().trim().max(3000).optional(),
   category: z.enum(categories),
+  childIds: childIdsSchema,
 });
 
 router.use(requireAuth);
@@ -66,6 +80,18 @@ const documentSelect = `
          d.mime_type AS "mimeType",
          d.filename,
          d.file_size_bytes AS "fileSizeBytes",
+         COALESCE((
+           SELECT json_agg(dc.child_id ORDER BY c.display_name)
+             FROM document_children dc
+             JOIN children c ON c.id = dc.child_id AND c.family_id = dc.family_id
+            WHERE dc.document_id = d.id AND dc.family_id = d.family_id
+         ), '[]'::json) AS "childIds",
+         COALESCE((
+           SELECT json_agg(json_build_object('id', c.id, 'displayName', c.display_name) ORDER BY c.display_name)
+             FROM document_children dc
+             JOIN children c ON c.id = dc.child_id AND c.family_id = dc.family_id
+            WHERE dc.document_id = d.id AND dc.family_id = d.family_id
+         ), '[]'::json) AS children,
          d.created_at AS "createdAt",
          d.updated_at AS "updatedAt"
     FROM documents d
@@ -101,9 +127,7 @@ router.get('/:id/file', asyncHandler(async (req, res) => {
   );
 
   const document = rows[0];
-  if (!document) {
-    throw new ApiError(404, 'Documento non trovato', 'DOCUMENT_NOT_FOUND');
-  }
+  if (!document) throw new ApiError(404, 'Documento non trovato', 'DOCUMENT_NOT_FOUND');
   if (!document.fileData) {
     throw new ApiError(
       409,
@@ -114,7 +138,6 @@ router.get('/:id/file', asyncHandler(async (req, res) => {
 
   const safeFilename = (document.filename ?? 'documento').replace(/["\\\r\n]/g, '_');
   const disposition = req.query.download === '1' ? 'attachment' : 'inline';
-
   res.setHeader('Content-Type', document.mimeType ?? 'application/octet-stream');
   res.setHeader('Content-Length', String(document.fileData.length));
   res.setHeader('Cache-Control', 'private, no-store, max-age=0');
@@ -127,37 +150,54 @@ router.get('/:id/file', asyncHandler(async (req, res) => {
 router.post('/', uploadDocument, asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const body = createDocumentSchema.parse(req.body);
-  if (!req.file) {
-    throw new ApiError(400, 'Seleziona un PDF o un’immagine da caricare.', 'DOCUMENT_FILE_REQUIRED');
-  }
+  if (!req.file) throw new ApiError(400, 'Seleziona un PDF o un’immagine da caricare.', 'DOCUMENT_FILE_REQUIRED');
 
   const id = randomUUID();
   const fileUrl = `/documents/${id}/file`;
+  const childIds = [...new Set(body.childIds)];
+  const client = await pool.connect();
 
-  await pool.query(
-    `INSERT INTO documents
-      (id, family_id, title, description, file_url, uploaded_by_user_id,
-       category, mime_type, filename, file_size_bytes, file_data)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-    [
-      id,
-      auth.familyId,
-      body.title,
-      body.description || null,
-      fileUrl,
-      auth.userId,
-      body.category,
-      req.file.mimetype,
-      req.file.originalname,
-      req.file.size,
-      req.file.buffer,
-    ],
-  );
+  try {
+    await client.query('BEGIN');
+    if (childIds.length > 0) {
+      const valid = await client.query<{ id: string }>(
+        `SELECT id FROM children WHERE family_id = $1 AND id = ANY($2::uuid[])`,
+        [auth.familyId, childIds],
+      );
+      if (valid.rows.length !== childIds.length) throw new ApiError(400, 'Uno o più figli selezionati non appartengono alla famiglia.', 'INVALID_DOCUMENT_CHILD');
+    }
 
-  const { rows } = await pool.query(
-    `${documentSelect} WHERE d.id = $1 AND d.family_id = $2`,
-    [id, auth.familyId],
-  );
+    await client.query(
+      `INSERT INTO documents
+        (id, family_id, title, description, file_url, uploaded_by_user_id,
+         category, mime_type, filename, file_size_bytes, file_data)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [id, auth.familyId, body.title, body.description || null, fileUrl, auth.userId, body.category, req.file.mimetype, req.file.originalname, req.file.size, req.file.buffer],
+    );
+
+    for (const childId of childIds) {
+      await client.query(
+        `INSERT INTO document_children (document_id, child_id, family_id)
+         VALUES ($1,$2,$3)
+         ON CONFLICT (document_id, child_id) DO NOTHING`,
+        [id, childId, auth.familyId],
+      );
+    }
+
+    await client.query(
+      `INSERT INTO family_activity_history (id, family_id, actor_user_id, entity_type, entity_id, action, details)
+       VALUES ($1,$2,$3,'document',$4,'uploaded',$5::jsonb)`,
+      [randomUUID(), auth.familyId, auth.userId, id, JSON.stringify({ title: body.title, category: body.category, childIds, filename: req.file.originalname })],
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  const { rows } = await pool.query(`${documentSelect} WHERE d.id = $1 AND d.family_id = $2`, [id, auth.familyId]);
   res.status(201).json(rows[0]);
 }));
 
