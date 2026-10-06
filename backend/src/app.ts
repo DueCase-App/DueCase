@@ -1,9 +1,11 @@
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
+import { checkPremiumStatus, requireAuth } from './auth.js';
 import { config } from './config.js';
 import { checkDatabase } from './db.js';
 import { asyncHandler, errorHandler } from './http.js';
+import accountRouter from './routes/account.js';
 import authRouter from './routes/auth.js';
 import documentsRouter from './routes/documents.js';
 import expensesRouter from './routes/expenses.js';
@@ -28,12 +30,17 @@ app.get('/api/health', asyncHandler(async (_req, res) => {
 }));
 
 app.use('/api/auth', authRouter);
+app.use('/api/auth', accountRouter);
 app.use('/api/family', familyRouter);
-app.use('/api/turns', turnsRouter);
-app.use('/api/swap-requests', swapRequestsRouter);
-app.use('/api/expenses', expensesRouter);
-app.use('/api/documents', documentsRouter);
-app.use('/api/messages', messagesRouter);
+
+// Consultazione sempre disponibile agli utenti autenticati; tutte le mutazioni
+// dei moduli operativi richiedono Premium famiglia attivo.
+app.use('/api/turns', requireAuth, checkPremiumStatus, turnsRouter);
+app.use('/api/swap-requests', requireAuth, checkPremiumStatus, swapRequestsRouter);
+app.use('/api/expenses', requireAuth, checkPremiumStatus, expensesRouter);
+app.use('/api/documents', requireAuth, checkPremiumStatus, documentsRouter);
+app.use('/api/messages', requireAuth, checkPremiumStatus, messagesRouter);
+
 app.use('/api/reports', reportsRouter);
 
 app.use((_req, res) => {
