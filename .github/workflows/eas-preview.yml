@@ -1,4 +1,4 @@
-name: EAS Preview APK
+name: Android Preview APK
 
 on:
   push:
@@ -11,12 +11,8 @@ on:
 permissions:
   contents: read
 
-env:
-  EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-
 jobs:
   preview-apk:
-    if: ${{ !contains(github.event.head_commit.message || '', '[skip eas]') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -37,14 +33,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Verify Expo token is configured
-        shell: bash
-        run: |
-          if [ -z "$EXPO_TOKEN" ]; then
-            echo "EXPO_TOKEN is not configured in GitHub Actions secrets."
-            exit 1
-          fi
-
       - name: Install dependencies
         run: npm install
 
@@ -59,9 +47,10 @@ jobs:
           EXPO_PUBLIC_API_URL: https://duecase-api.onrender.com/api
         run: npx expo config --type public
 
-      - name: Verify Android Gradle build locally
+      - name: Build installable Android APK locally
         env:
           EXPO_PUBLIC_API_URL: https://duecase-api.onrender.com/api
+          NODE_ENV: production
           CI: '1'
         shell: bash
         run: |
@@ -73,20 +62,27 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease --stacktrace --no-daemon
 
+          APP_VERSION="$(node -e "console.log(require(process.env.GITHUB_WORKSPACE + '/frontend/app.json').expo.version)")"
+          APK_SOURCE="app/build/outputs/apk/release/app-release.apk"
+          APK_DEST="$GITHUB_WORKSPACE/frontend/DueCase-${APP_VERSION}.apk"
+
+          test -f "$APK_SOURCE"
+          cp "$APK_SOURCE" "$APK_DEST"
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+          echo "APK_DEST=$APK_DEST" >> "$GITHUB_ENV"
+
       - name: Verify Android JavaScript bundle locally
         env:
           EXPO_PUBLIC_API_URL: https://duecase-api.onrender.com/api
+          NODE_ENV: production
           CI: '1'
         run: npx expo export --platform android --output-dir "$RUNNER_TEMP/duecase-expo-export"
 
-      - name: Authenticate with Expo
-        run: npx eas-cli@latest whoami
-
-      - name: Build Preview APK and wait for result
-        env:
-          EXPO_PUBLIC_API_URL: https://duecase-api.onrender.com/api
-        run: npx eas-cli@latest build --profile preview --platform android --non-interactive --wait
-
-      - name: Show recent EAS builds
-        if: always()
-        run: npx eas-cli@latest build:list --platform android --limit 5 --non-interactive
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DueCase-${{ env.APP_VERSION }}-Android
+          path: ${{ env.APK_DEST }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
