@@ -30,8 +30,12 @@ function isoDate(date: Date): string {
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return 'Data di nascita non indicata';
-  const [y, m, d] = value.split('-').map(Number);
-  return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString('it-IT');
+  const parts = value.split('-').map(Number);
+  const year = parts[0];
+  const month = parts[1];
+  const day = parts[2];
+  if (!year || !month || !day) return value;
+  return new Date(year, month - 1, day).toLocaleDateString('it-IT');
 }
 
 export function ChildrenScreen(): React.JSX.Element {
