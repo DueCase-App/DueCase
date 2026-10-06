@@ -12,6 +12,7 @@ import type {
   Expense,
   ExpenseCategory,
   ExpensePayment,
+  FamilyActivity,
   FamilyAgreement,
   FamilyBalance,
   FamilyActionResponse,
@@ -205,9 +206,16 @@ export const api = {
       return request<ParentingTimeReport>(`/reports/parenting-time${suffix ? `?${suffix}` : ''}`);
     },
   },
+  history: {
+    list: (limit = 100, entityType?: string) => {
+      const query = new URLSearchParams({ limit: String(limit) });
+      if (entityType) query.set('entityType', entityType);
+      return request<FamilyActivity[]>(`/history?${query.toString()}`);
+    },
+  },
   notifications: {
     list: (unreadOnly = false) => request<InAppNotification[]>(`/notifications${unreadOnly ? '?unread=1' : ''}`),
-    markRead: (id: string) => request<{ id: string; readAt: string }>(`/notifications/${encodeURIComponent(id)}/read`, { method: 'PUT' }),
+    markRead: (id: string) => request<{ id: string; readAt: string }>('/notifications/' + encodeURIComponent(id) + '/read', { method: 'PUT' }),
     readAll: () => request<{ ok: true; updated: number }>('/notifications/read-all', { method: 'PUT' }),
   },
 };
