@@ -25,6 +25,8 @@ services:
         value: 7d
       - key: OTP_SECRET
         generateValue: true
+      - key: PREMIUM_ENFORCEMENT_ENABLED
+        value: "false"
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
