@@ -87,11 +87,12 @@ export const api = {
   expenses: {
     list: () => request<Expense[]>('/expenses'),
     balance: () => request<FamilyBalance>('/expenses/balance'),
-    create: (input: { title: string; amount: string; category: ExpenseCategory; expenseDate?: string; notes?: string; receipt?: { uri: string; name: string; type: string; file?: Blob } }) => {
+    create: (input: { title: string; amount: string; category: ExpenseCategory; expenseDate?: string; notes?: string; isExtraordinary?: boolean; receipt?: { uri: string; name: string; type: string; file?: Blob } }) => {
       const form = new FormData();
       form.append('title', input.title);
       form.append('amount', input.amount);
       form.append('category', input.category);
+      form.append('isExtraordinary', input.isExtraordinary ? 'true' : 'false');
       if (input.expenseDate) form.append('expenseDate', input.expenseDate);
       if (input.notes?.trim()) form.append('notes', input.notes.trim());
       if (input.receipt) {
@@ -100,8 +101,9 @@ export const api = {
       }
       return request<Expense>('/expenses', { method: 'POST', body: form });
     },
-    requestApprovalOtp: (id: string) => request<{ ok: true; expiresInSeconds: number }>(`/expenses/${encodeURIComponent(id)}/request-approval-otp`, { method: 'POST' }),
-    approve: (id: string, otp: string) => request<Expense>(`/expenses/${encodeURIComponent(id)}/approve`, { method: 'POST', body: JSON.stringify({ otp }) }),
+    requestOtp: (id: string) => request<{ ok: true; expiresInSeconds: number; maskedEmail: string }>(`/expenses/${encodeURIComponent(id)}/request-otp`, { method: 'POST' }),
+    verifyOtp: (id: string, code: string) => request<Expense>(`/expenses/${encodeURIComponent(id)}/verify-otp`, { method: 'POST', body: JSON.stringify({ code }) }),
+    approve: (id: string) => request<Expense>(`/expenses/${encodeURIComponent(id)}/approve`, { method: 'POST', body: JSON.stringify({}) }),
     decline: (id: string) => request<Expense>(`/expenses/${encodeURIComponent(id)}/decline`, { method: 'POST' }),
     receiptSource: (path: string) => ({ uri: `${API_URL}${path}`, headers: authHeaders() }),
   },
