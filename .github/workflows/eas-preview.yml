@@ -45,6 +45,9 @@ jobs:
       - name: TypeScript check
         run: npm run typecheck
 
+      - name: Expo Doctor
+        run: npx expo-doctor@latest
+
       - name: Verify Expo public configuration
         env:
           EXPO_PUBLIC_API_URL: https://duecase-api.onrender.com/api
@@ -53,10 +56,11 @@ jobs:
       - name: Authenticate with Expo
         run: npx eas-cli@latest whoami
 
-      - name: Start Preview APK build
+      - name: Build Preview APK and wait for result
         env:
           EXPO_PUBLIC_API_URL: https://duecase-api.onrender.com/api
-        run: npx eas-cli@latest build --profile preview --platform android --non-interactive --no-wait
+        run: npx eas-cli@latest build --profile preview --platform android --non-interactive --wait
 
       - name: Show recent EAS builds
-        run: npx eas-cli@latest build:list --platform android --limit 3 --non-interactive
+        if: always()
+        run: npx eas-cli@latest build:list --platform android --limit 5 --non-interactive
