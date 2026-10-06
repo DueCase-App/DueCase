@@ -15,6 +15,7 @@ const schema = z.object({
   SMTP_USER: z.string().trim().min(1).optional(),
   SMTP_PASS: z.string().min(1).optional(),
   EMAIL_FROM: z.string().trim().min(3).optional(),
+  PREMIUM_ENFORCEMENT_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
 });
 
 export const config = schema.parse(process.env);
