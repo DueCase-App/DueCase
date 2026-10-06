@@ -78,6 +78,7 @@ export type OtpSignatureMetadata = {
   signerUserId: string;
   userAgent: string | null;
 };
+export type ExpenseChildRef = { id: string; displayName: string; };
 export type Expense = {
   id: string;
   familyId: string;
@@ -93,8 +94,10 @@ export type Expense = {
   notes: string | null;
   isExtraordinary: boolean;
   otpSignatureMetadata: OtpSignatureMetadata | null;
-  fatherPercentage?: string | number;
-  motherPercentage?: string | number;
+  fatherPercentage: string | number;
+  motherPercentage: string | number;
+  childIds: string[];
+  children: ExpenseChildRef[];
   reviewedByUserId: string | null;
   reviewedAt: string | null;
   approvalOtpVerifiedAt?: string | null;
@@ -102,7 +105,37 @@ export type Expense = {
   updatedAt: string;
   canReview: boolean;
 };
-export type FamilyBalance = { fatherPaid: string; motherPaid: string; totalApproved: string; perParentShare: string; settlementAmount: string; creditorRole: ParentRole | null; debtorRole: ParentRole | null; currentUserRole: ParentRole; direction: 'receive' | 'pay' | 'settled'; };
+export type FamilyBalance = {
+  fatherPaid: string;
+  motherPaid: string;
+  totalApproved: string;
+  fatherShare: string;
+  motherShare: string;
+  perParentShare: string | null;
+  settlementAmount: string;
+  creditorRole: ParentRole | null;
+  debtorRole: ParentRole | null;
+  currentUserRole: ParentRole;
+  direction: 'receive' | 'pay' | 'settled';
+};
+export type ExpensePayment = {
+  id: string;
+  expenseId: string;
+  paidByUserId: string;
+  paidByName?: string | null;
+  paidByRole?: ParentRole | null;
+  amount: string;
+  status: 'declared' | 'confirmed' | 'rejected';
+  paidAt: string;
+  receiptFilename?: string | null;
+  receiptMimeType?: string | null;
+  receiptUrl?: string | null;
+  notes?: string | null;
+  confirmedByUserId?: string | null;
+  confirmedAt?: string | null;
+  createdAt?: string;
+  canConfirm: boolean;
+};
 
 export type DocumentCategory = 'Salute' | 'Scuola' | 'Legale' | 'Altro';
 export type FamilyDocument = { id: string; familyId: string; title: string; description: string | null; fileUrl: string; uploadedByUserId: string | null; uploadedByName: string | null; uploadedByRole: ParentRole | null; category: DocumentCategory; mimeType: string | null; filename: string | null; fileSizeBytes: number | null; createdAt: string; updatedAt: string; };
