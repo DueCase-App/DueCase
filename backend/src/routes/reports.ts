@@ -247,7 +247,7 @@ router.get('/pdf', asyncHandler(async (req, res) => {
          LEFT JOIN users u ON u.id = m.sender_id
          LEFT JOIN LATERAL (
            SELECT MIN(mr.read_at) AS read_at
-             FROM message_reads mr
+             FROM message_read_receipts mr
             WHERE mr.message_id = m.id
               AND mr.family_id = m.family_id
          ) r ON TRUE
