@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt';
 import { randomBytes, randomUUID } from 'node:crypto';
+import type { PoolClient } from 'pg';
 import { Router } from 'express';
 import { z } from 'zod';
 import { getAuth, requireAuth, signAccessToken, type ParentRole } from '../auth.js';
@@ -14,6 +15,10 @@ const INVITE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const roleSchema = z.enum(['father', 'mother']);
 const emailSchema = z.string().trim().email().max(254).transform((value) => value.toLowerCase());
 const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const taxCodeSchema = z.string().trim().transform((value) => value.replace(/\s+/g, '').toUpperCase()).refine(
+  (value) => /^[A-Z0-9]{16}$/.test(value),
+  'Invalid Italian tax code',
+);
 
 const registrationChildSchema = z.object({
   displayName: z.string().trim().min(2).max(120),
@@ -25,10 +30,7 @@ const registerSchema = z.object({
   firstName: z.string().trim().min(2).max(80).optional(),
   lastName: z.string().trim().min(2).max(80).optional(),
   birthDate: isoDateSchema.optional(),
-  taxCode: z.string().trim().transform((value) => value.toUpperCase()).refine(
-    (value) => /^[A-Z0-9]{16}$/.test(value),
-    'Invalid Italian tax code',
-  ).optional(),
+  taxCode: taxCodeSchema.optional(),
   phone: z.string().trim().min(6).max(32).optional(),
   email: emailSchema,
   password: z.string().min(8).max(72),
@@ -79,6 +81,13 @@ type UserRow = {
   passwordHash?: string;
 };
 
+type PgMeta = {
+  code?: string;
+  table?: string;
+  column?: string;
+  constraint?: string;
+};
+
 function publicUser(row: UserRow) {
   return {
     id: row.id,
@@ -99,6 +108,53 @@ function publicUser(row: UserRow) {
   };
 }
 
+function normalizeRegisterPayload(input: unknown): unknown {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return input;
+  const raw = input as Record<string, unknown>;
+
+  const children = Array.isArray(raw.children)
+    ? raw.children.map((child) => {
+        if (typeof child === 'string') {
+          return { displayName: child, birthDate: null };
+        }
+        if (typeof child === 'object' && child !== null && !Array.isArray(child)) {
+          const value = child as Record<string, unknown>;
+          return {
+            displayName: value.displayName ?? value.name,
+            birthDate: value.birthDate ?? value.birth_date ?? null,
+          };
+        }
+        return child;
+      })
+    : raw.children;
+
+  return {
+    displayName: raw.displayName,
+    firstName: raw.firstName ?? raw.name,
+    lastName: raw.lastName ?? raw.surname,
+    birthDate: raw.birthDate ?? raw.birth_date,
+    taxCode: raw.taxCode ?? raw.tax_code,
+    email: raw.email,
+    phone: raw.phone,
+    password: raw.password,
+    role: raw.role,
+    familyName: raw.familyName ?? raw.family_name,
+    children,
+    inviteOtherParent: raw.inviteOtherParent ?? raw.invite_partner,
+  };
+}
+
+function getPgMeta(error: unknown): PgMeta {
+  if (typeof error !== 'object' || error === null) return {};
+  const value = error as Record<string, unknown>;
+  return {
+    code: typeof value.code === 'string' ? value.code : undefined,
+    table: typeof value.table === 'string' ? value.table : undefined,
+    column: typeof value.column === 'string' ? value.column : undefined,
+    constraint: typeof value.constraint === 'string' ? value.constraint : undefined,
+  };
+}
+
 function generateInviteCode(length = 10): string {
   const bytes = randomBytes(length);
   let code = '';
@@ -110,7 +166,7 @@ function generateInviteCode(length = 10): string {
 }
 
 async function insertFamilyWithUniqueCode(
-  client: import('pg').PoolClient,
+  client: PoolClient,
   id: string,
   name: string,
 ): Promise<string> {
@@ -124,36 +180,48 @@ async function insertFamilyWithUniqueCode(
       );
       return inviteCode;
     } catch (error) {
-      if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23505') {
-        continue;
-      }
+      const meta = getPgMeta(error);
+      if (meta.code === '23505') continue;
       throw error;
     }
   }
 
-  throw new ApiError(500, 'Unable to generate a unique family code');
+  throw new ApiError(500, 'Impossibile generare un codice famiglia univoco', 'FAMILY_CODE_GENERATION_FAILED');
 }
 
 router.post('/register', asyncHandler(async (req, res) => {
-  const body = registerSchema.parse(req.body);
-  const passwordHash = await bcrypt.hash(body.password, BCRYPT_ROUNDS);
-  const id = randomUUID();
-  const displayName = body.displayName ?? `${body.firstName ?? ''} ${body.lastName ?? ''}`.trim();
-  const client = await pool.connect();
+  let client: PoolClient | null = null;
+  let stage = 'validate_request';
+  let transactionStarted = false;
+  let committed = false;
 
   try {
+    const body = registerSchema.parse(normalizeRegisterPayload(req.body));
+
+    stage = 'hash_password';
+    const passwordHash = await bcrypt.hash(body.password, BCRYPT_ROUNDS);
+    const id = randomUUID();
+    const displayName = body.displayName ?? `${body.firstName ?? ''} ${body.lastName ?? ''}`.trim();
+
+    stage = 'connect_database';
+    client = await pool.connect();
+
+    stage = 'begin_transaction';
     await client.query('BEGIN');
+    transactionStarted = true;
 
     let familyId: string | null = null;
     let familyName: string | null = null;
     let inviteCode: string | null = null;
 
     if (body.familyName) {
+      stage = 'create_family';
       familyId = randomUUID();
       familyName = body.familyName;
       inviteCode = await insertFamilyWithUniqueCode(client, familyId, familyName);
     }
 
+    stage = 'create_user';
     const { rows } = await client.query<UserRow>(
       `INSERT INTO users (
          id,
@@ -201,9 +269,10 @@ router.post('/register', asyncHandler(async (req, res) => {
     );
 
     const user = rows[0];
-    if (!user) throw new ApiError(500, 'Unable to create account');
+    if (!user) throw new ApiError(500, 'Impossibile creare l’account', 'USER_INSERT_FAILED', { stage });
 
     if (familyId) {
+      stage = 'create_parent_profile';
       await client.query(
         `INSERT INTO parents (id, family_id, display_name, role)
          VALUES ($1, $2, $3, $4)
@@ -214,6 +283,7 @@ router.post('/register', asyncHandler(async (req, res) => {
         [id, familyId, displayName, body.role],
       );
 
+      stage = 'create_children';
       for (const child of body.children) {
         await client.query(
           `INSERT INTO children (id, family_id, display_name, birth_date)
@@ -223,30 +293,77 @@ router.post('/register', asyncHandler(async (req, res) => {
       }
     }
 
+    stage = 'create_access_token';
+    const token = signAccessToken(user.id);
+
+    stage = 'commit_transaction';
     await client.query('COMMIT');
+    committed = true;
 
     res.status(201).json({
-      token: signAccessToken(user.id),
+      token,
       user: publicUser(user),
     });
   } catch (error) {
-    await client.query('ROLLBACK');
-
-    if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23505') {
-      const constraint = 'constraint' in error && typeof error.constraint === 'string'
-        ? error.constraint
-        : '';
-
-      if (constraint.includes('tax_code')) {
-        throw new ApiError(409, 'Questo codice fiscale è già associato a un account', 'TAX_CODE_ALREADY_EXISTS');
+    if (client && transactionStarted && !committed) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('Registration rollback failed', rollbackError instanceof Error ? rollbackError.message : rollbackError);
       }
-
-      throw new ApiError(409, 'An account with this email already exists', 'EMAIL_ALREADY_EXISTS');
     }
 
-    throw error;
+    if (error instanceof z.ZodError || error instanceof ApiError) throw error;
+
+    const meta = getPgMeta(error);
+    const safeDetails: Record<string, unknown> = {
+      stage,
+      ...(meta.code ? { dbCode: meta.code } : {}),
+      ...(meta.table ? { table: meta.table } : {}),
+      ...(meta.column ? { column: meta.column } : {}),
+      ...(meta.constraint ? { constraint: meta.constraint } : {}),
+    };
+
+    console.error('Registration failed', {
+      ...safeDetails,
+      message: error instanceof Error ? error.message : 'Unknown database error',
+    });
+
+    if (meta.code === '23505') {
+      const constraint = meta.constraint?.toLowerCase() ?? '';
+      if (constraint.includes('tax_code')) {
+        throw new ApiError(409, 'Questo codice fiscale è già associato a un account', 'TAX_CODE_ALREADY_EXISTS', safeDetails);
+      }
+      if (constraint.includes('email')) {
+        throw new ApiError(409, 'Esiste già un account con questa email', 'EMAIL_ALREADY_EXISTS', safeDetails);
+      }
+      throw new ApiError(409, 'Uno dei dati inseriti deve essere univoco ed è già presente', 'REGISTRATION_DUPLICATE_VALUE', safeDetails);
+    }
+
+    if (meta.code === '23502') {
+      throw new ApiError(
+        500,
+        `Database non allineato: il campo obbligatorio ${meta.column ? `“${meta.column}”` : 'richiesto'} non è valorizzato`,
+        'REGISTRATION_DB_NOT_NULL',
+        safeDetails,
+      );
+    }
+
+    if (meta.code === '23503') {
+      throw new ApiError(409, 'Un dato collegato alla famiglia non è valido', 'REGISTRATION_FOREIGN_KEY_ERROR', safeDetails);
+    }
+
+    if (meta.code === '23514') {
+      throw new ApiError(400, 'Uno dei dati non rispetta i vincoli previsti dal database', 'REGISTRATION_CONSTRAINT_ERROR', safeDetails);
+    }
+
+    if (meta.code === '42703' || meta.code === '42P01') {
+      throw new ApiError(500, 'Schema del database non aggiornato alla versione richiesta', 'REGISTRATION_SCHEMA_MISMATCH', safeDetails);
+    }
+
+    throw new ApiError(500, 'Registrazione non riuscita per un errore del database', 'REGISTRATION_DB_ERROR', safeDetails);
   } finally {
-    client.release();
+    client?.release();
   }
 }));
 
@@ -275,7 +392,7 @@ router.post('/login', asyncHandler(async (req, res) => {
 
   const user = rows[0];
   if (!user?.passwordHash || !(await bcrypt.compare(body.password, user.passwordHash))) {
-    throw new ApiError(401, 'Invalid email or password', 'INVALID_CREDENTIALS');
+    throw new ApiError(401, 'Email o password non corretti', 'INVALID_CREDENTIALS');
   }
 
   res.json({

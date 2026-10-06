@@ -6,6 +6,7 @@ export class ApiError extends Error {
     public readonly status: number,
     message: string,
     public readonly code?: string,
+    public readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -39,10 +40,14 @@ export function errorHandler(
     res.status(error.status).json({
       error: error.message,
       ...(error.code ? { code: error.code } : {}),
+      ...(error.details ? { details: error.details } : {}),
     });
     return;
   }
 
-  console.error(error);
-  res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR' });
+  console.error('Unhandled API error', error instanceof Error ? error.message : error);
+  res.status(500).json({
+    error: 'Internal server error',
+    code: 'INTERNAL_ERROR',
+  });
 }
