@@ -46,6 +46,10 @@ export function MessagesScreen(): React.JSX.Element {
   const [tone, setTone] = useState<ToneAnalysis | null>(null);
   const [toneOpen, setToneOpen] = useState(false);
 
+  const scrollToComposer = useCallback((animated = true) => {
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated }), 80);
+  }, []);
+
   const load = useCallback(async () => {
     try {
       const items = await api.messages.list(150);
@@ -58,7 +62,7 @@ export function MessagesScreen(): React.JSX.Element {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { if (!loading) setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50); }, [loading, messages.length]);
+  useEffect(() => { if (!loading) scrollToComposer(false); }, [loading, messages.length, scrollToComposer]);
 
   const pickAttachment = async (): Promise<void> => {
     const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true, multiple: false });
@@ -77,6 +81,7 @@ export function MessagesScreen(): React.JSX.Element {
       setAttachment(null);
       setToneOpen(false);
       setTone(null);
+      scrollToComposer();
     } catch (error) {
       Alert.alert(error instanceof ApiClientError && error.code === 'PREMIUM_REQUIRED' ? 'Premium richiesto' : 'Messaggi', error instanceof Error ? error.message : 'Invio non riuscito.');
     } finally { setSending(false); }
@@ -106,10 +111,10 @@ export function MessagesScreen(): React.JSX.Element {
     <SafeAreaView style={styles.safeArea} edges={['bottom', 'left', 'right']}>
       <KeyboardAvoidingView
         style={styles.screen}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
       >
-        <View style={[styles.shell, !compact && styles.shellWide, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
+        <View style={[styles.shell, !compact && styles.shellWide, { paddingBottom: Math.max(10, insets.bottom + 4) }]}>
           <View style={styles.header}>
             <View style={styles.headerCopy}>
               <Text style={styles.eyebrow}>COMUNICAZIONI CONDIVISE</Text>
@@ -153,7 +158,16 @@ export function MessagesScreen(): React.JSX.Element {
             {attachment ? <View style={styles.pendingAttachment}><Ionicons name="attach-outline" size={19} color={ui.colors.primary} /><View style={styles.pendingCopy}><Text numberOfLines={1} style={styles.pendingName}>{attachment.name}</Text><Text style={styles.pendingMeta}>Verrà archiviato con hash SHA-256</Text></View><Pressable onPress={() => setAttachment(null)}><Ionicons name="close-circle" size={23} color={ui.colors.muted} /></Pressable></View> : null}
             <View style={styles.composer}>
               <Pressable style={styles.attachButton} onPress={() => void pickAttachment()} accessibilityLabel="Aggiungi allegato"><Ionicons name="attach" size={23} color={ui.colors.primary} /></Pressable>
-              <TextInput value={text} onChangeText={setText} placeholder="Scrivi a Mamma o Papà…" placeholderTextColor={ui.colors.muted} multiline maxLength={10000} style={styles.input} />
+              <TextInput
+                value={text}
+                onChangeText={setText}
+                onFocus={() => scrollToComposer(false)}
+                placeholder="Scrivi a Mamma o Papà…"
+                placeholderTextColor={ui.colors.muted}
+                multiline
+                maxLength={10000}
+                style={styles.input}
+              />
               <Pressable disabled={(!text.trim() && !attachment) || sending} onPress={() => void requestSend()} style={[styles.sendButton, ((!text.trim() && !attachment) || sending) && { opacity: 0.45 }]}>{sending ? <ActivityIndicator color="#FFF" /> : <Ionicons name="send" size={20} color="#FFF" />}</Pressable>
             </View>
             <Text style={styles.helper}><Ionicons name="sparkles-outline" size={13} /> ToneMeter controlla il testo prima dell’invio; gli allegati restano protetti separatamente da SHA-256.</Text>
@@ -226,11 +240,11 @@ const styles = StyleSheet.create({
   pendingCopy: { flex: 1, minWidth: 0 },
   pendingName: { color: ui.colors.primaryDark, fontWeight: '900', fontSize: 12 },
   pendingMeta: { color: ui.colors.muted, fontSize: 9 },
-  composer: { borderTopWidth: 1, borderTopColor: ui.colors.border, padding: 12, flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  composer: { borderTopWidth: 1, borderTopColor: ui.colors.border, padding: 12, flexDirection: 'row', alignItems: 'flex-end', gap: 8, backgroundColor: '#FFF' },
   attachButton: { width: 44, height: 48, borderRadius: 14, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
   input: { flex: 1, minHeight: 48, maxHeight: 130, borderRadius: 14, backgroundColor: ui.colors.input, color: '#202124', paddingHorizontal: 14, paddingVertical: 12, textAlignVertical: 'top' },
   sendButton: { width: 48, height: 48, borderRadius: 16, backgroundColor: ui.colors.primary, alignItems: 'center', justifyContent: 'center' },
-  helper: { paddingHorizontal: 13, paddingBottom: 14, fontSize: 10, color: ui.colors.muted },
+  helper: { paddingHorizontal: 13, paddingBottom: 14, paddingTop: 3, fontSize: 10, color: ui.colors.muted, backgroundColor: '#FFF' },
   empty: { flex: 1, minHeight: 260, alignItems: 'center', justifyContent: 'center', gap: 8 },
   emptyTitle: { fontSize: 18, fontWeight: '900', color: ui.colors.primaryDark },
   emptyText: { textAlign: 'center', color: ui.colors.muted, maxWidth: 360 },
