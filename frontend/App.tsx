@@ -5,6 +5,7 @@ import * as Notifications from 'expo-notifications';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   Modal,
   Platform,
   Pressable,
@@ -227,15 +228,32 @@ function AuthenticatedApp({ requestedRoute, onRequestedRouteHandled }: {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const desktop = width >= 900;
-  const [route, setRoute] = useState<MainRoute>('home');
+  const [routeHistory, setRouteHistory] = useState<MainRoute[]>(['home']);
   const [moreOpen, setMoreOpen] = useState(false);
+  const route = routeHistory[routeHistory.length - 1] ?? 'home';
 
   useEffect(() => {
     if (!requestedRoute) return;
-    setRoute(requestedRoute);
+    setRouteHistory((current) => current[current.length - 1] === requestedRoute ? current : [...current, requestedRoute]);
     setMoreOpen(false);
     onRequestedRouteHandled();
   }, [requestedRoute, onRequestedRouteHandled]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (moreOpen) {
+        setMoreOpen(false);
+        return true;
+      }
+      if (routeHistory.length > 1) {
+        setRouteHistory((current) => current.length > 1 ? current.slice(0, -1) : current);
+        return true;
+      }
+      return false;
+    });
+    return () => subscription.remove();
+  }, [moreOpen, routeHistory.length]);
 
   const mobileActive = useMemo<MobileTab>(() => {
     if (route === 'home' || route === 'calendar' || route === 'children' || route === 'expenses') return route;
@@ -243,7 +261,7 @@ function AuthenticatedApp({ requestedRoute, onRequestedRouteHandled }: {
   }, [route]);
 
   const navigate = (next: MainRoute): void => {
-    setRoute(next);
+    setRouteHistory((current) => current[current.length - 1] === next ? current : [...current, next]);
     setMoreOpen(false);
   };
   const navigateFromHome = (target: HomeDestination): void => navigate(target as MainRoute);
