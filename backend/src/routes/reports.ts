@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
+import { z } from 'zod';
 import { requireAuth, requireFamily } from '../auth.js';
 import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
@@ -8,6 +9,15 @@ import { createLegalReportPdf } from '../services/legalPdfService.js';
 
 const router = Router();
 router.use(requireAuth);
+
+const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
+const parentingTimeQuery = z.object({
+  from: dateString.optional(),
+  to: dateString.optional(),
+}).refine((value) => !value.from || !value.to || value.from <= value.to, {
+  message: 'from must be before or equal to to',
+  path: ['to'],
+});
 
 type ExpenseReportRow = {
   id: string;
@@ -47,11 +57,21 @@ type MessageReportRow = {
   id: string;
   senderId: string;
   senderName: string;
-  senderRole: 'father' | 'mother';
+  senderRole: 'father' | 'mother' | null;
   text: string;
   createdAt: string;
   readAt: string | null;
   dataHash: string;
+};
+
+type ParentingTimeRow = {
+  custodianRole: 'father' | 'mother';
+  seconds: string;
+};
+
+type ParentingCoverageRow = {
+  firstDate: string | null;
+  lastDate: string | null;
 };
 
 function roleLabel(role: 'father' | 'mother' | null): string {
@@ -65,6 +85,92 @@ function statusLabel(status: SwapReportRow['status']): string {
   if (status === 'rejected') return 'RIFIUTATO';
   return 'IN ATTESA';
 }
+
+router.get('/parenting-time', asyncHandler(async (req, res) => {
+  const auth = requireFamily(req);
+  const query = parentingTimeQuery.parse(req.query);
+  const from = query.from ?? null;
+  const to = query.to ?? null;
+
+  const [timeResult, coverageResult] = await Promise.all([
+    pool.query<ParentingTimeRow>(
+      `WITH clipped AS (
+         SELECT custodian_role,
+                GREATEST(
+                  starts_at,
+                  COALESCE(($2::date)::timestamp AT TIME ZONE 'UTC', starts_at)
+                ) AS clipped_start,
+                LEAST(
+                  ends_at,
+                  COALESCE((($3::date + 1)::timestamp AT TIME ZONE 'UTC'), ends_at)
+                ) AS clipped_end
+           FROM custody_turns
+          WHERE family_id = $1
+            AND custody_date IS NOT NULL
+            AND custodian_role IN ('father', 'mother')
+            AND ($2::date IS NULL OR ends_at > (($2::date)::timestamp AT TIME ZONE 'UTC'))
+            AND ($3::date IS NULL OR starts_at < ((($3::date + 1)::timestamp AT TIME ZONE 'UTC')))
+       )
+       SELECT custodian_role AS "custodianRole",
+              COALESCE(SUM(EXTRACT(EPOCH FROM (clipped_end - clipped_start))), 0)::text AS seconds
+         FROM clipped
+        WHERE clipped_end > clipped_start
+        GROUP BY custodian_role`,
+      [auth.familyId, from, to],
+    ),
+    pool.query<ParentingCoverageRow>(
+      `SELECT MIN(custody_date)::text AS "firstDate",
+              MAX(custody_date)::text AS "lastDate"
+         FROM custody_turns
+        WHERE family_id = $1
+          AND custody_date IS NOT NULL
+          AND custodian_role IN ('father', 'mother')
+          AND ($2::date IS NULL OR custody_date >= $2::date)
+          AND ($3::date IS NULL OR custody_date <= $3::date)`,
+      [auth.familyId, from, to],
+    ),
+  ]);
+
+  const secondsByRole = { father: 0, mother: 0 };
+  for (const row of timeResult.rows) {
+    secondsByRole[row.custodianRole] = Number(row.seconds) || 0;
+  }
+
+  const totalSeconds = secondsByRole.father + secondsByRole.mother;
+  const toPercentage = (seconds: number) => totalSeconds > 0
+    ? Number(((seconds / totalSeconds) * 100).toFixed(4))
+    : 0;
+  const toHours = (seconds: number) => Number((seconds / 3600).toFixed(4));
+
+  const father = {
+    role: 'father' as const,
+    label: 'Padre',
+    seconds: secondsByRole.father,
+    hours: toHours(secondsByRole.father),
+    percentage: toPercentage(secondsByRole.father),
+  };
+  const mother = {
+    role: 'mother' as const,
+    label: 'Madre',
+    seconds: secondsByRole.mother,
+    hours: toHours(secondsByRole.mother),
+    percentage: toPercentage(secondsByRole.mother),
+  };
+
+  const coverage = coverageResult.rows[0];
+  res.json({
+    period: {
+      from: from ?? coverage?.firstDate ?? null,
+      to: to ?? coverage?.lastDate ?? null,
+    },
+    totalSeconds,
+    totalHours: toHours(totalSeconds),
+    father,
+    mother,
+    chart: [father, mother],
+    source: 'custody_turns_current_approved_state',
+  });
+}));
 
 router.get('/pdf', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
@@ -129,14 +235,22 @@ router.get('/pdf', asyncHandler(async (req, res) => {
     pool.query<MessageReportRow>(
       `SELECT m.id,
               m.sender_id AS "senderId",
-              u.display_name AS "senderName",
-              u.role AS "senderRole",
+              COALESCE(u.display_name, 'Account eliminato') AS "senderName",
+              COALESCE(u.role, m.sender_role) AS "senderRole",
               m.text,
               to_char(m.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
-              CASE WHEN m.read_at IS NULL THEN NULL ELSE to_char(m.read_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') END AS "readAt",
+              CASE WHEN COALESCE(r.read_at, m.read_at) IS NULL THEN NULL
+                   ELSE to_char(COALESCE(r.read_at, m.read_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+               END AS "readAt",
               m.data_hash AS "dataHash"
          FROM messages m
-         JOIN users u ON u.id = m.sender_id
+         LEFT JOIN users u ON u.id = m.sender_id
+         LEFT JOIN LATERAL (
+           SELECT MIN(mr.read_at) AS read_at
+             FROM message_reads mr
+            WHERE mr.message_id = m.id
+              AND mr.family_id = m.family_id
+         ) r ON TRUE
         WHERE m.family_id = $1
         ORDER BY m.created_at ASC, m.id ASC`,
       [auth.familyId],
