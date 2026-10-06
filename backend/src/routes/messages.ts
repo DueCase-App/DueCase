@@ -98,7 +98,7 @@ const messageSelect = `
              'fileUrl', '/messages/' || m.id::text || '/attachments/' || ma.id::text || '/file',
              'createdAt', to_char(ma.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
            ) ORDER BY ma.created_at, ma.id)
-             FROM message_attachments ma
+             FROM duecase_message_attachments ma
             WHERE ma.message_id = m.id AND ma.family_id = m.family_id
          ), '[]'::json) AS attachments
     FROM messages m
@@ -157,7 +157,7 @@ router.get('/:id/attachments/:attachmentId/file', asyncHandler(async (req, res) 
             mime_type AS "mimeType",
             file_data AS "fileData",
             data_hash AS "dataHash"
-       FROM message_attachments
+       FROM duecase_message_attachments
       WHERE id = $1 AND message_id = $2 AND family_id = $3`,
     [attachmentId, messageId, auth.familyId],
   );
@@ -196,7 +196,7 @@ router.post('/', uploadAttachment, asyncHandler(async (req, res) => {
       const attachmentId = randomUUID();
       const attachmentHash = createHash('sha256').update(req.file.buffer).digest('hex');
       await client.query(
-        `INSERT INTO message_attachments
+        `INSERT INTO duecase_message_attachments
           (id, message_id, family_id, sender_id, filename, mime_type, file_size_bytes, file_data, data_hash)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [attachmentId, id, auth.familyId, auth.userId, req.file.originalname, req.file.mimetype, req.file.size, req.file.buffer, attachmentHash],
