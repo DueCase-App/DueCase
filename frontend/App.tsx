@@ -121,7 +121,9 @@ function Root(): React.JSX.Element {
     };
   }, []);
 
-  if (booting || !minimumSplashElapsed) return <BrandSplash />;
+  // The branded/photo splash is intentionally visible for one second only.
+  if (!minimumSplashElapsed) return <BrandSplash />;
+  if (booting) return <BootLoader />;
 
   let content: React.JSX.Element;
   if (!user) content = <AuthenticationNavigator />;
@@ -140,6 +142,14 @@ function BrandSplash(): React.JSX.Element {
   return <LinearGradient colors={ui.gradients.page} style={styles.splash}>
     <StatusBar hidden />
     <ImageBackground source={require('./assets/duecase-splash.jpg')} resizeMode="contain" style={styles.splashImage} imageStyle={styles.splashImageInner} />
+  </LinearGradient>;
+}
+
+function BootLoader(): React.JSX.Element {
+  return <LinearGradient colors={ui.gradients.page} style={styles.splash}>
+    <StatusBar barStyle="dark-content" backgroundColor={ui.colors.backgroundSolid} translucent={false} />
+    <Image source={require('./assets/duecase-logo.png')} resizeMode="contain" style={styles.bootLogo} />
+    <Text style={styles.bootText}>Apertura di DueCase…</Text>
   </LinearGradient>;
 }
 
@@ -215,7 +225,7 @@ function FamilyCard(): React.JSX.Element {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 }, appRoot: { flex: 1, backgroundColor: ui.colors.backgroundSolid }, authenticatedRoot: { flex: 1, backgroundColor: ui.colors.backgroundSolid }, safeArea: { flex: 1, backgroundColor: 'transparent' }, mobilePageSafeArea: { flex: 1, backgroundColor: ui.colors.backgroundSolid }, mobileNavSafeArea: { flexShrink: 0, backgroundColor: '#FFF' }, desktopShell: { flex: 1, flexDirection: 'row' }, page: { flex: 1, minWidth: 0 },
-  splash: { flex: 1, backgroundColor: ui.colors.cream, alignItems: 'center', justifyContent: 'center' }, splashImage: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }, splashImageInner: { backgroundColor: ui.colors.cream },
+  splash: { flex: 1, backgroundColor: ui.colors.cream, alignItems: 'center', justifyContent: 'center' }, splashImage: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }, splashImageInner: { backgroundColor: ui.colors.cream }, bootLogo: { width: 96, height: 96 }, bootText: { marginTop: 10, color: ui.colors.muted, fontSize: 13, fontWeight: '700' },
   sidebar: { width: 240, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: ui.colors.border, paddingHorizontal: 12, paddingTop: Platform.OS === 'web' ? 18 : 10, paddingBottom: 16 }, brand: { minHeight: 72, paddingHorizontal: 6, flexDirection: 'row', gap: 8, alignItems: 'center' }, brandLogo: { width: 54, height: 54 }, brandName: { fontSize: 20, fontWeight: '900', color: ui.colors.primaryDark }, brandPayoff: { fontSize: 9, color: ui.colors.muted, maxWidth: 145 }, sidebarNav: { flex: 1, paddingTop: 8, gap: 3 }, sideItem: { minHeight: 43, borderRadius: 13, paddingHorizontal: 11, flexDirection: 'row', gap: 10, alignItems: 'center' }, sideItemActive: { backgroundColor: ui.colors.orangeSoft, borderWidth: 1, borderColor: '#FFD6A8' }, sideText: { color: ui.colors.muted, fontWeight: '800', fontSize: 13 }, sideTextActive: { color: ui.colors.primaryDark, fontWeight: '900' }, sidebarUser: { borderTopWidth: 1, borderTopColor: ui.colors.border, paddingTop: 12, flexDirection: 'row', alignItems: 'center', gap: 9 }, userAvatar: { width: 38, height: 38, borderRadius: 12, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' }, flex: { flex: 1, minWidth: 0 }, userName: { fontSize: 12, fontWeight: '900', color: ui.colors.primaryDark }, userRole: { fontSize: 10, color: ui.colors.muted, marginTop: 1 },
   mobileNav: { flexDirection: 'row', flexShrink: 0, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: ui.colors.border, paddingTop: 7, paddingBottom: 8, paddingHorizontal: 4 }, mobileNavItem: { flex: 1, minHeight: 58, alignItems: 'center', justifyContent: 'center', gap: 2 }, mobileIconWrap: { width: 42, height: 31, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, mobileIconWrapActive: { backgroundColor: ui.colors.orangeSoft }, mobileNavText: { color: ui.colors.muted, fontSize: 9, fontWeight: '800' }, mobileNavTextActive: { color: ui.colors.primary, fontWeight: '900' },
   moreBackdrop: { flex: 1, backgroundColor: 'rgba(12,43,99,0.32)', justifyContent: 'flex-end' }, moreSheet: { backgroundColor: ui.colors.cream, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 18, paddingTop: 8 }, sheetHandle: { width: 42, height: 4, borderRadius: 2, backgroundColor: ui.colors.border, alignSelf: 'center', marginBottom: 12 }, moreHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }, moreTitle: { fontSize: 22, fontWeight: '900', color: ui.colors.primaryDark }, moreSubtitle: { color: ui.colors.muted, fontSize: 12 }, close: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center' }, moreGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 }, moreItem: { width: '31.5%', minHeight: 94, borderRadius: 16, borderWidth: 1, borderColor: ui.colors.border, backgroundColor: '#FFF', padding: 10, justifyContent: 'center', alignItems: 'center', gap: 7, ...cardShadow }, moreItemActive: { backgroundColor: ui.colors.orangeSoft, borderColor: '#FFD19B' }, moreIcon: { width: 40, height: 40, borderRadius: 13, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' }, moreItemText: { color: ui.colors.primaryDark, fontWeight: '900', fontSize: 11, textAlign: 'center' },
