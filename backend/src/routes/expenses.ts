@@ -1,4 +1,4 @@
-import { createHmac, randomInt, randomUUID } from 'node:crypto';
+import { createHmac, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
@@ -6,6 +6,7 @@ import { requireAuth, requireFamily, type ParentRole } from '../auth.js';
 import { config } from '../config.js';
 import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
+import { maskEmail, sendExpenseOtpEmail } from '../services/emailService.js';
 import {
   formatEuroAmount,
   parentRoleLabel,
@@ -53,24 +54,48 @@ const moneySchema = z.string()
   })
   .refine((value) => value !== '0.00', 'L’importo deve essere maggiore di zero');
 
+const formBoolean = z.preprocess((value) => {
+  if (value === true || value === 'true' || value === '1') return true;
+  if (value === false || value === 'false' || value === '0' || value === '' || value == null) return false;
+  return value;
+}, z.boolean());
+
 const createExpenseSchema = z.object({
   title: z.string().trim().min(1).max(160),
   amount: moneySchema,
   category: z.enum(categories),
   expenseDate: z.string().date().optional(),
   notes: z.string().trim().max(2000).optional(),
+  isExtraordinary: formBoolean,
 });
 
-const approveSchema = z.object({
-  otp: z.string().regex(/^\d{6}$/, 'Inserisci il codice OTP di 6 cifre.'),
+const verifyOtpSchema = z.object({
+  code: z.string().regex(/^\d{6}$/, 'Inserisci il codice OTP di 6 cifre.'),
+});
+
+const legacyOtpSchema = z.object({
+  otp: z.string().regex(/^\d{6}$/).optional(),
 });
 
 router.use(requireAuth);
 
 function otpHash(expenseId: string, userId: string, otp: string): string {
-  return createHmac('sha256', config.JWT_SECRET)
+  return createHmac('sha256', config.OTP_SECRET ?? config.JWT_SECRET)
     .update(`${expenseId}:${userId}:${otp}`)
     .digest('hex');
+}
+
+function sameHash(expected: string, candidate: string): boolean {
+  const a = Buffer.from(expected, 'hex');
+  const b = Buffer.from(candidate, 'hex');
+  return a.length === b.length && a.length > 0 && timingSafeEqual(a, b);
+}
+
+function getClientIp(req: Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  const first = raw?.split(',')[0]?.trim();
+  return first || req.ip || req.socket.remoteAddress || 'unknown';
 }
 
 function serializeExpense(row: Record<string, unknown>, currentUserId: string): Record<string, unknown> {
@@ -92,6 +117,8 @@ const expenseSelect = `
          e.status,
          e.expense_date AS "expenseDate",
          e.notes,
+         e.is_extraordinary AS "isExtraordinary",
+         e.otp_signature_metadata AS "otpSignatureMetadata",
          e.reviewed_by_user_id AS "reviewedByUserId",
          e.reviewed_at AS "reviewedAt",
          e.approval_otp_verified_at AS "approvalOtpVerifiedAt",
@@ -100,6 +127,13 @@ const expenseSelect = `
     FROM expenses e
     LEFT JOIN users u ON u.id = e.paid_by_user_id
 `;
+
+async function readExpense(expenseId: string, familyId: string, currentUserId: string): Promise<Record<string, unknown>> {
+  const { rows } = await pool.query(`${expenseSelect} WHERE e.id = $1 AND e.family_id = $2`, [expenseId, familyId]);
+  const row = rows[0] as Record<string, unknown> | undefined;
+  if (!row) throw new ApiError(404, 'Spesa non trovata', 'EXPENSE_NOT_FOUND');
+  return serializeExpense(row, currentUserId);
+}
 
 router.get('/', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
@@ -164,69 +198,262 @@ router.post('/', uploadReceipt, asyncHandler(async (req, res) => {
     `INSERT INTO expenses
       (id, family_id, title, amount, category, paid_by_user_id,
        receipt_url, receipt_mime_type, receipt_filename, receipt_data,
-       status, expense_date, notes)
+       status, expense_date, notes, is_extraordinary)
      VALUES ($1, $2, $3, $4::numeric, $5, $6, $7, $8, $9, $10,
-             'pending_approval', COALESCE($11::date, CURRENT_DATE), $12)`,
-    [id, auth.familyId, body.title, body.amount, body.category, auth.userId, receiptUrl, req.file?.mimetype ?? null, req.file?.originalname ?? null, req.file?.buffer ?? null, body.expenseDate ?? null, body.notes || null],
+             'pending_approval', COALESCE($11::date, CURRENT_DATE), $12, $13)`,
+    [id, auth.familyId, body.title, body.amount, body.category, auth.userId, receiptUrl, req.file?.mimetype ?? null, req.file?.originalname ?? null, req.file?.buffer ?? null, body.expenseDate ?? null, body.notes || null, body.isExtraordinary],
   );
 
-  const { rows } = await pool.query(`${expenseSelect} WHERE e.id = $1 AND e.family_id = $2`, [id, auth.familyId]);
   await sendPushToOtherParent(auth.familyId, auth.userId, {
-    title: 'Nuova spesa da approvare',
+    title: body.isExtraordinary ? 'Nuova spesa straordinaria' : 'Nuova spesa da approvare',
     body: `${parentRoleSubject(auth.role)} ha inserito una spesa di ${formatEuroAmount(body.amount)}. Approvala!`,
     data: { type: 'expense_created', screen: 'expenses', expenseId: id },
   });
-  res.status(201).json(serializeExpense(rows[0] as Record<string, unknown>, auth.userId));
+
+  res.status(201).json(await readExpense(id, auth.familyId, auth.userId));
 }));
 
-router.post('/:id/request-approval-otp', asyncHandler(async (req, res) => {
+async function requestOtp(req: Request, res: Response): Promise<void> {
   const auth = requireFamily(req);
   const expenseId = uuid.parse(req.params.id);
-  const { rows } = await pool.query<{ paidByUserId: string; status: string }>(
-    `SELECT paid_by_user_id AS "paidByUserId", status
+  const { rows } = await pool.query<{
+    paidByUserId: string;
+    status: string;
+    isExtraordinary: boolean;
+    title: string;
+    amount: string;
+  }>(
+    `SELECT paid_by_user_id AS "paidByUserId", status, is_extraordinary AS "isExtraordinary",
+            title, amount::numeric(12,2)::text AS amount
        FROM expenses
       WHERE id = $1 AND family_id = $2`,
     [expenseId, auth.familyId],
   );
   const expense = rows[0];
   if (!expense) throw new ApiError(404, 'Spesa non trovata', 'EXPENSE_NOT_FOUND');
+  if (!expense.isExtraordinary) throw new ApiError(409, 'La firma OTP è prevista solo per le spese straordinarie.', 'OTP_NOT_REQUIRED');
   if (expense.paidByUserId === auth.userId) throw new ApiError(403, 'Non puoi approvare una spesa inserita da te', 'SELF_REVIEW_NOT_ALLOWED');
   if (expense.status !== 'pending_approval') throw new ApiError(409, 'Questa spesa è già stata valutata', 'EXPENSE_ALREADY_REVIEWED');
 
+  const userResult = await pool.query<{ email: string; displayName: string }>(
+    `SELECT email, display_name AS "displayName" FROM users WHERE id = $1 AND family_id = $2`,
+    [auth.userId, auth.familyId],
+  );
+  const user = userResult.rows[0];
+  if (!user) throw new ApiError(404, 'Utente non trovato', 'USER_NOT_FOUND');
+
   const otp = String(randomInt(100000, 1000000));
   const digest = otpHash(expenseId, auth.userId, otp);
-  await pool.query(
-    `UPDATE expenses
-        SET approval_otp_hash = $1,
-            approval_otp_expires_at = NOW() + INTERVAL '${OTP_TTL_MINUTES} minutes',
-            approval_otp_requested_by = $2,
-            approval_otp_attempts = 0,
-            updated_at = NOW()
-      WHERE id = $3 AND family_id = $4`,
-    [digest, auth.userId, expenseId, auth.familyId],
-  );
-
-  const delivered = await sendPushToUser(auth.userId, {
-    title: 'Codice firma DueCase',
-    body: `Il tuo codice OTP è ${otp}. Scade tra ${OTP_TTL_MINUTES} minuti.`,
-    data: { type: 'expense_approval_otp', screen: 'expenses', expenseId },
-  });
-
-  if (!delivered) {
-    await pool.query(
-      `UPDATE expenses
-          SET approval_otp_hash = NULL,
-              approval_otp_expires_at = NULL,
-              approval_otp_requested_by = NULL,
-              approval_otp_attempts = 0
-        WHERE id = $1 AND family_id = $2`,
-      [expenseId, auth.familyId],
+  const requestId = randomUUID();
+  const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60_000);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE otp_requests SET status = 'expired'
+        WHERE expense_id = $1 AND user_id = $2 AND status = 'pending'`,
+      [expenseId, auth.userId],
     );
-    throw new ApiError(409, 'Impossibile consegnare il codice OTP. Attiva le notifiche push di DueCase e riprova.', 'OTP_DELIVERY_UNAVAILABLE');
+    await client.query(
+      `INSERT INTO otp_requests (id, user_id, expense_id, code_hash, expires_at, status)
+       VALUES ($1, $2, $3, $4, $5, 'pending')`,
+      [requestId, auth.userId, expenseId, digest, expiresAt],
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
   }
 
-  res.json({ ok: true, expiresInSeconds: OTP_TTL_MINUTES * 60 });
-}));
+  try {
+    await sendExpenseOtpEmail({
+      to: user.email,
+      recipientName: user.displayName,
+      otp,
+      expenseTitle: expense.title,
+      amount: expense.amount,
+      expiresInMinutes: OTP_TTL_MINUTES,
+    });
+  } catch (error) {
+    await pool.query(`UPDATE otp_requests SET status = 'expired' WHERE id = $1 AND status = 'pending'`, [requestId]);
+    if (error instanceof Error && error.message === 'SMTP_NOT_CONFIGURED') {
+      throw new ApiError(503, 'Invio email non configurato. Configura il servizio SMTP di DueCase.', 'OTP_EMAIL_NOT_CONFIGURED');
+    }
+    throw new ApiError(502, 'Non è stato possibile inviare il codice OTP via email. Riprova.', 'OTP_EMAIL_DELIVERY_FAILED');
+  }
+
+  res.json({ ok: true, expiresInSeconds: OTP_TTL_MINUTES * 60, maskedEmail: maskEmail(user.email) });
+}
+
+async function verifyExpenseOtp(req: Request, code: string): Promise<Record<string, unknown>> {
+  const auth = requireFamily(req);
+  const expenseId = uuid.parse(req.params.id);
+  const client = await pool.connect();
+  let committed = false;
+
+  try {
+    await client.query('BEGIN');
+    const expenseResult = await client.query<{
+      paidByUserId: string;
+      status: string;
+      isExtraordinary: boolean;
+    }>(
+      `SELECT paid_by_user_id AS "paidByUserId", status, is_extraordinary AS "isExtraordinary"
+         FROM expenses
+        WHERE id = $1 AND family_id = $2
+        FOR UPDATE`,
+      [expenseId, auth.familyId],
+    );
+    const expense = expenseResult.rows[0];
+    if (!expense) throw new ApiError(404, 'Spesa non trovata', 'EXPENSE_NOT_FOUND');
+    if (!expense.isExtraordinary) throw new ApiError(409, 'Questa spesa non richiede firma OTP.', 'OTP_NOT_REQUIRED');
+    if (expense.paidByUserId === auth.userId) throw new ApiError(403, 'Non puoi approvare una spesa inserita da te', 'SELF_REVIEW_NOT_ALLOWED');
+    if (expense.status !== 'pending_approval') throw new ApiError(409, 'Questa spesa è già stata valutata', 'EXPENSE_ALREADY_REVIEWED');
+
+    const otpResult = await client.query<{
+      id: string;
+      codeHash: string;
+      expiresAt: Date;
+      attempts: number;
+    }>(
+      `SELECT id, code_hash AS "codeHash", expires_at AS "expiresAt", attempts
+         FROM otp_requests
+        WHERE expense_id = $1 AND user_id = $2 AND status = 'pending'
+        ORDER BY created_at DESC
+        LIMIT 1
+        FOR UPDATE`,
+      [expenseId, auth.userId],
+    );
+    const otpRequest = otpResult.rows[0];
+    if (!otpRequest) throw new ApiError(409, 'Richiedi un nuovo codice OTP prima di approvare.', 'OTP_REQUIRED');
+
+    if (new Date(otpRequest.expiresAt).getTime() <= Date.now()) {
+      await client.query(`UPDATE otp_requests SET status = 'expired' WHERE id = $1`, [otpRequest.id]);
+      await client.query('COMMIT');
+      committed = true;
+      throw new ApiError(410, 'Il codice OTP è scaduto. Richiedine uno nuovo.', 'OTP_EXPIRED');
+    }
+
+    const candidate = otpHash(expenseId, auth.userId, code);
+    if (!sameHash(otpRequest.codeHash, candidate)) {
+      const nextAttempts = otpRequest.attempts + 1;
+      await client.query(
+        `UPDATE otp_requests
+            SET attempts = $1,
+                status = CASE WHEN $1 >= $2 THEN 'expired'::otp_request_status ELSE status END
+          WHERE id = $3`,
+        [nextAttempts, OTP_MAX_ATTEMPTS, otpRequest.id],
+      );
+      await client.query('COMMIT');
+      committed = true;
+      if (nextAttempts >= OTP_MAX_ATTEMPTS) {
+        throw new ApiError(429, 'Troppi tentativi. Richiedi un nuovo codice OTP.', 'OTP_TOO_MANY_ATTEMPTS');
+      }
+      throw new ApiError(400, 'Codice OTP non corretto.', 'OTP_INVALID');
+    }
+
+    const clock = await client.query<{ verifiedAt: Date }>(`SELECT clock_timestamp() AS "verifiedAt"`);
+    const verifiedAt = clock.rows[0]?.verifiedAt ?? new Date();
+    const iso = new Date(verifiedAt).toISOString();
+    const metadata = {
+      version: 1,
+      verifiedAt: iso,
+      date: iso.slice(0, 10),
+      time: iso.slice(11, 23) + 'Z',
+      ipAddress: getClientIp(req),
+      otpHash: otpRequest.codeHash,
+      hashAlgorithm: 'HMAC-SHA-256',
+      otpRequestId: otpRequest.id,
+      signerUserId: auth.userId,
+      userAgent: req.get('user-agent') ?? null,
+    };
+
+    await client.query(
+      `UPDATE otp_requests
+          SET status = 'verified', verified_at = $1
+        WHERE id = $2`,
+      [verifiedAt, otpRequest.id],
+    );
+    await client.query(
+      `UPDATE otp_requests
+          SET status = 'expired'
+        WHERE expense_id = $1 AND user_id = $2 AND status = 'pending' AND id <> $3`,
+      [expenseId, auth.userId, otpRequest.id],
+    );
+    await client.query(
+      `UPDATE expenses
+          SET status = 'approved',
+              reviewed_by_user_id = $1,
+              reviewed_at = $2,
+              approval_otp_verified_at = $2,
+              otp_signature_metadata = $3::jsonb,
+              approval_otp_hash = NULL,
+              approval_otp_expires_at = NULL,
+              approval_otp_requested_by = NULL,
+              approval_otp_attempts = 0,
+              updated_at = NOW()
+        WHERE id = $4 AND family_id = $5`,
+      [auth.userId, verifiedAt, JSON.stringify(metadata), expenseId, auth.familyId],
+    );
+    await client.query('COMMIT');
+    committed = true;
+  } catch (error) {
+    if (!committed) {
+      try { await client.query('ROLLBACK'); } catch { /* noop */ }
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  const updated = await readExpense(expenseId, auth.familyId, auth.userId);
+  const paidByUserId = updated.paidByUserId as string | null;
+  if (paidByUserId) {
+    await sendPushToUser(paidByUserId, {
+      title: 'Spesa straordinaria approvata',
+      body: `La spesa “${String(updated.title)}” di ${formatEuroAmount(String(updated.amount))} è stata approvata con firma OTP da ${parentRoleLabel(auth.role)}.`,
+      data: { type: 'expense_approved', screen: 'expenses', expenseId },
+    });
+  }
+  return updated;
+}
+
+async function approveOrdinaryExpense(req: Request): Promise<Record<string, unknown>> {
+  const auth = requireFamily(req);
+  const expenseId = uuid.parse(req.params.id);
+  const result = await pool.query(
+    `UPDATE expenses
+        SET status = 'approved', reviewed_by_user_id = $1, reviewed_at = NOW(), updated_at = NOW()
+      WHERE id = $2
+        AND family_id = $3
+        AND paid_by_user_id <> $1
+        AND status = 'pending_approval'
+        AND is_extraordinary = FALSE
+      RETURNING id`,
+    [auth.userId, expenseId, auth.familyId],
+  );
+  if (result.rowCount !== 1) {
+    const check = await pool.query<{ isExtraordinary: boolean }>(
+      `SELECT is_extraordinary AS "isExtraordinary" FROM expenses WHERE id = $1 AND family_id = $2`,
+      [expenseId, auth.familyId],
+    );
+    if (check.rows[0]?.isExtraordinary) throw new ApiError(409, 'Questa spesa straordinaria richiede la firma OTP.', 'OTP_REQUIRED');
+    throw new ApiError(409, 'Spesa non disponibile per la revisione', 'EXPENSE_NOT_REVIEWABLE');
+  }
+
+  const updated = await readExpense(expenseId, auth.familyId, auth.userId);
+  const paidByUserId = updated.paidByUserId as string | null;
+  if (paidByUserId) {
+    await sendPushToUser(paidByUserId, {
+      title: 'Spesa approvata',
+      body: `La spesa “${String(updated.title)}” di ${formatEuroAmount(String(updated.amount))} è stata approvata da ${parentRoleLabel(auth.role)}.`,
+      data: { type: 'expense_approved', screen: 'expenses', expenseId },
+    });
+  }
+  return updated;
+}
 
 async function declineExpense(req: Request): Promise<Record<string, unknown>> {
   const auth = requireFamily(req);
@@ -239,8 +466,9 @@ async function declineExpense(req: Request): Promise<Record<string, unknown>> {
     [auth.userId, expenseId, auth.familyId],
   );
   if (result.rowCount !== 1) throw new ApiError(409, 'Spesa non disponibile per la revisione', 'EXPENSE_NOT_REVIEWABLE');
-  const { rows } = await pool.query(`${expenseSelect} WHERE e.id = $1 AND e.family_id = $2`, [expenseId, auth.familyId]);
-  const updated = rows[0] as Record<string, unknown>;
+  await pool.query(`UPDATE otp_requests SET status = 'expired' WHERE expense_id = $1 AND status = 'pending'`, [expenseId]);
+
+  const updated = await readExpense(expenseId, auth.familyId, auth.userId);
   const paidByUserId = updated.paidByUserId as string | null;
   if (paidByUserId) {
     await sendPushToUser(paidByUserId, {
@@ -249,93 +477,32 @@ async function declineExpense(req: Request): Promise<Record<string, unknown>> {
       data: { type: 'expense_declined', screen: 'expenses', expenseId },
     });
   }
-  return serializeExpense(updated, auth.userId);
+  return updated;
 }
 
-async function approveExpense(req: Request): Promise<Record<string, unknown>> {
-  const auth = requireFamily(req);
-  const expenseId = uuid.parse(req.params.id);
-  const { otp } = approveSchema.parse(req.body);
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const { rows } = await client.query<{
-      paidByUserId: string;
-      status: string;
-      otpHash: string | null;
-      otpExpiresAt: Date | null;
-      otpRequestedBy: string | null;
-      otpAttempts: number;
-    }>(
-      `SELECT paid_by_user_id AS "paidByUserId",
-              status,
-              approval_otp_hash AS "otpHash",
-              approval_otp_expires_at AS "otpExpiresAt",
-              approval_otp_requested_by AS "otpRequestedBy",
-              approval_otp_attempts AS "otpAttempts"
-         FROM expenses
-        WHERE id = $1 AND family_id = $2
-        FOR UPDATE`,
-      [expenseId, auth.familyId],
-    );
-    const expense = rows[0];
-    if (!expense) throw new ApiError(404, 'Spesa non trovata', 'EXPENSE_NOT_FOUND');
-    if (expense.paidByUserId === auth.userId) throw new ApiError(403, 'Non puoi approvare una spesa inserita da te', 'SELF_REVIEW_NOT_ALLOWED');
-    if (expense.status !== 'pending_approval') throw new ApiError(409, 'Questa spesa è già stata valutata', 'EXPENSE_ALREADY_REVIEWED');
-    if (!expense.otpHash || !expense.otpExpiresAt || expense.otpRequestedBy !== auth.userId) throw new ApiError(409, 'Richiedi un nuovo codice OTP prima di approvare.', 'OTP_REQUIRED');
-    if (new Date(expense.otpExpiresAt).getTime() <= Date.now()) throw new ApiError(410, 'Il codice OTP è scaduto. Richiedine uno nuovo.', 'OTP_EXPIRED');
-    if (expense.otpAttempts >= OTP_MAX_ATTEMPTS) throw new ApiError(429, 'Troppi tentativi. Richiedi un nuovo codice OTP.', 'OTP_TOO_MANY_ATTEMPTS');
+router.post('/:id/request-otp', asyncHandler(requestOtp));
+router.post('/:id/request-approval-otp', asyncHandler(requestOtp));
 
-    const candidate = otpHash(expenseId, auth.userId, otp);
-    if (candidate !== expense.otpHash) {
-      await client.query(
-        `UPDATE expenses SET approval_otp_attempts = approval_otp_attempts + 1, updated_at = NOW() WHERE id = $1`,
-        [expenseId],
-      );
-      await client.query('COMMIT');
-      throw new ApiError(400, 'Codice OTP non corretto.', 'OTP_INVALID');
-    }
-
-    await client.query(
-      `UPDATE expenses
-          SET status = 'approved',
-              reviewed_by_user_id = $1,
-              reviewed_at = NOW(),
-              approval_otp_verified_at = NOW(),
-              approval_otp_hash = NULL,
-              approval_otp_expires_at = NULL,
-              approval_otp_requested_by = NULL,
-              approval_otp_attempts = 0,
-              updated_at = NOW()
-        WHERE id = $2`,
-      [auth.userId, expenseId],
-    );
-    await client.query('COMMIT');
-  } catch (error) {
-    if ((client as unknown as { _queryable?: boolean })._queryable !== false) {
-      try { await client.query('ROLLBACK'); } catch { /* transaction may already be committed for invalid OTP attempt */ }
-    }
-    throw error;
-  } finally {
-    client.release();
-  }
-
-  const { rows } = await pool.query(`${expenseSelect} WHERE e.id = $1 AND e.family_id = $2`, [expenseId, auth.familyId]);
-  const updated = rows[0] as Record<string, unknown> | undefined;
-  if (!updated) throw new ApiError(500, 'Impossibile rileggere la spesa aggiornata', 'EXPENSE_REFRESH_ERROR');
-  const paidByUserId = updated.paidByUserId as string | null;
-  if (paidByUserId) {
-    await sendPushToUser(paidByUserId, {
-      title: 'Spesa approvata',
-      body: `La spesa “${String(updated.title)}” di ${formatEuroAmount(String(updated.amount))} è stata approvata con firma OTP da ${parentRoleLabel(auth.role)}.`,
-      data: { type: 'expense_approved', screen: 'expenses', expenseId },
-    });
-  }
-  return serializeExpense(updated, auth.userId);
-}
+router.post('/:id/verify-otp', asyncHandler(async (req, res) => {
+  const { code } = verifyOtpSchema.parse(req.body);
+  res.json(await verifyExpenseOtp(req, code));
+}));
 
 router.post('/:id/approve', asyncHandler(async (req, res) => {
-  res.json(await approveExpense(req));
+  const auth = requireFamily(req);
+  const expenseId = uuid.parse(req.params.id);
+  const check = await pool.query<{ isExtraordinary: boolean }>(
+    `SELECT is_extraordinary AS "isExtraordinary" FROM expenses WHERE id = $1 AND family_id = $2`,
+    [expenseId, auth.familyId],
+  );
+  if (!check.rows[0]) throw new ApiError(404, 'Spesa non trovata', 'EXPENSE_NOT_FOUND');
+  if (check.rows[0].isExtraordinary) {
+    const legacy = legacyOtpSchema.parse(req.body ?? {});
+    if (!legacy.otp) throw new ApiError(409, 'Richiedi e verifica il codice OTP per approvare questa spesa straordinaria.', 'OTP_REQUIRED');
+    res.json(await verifyExpenseOtp(req, legacy.otp));
+    return;
+  }
+  res.json(await approveOrdinaryExpense(req));
 }));
 
 router.post('/:id/decline', asyncHandler(async (req, res) => {
