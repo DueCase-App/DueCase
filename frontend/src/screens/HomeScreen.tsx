@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -142,7 +141,12 @@ export function HomeScreen({ onNavigate }: { onNavigate: (target: HomeDestinatio
     >
       <View style={styles.topBar}>
         <View style={styles.brandRow}>
-          <Image source={require('../../assets/icon.png')} style={styles.logoMark} />
+          <View style={styles.logoMark} accessibilityElementsHidden>
+            <Ionicons name="home" size={25} color="#FFFFFF" />
+            <View style={styles.logoAccent}>
+              <Ionicons name="heart" size={10} color="#FFFFFF" />
+            </View>
+          </View>
           <Text style={styles.brandBlue}>Due</Text><Text style={styles.brandOrange}>Case</Text>
         </View>
         <Pressable
@@ -238,7 +242,8 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: ui.colors.background },
   topBar: { minHeight: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   brandRow: { flexDirection: 'row', alignItems: 'center' },
-  logoMark: { width: 48, height: 48, borderRadius: 12, marginRight: 8 },
+  logoMark: { width: 48, height: 48, borderRadius: 14, marginRight: 8, backgroundColor: ui.colors.primary, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  logoAccent: { position: 'absolute', right: 4, bottom: 4, width: 17, height: 17, borderRadius: 9, backgroundColor: ui.colors.orange, alignItems: 'center', justifyContent: 'center' },
   brandBlue: { fontSize: 31, fontWeight: '900', color: ui.colors.primaryDark, letterSpacing: -1.2 },
   brandOrange: { fontSize: 31, fontWeight: '900', color: ui.colors.orange, letterSpacing: -1.2 },
   bellButton: { width: 52, height: 52, borderRadius: 26, backgroundColor: ui.colors.card, alignItems: 'center', justifyContent: 'center', ...cardShadow },
