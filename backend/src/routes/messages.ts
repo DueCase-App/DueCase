@@ -6,6 +6,7 @@ import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
 import { messageDataHash } from '../services/integrityService.js';
 import { parentRoleSubject, sendPushToOtherParent } from '../services/notificationService.js';
+import { analyzeTone } from '../services/toneMeterService.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -13,6 +14,9 @@ router.use(requireAuth);
 const uuid = z.string().uuid();
 const createSchema = z.object({
   text: z.string().min(1).max(10000).refine((value) => value.trim().length > 0, 'Il messaggio non può essere vuoto.'),
+});
+const toneSchema = z.object({
+  text: z.string().min(1).max(10000).refine((value) => value.trim().length > 0, 'Il testo non può essere vuoto.'),
 });
 const listSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
@@ -24,7 +28,7 @@ type MessageRow = {
   familyId: string;
   senderId: string;
   senderName: string;
-  senderRole: 'father' | 'mother';
+  senderRole: 'father' | 'mother' | null;
   text: string;
   createdAt: string;
   readAt: string | null;
@@ -35,16 +39,22 @@ const messageSelect = `
   SELECT m.id,
          m.family_id AS "familyId",
          m.sender_id AS "senderId",
-         u.display_name AS "senderName",
-         u.role AS "senderRole",
+         COALESCE(u.display_name, 'Account eliminato') AS "senderName",
+         COALESCE(u.role, m.sender_role) AS "senderRole",
          m.text,
          to_char(m.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
-         CASE WHEN m.read_at IS NULL THEN NULL
-              ELSE to_char(m.read_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+         CASE WHEN COALESCE(r.read_at, m.read_at) IS NULL THEN NULL
+              ELSE to_char(COALESCE(r.read_at, m.read_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
           END AS "readAt",
          m.data_hash AS "dataHash"
     FROM messages m
-    JOIN users u ON u.id = m.sender_id
+    LEFT JOIN users u ON u.id = m.sender_id
+    LEFT JOIN LATERAL (
+      SELECT MIN(mr.read_at) AS read_at
+        FROM message_reads mr
+       WHERE mr.message_id = m.id
+         AND mr.family_id = m.family_id
+    ) r ON TRUE
 `;
 
 function serializeMessage(row: MessageRow, currentUserId: string): MessageRow & { isMine: boolean; integrityVerified: true } {
@@ -84,6 +94,12 @@ router.get('/', asyncHandler(async (req, res) => {
   res.json(messages);
 }));
 
+router.post('/analyze-tone', asyncHandler(async (req, res) => {
+  requireFamily(req);
+  const body = toneSchema.parse(req.body);
+  res.json(analyzeTone(body.text));
+}));
+
 router.post('/', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const body = createSchema.parse(req.body);
@@ -92,9 +108,9 @@ router.post('/', asyncHandler(async (req, res) => {
   const dataHash = messageDataHash(body.text, auth.userId, createdAt);
 
   await pool.query(
-    `INSERT INTO messages (id, family_id, sender_id, text, created_at, data_hash)
-     VALUES ($1, $2, $3, $4, $5::timestamptz, $6)`,
-    [id, auth.familyId, auth.userId, body.text, createdAt, dataHash],
+    `INSERT INTO messages (id, family_id, sender_id, sender_role, text, created_at, data_hash)
+     VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7)`,
+    [id, auth.familyId, auth.userId, auth.role, body.text, createdAt, dataHash],
   );
 
   const { rows } = await pool.query<MessageRow>(
@@ -128,23 +144,13 @@ router.put('/:id/read', asyncHandler(async (req, res) => {
   }
 
   serializeMessage(existing, auth.userId);
-  if (existing.readAt) {
-    res.json(serializeMessage(existing, auth.userId));
-    return;
-  }
-
-  const update = await pool.query(
-    `UPDATE messages
-        SET read_at = clock_timestamp()
-      WHERE id = $1
-        AND family_id = $2
-        AND sender_id <> $3
-        AND read_at IS NULL`,
-    [messageId, auth.familyId, auth.userId],
-  );
-
-  if (update.rowCount !== 1) {
-    throw new ApiError(409, 'La lettura del messaggio non può essere registrata.', 'READ_RECEIPT_CONFLICT');
+  if (!existing.readAt) {
+    await pool.query(
+      `INSERT INTO message_reads (message_id, family_id, reader_id, read_at)
+       VALUES ($1, $2, $3, clock_timestamp())
+       ON CONFLICT (message_id, reader_id) DO NOTHING`,
+      [messageId, auth.familyId, auth.userId],
+    );
   }
 
   const refreshedResult = await pool.query<MessageRow>(
