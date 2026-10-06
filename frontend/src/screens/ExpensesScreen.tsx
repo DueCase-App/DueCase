@@ -1,3 +1,6 @@
+import { openPrivateFile } from '../services/openFile';
+import { useLiveRefresh } from '../services/live';
+import { SafeModal as Modal } from '../components/SafeModal';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -6,7 +9,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -119,6 +121,7 @@ export function ExpensesScreen(): React.JSX.Element {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useLiveRefresh(load);
 
   async function decline(expense: Expense): Promise<void> {
     try {
@@ -315,7 +318,7 @@ export function ExpensesScreen(): React.JSX.Element {
       </ScrollView>
 
       <ExpenseModal visible={formVisible} childrenList={children} onClose={() => setFormVisible(false)} onDone={() => { setFormVisible(false); void load(); }} />
-      <PaymentModal expense={paymentExpense} currentRole={user?.role ?? null} onClose={() => setPaymentExpense(null)} onDone={() => { setPaymentExpense(null); void load(); }} />
+      <PaymentModal reserved={paymentExpense ? (payments[paymentExpense.id]??[]).filter(p=>p.status==='declared'||p.status==='confirmed').reduce((sum,p)=>sum+Number(p.amount),0) : 0} expense={paymentExpense} currentRole={user?.role ?? null} onClose={() => setPaymentExpense(null)} onDone={() => { setPaymentExpense(null); void load(); }} />
       <OtpApprovalModal
         expense={otpExpense}
         maskedEmail={otpEmail}
@@ -362,7 +365,7 @@ export function ExpensesScreen(): React.JSX.Element {
       </Modal>
 
       <Modal visible={paymentReceipt !== null} transparent animationType="fade" onRequestClose={() => setPaymentReceipt(null)}>
-        <View style={styles.backdrop}><View style={styles.preview}><View style={styles.modalHead}><Text style={styles.modalTitle}>Prova di pagamento</Text><Pressable onPress={() => setPaymentReceipt(null)}><Ionicons name="close" size={26} color={ui.colors.text} /></Pressable></View>{paymentReceipt?.receiptUrl && paymentReceipt.receiptMimeType?.startsWith('image/') ? <Image source={api.expenses.paymentReceiptSource(paymentReceipt.receiptUrl)} resizeMode="contain" style={styles.image} /> : <View style={styles.filePreview}><Ionicons name="document-text-outline" size={46} color={ui.colors.primary} /><Text style={styles.cardTitle}>{paymentReceipt?.receiptFilename ?? 'Documento allegato'}</Text><Text style={styles.muted}>La prova di pagamento è archiviata e collegata a questa spesa.</Text></View>}</View></View>
+        <View style={styles.backdrop}><View style={styles.preview}><View style={styles.modalHead}><Text style={styles.modalTitle}>Prova di pagamento</Text><Pressable onPress={() => setPaymentReceipt(null)}><Ionicons name="close" size={26} color={ui.colors.text} /></Pressable></View>{paymentReceipt?.receiptUrl && paymentReceipt.receiptMimeType?.startsWith('image/') ? <Image source={api.expenses.paymentReceiptSource(paymentReceipt.receiptUrl)} resizeMode="contain" style={styles.image} /> : <View style={styles.filePreview}><Ionicons name="document-text-outline" size={46} color={ui.colors.primary} /><Text style={styles.cardTitle}>{paymentReceipt?.receiptFilename ?? 'Documento allegato'}</Text><Text style={styles.muted}>La prova di pagamento è archiviata e collegata a questa spesa.</Text></View>}{paymentReceipt?.receiptUrl ? <Pressable style={styles.secondaryButton} onPress={()=>void openPrivateFile(api.expenses.paymentReceiptSource(paymentReceipt.receiptUrl!),paymentReceipt.receiptFilename??"pagamento.pdf",paymentReceipt.receiptMimeType??"application/pdf").catch(e=>Alert.alert("Allegato",e.message))}><Text style={styles.secondaryText}>Apri o salva</Text></Pressable>:null}</View></View>
       </Modal>
     </View>
   );
@@ -467,12 +470,12 @@ function ExpenseModal({ visible, childrenList, onClose, onDone }: { visible: boo
   );
 }
 
-function PaymentModal({ expense, currentRole, onClose, onDone }: { expense: Expense | null; currentRole: ParentRole | null; onClose: () => void; onDone: () => void }): React.JSX.Element {
+function PaymentModal({ expense, reserved, currentRole, onClose, onDone }: { reserved: number; expense: Expense | null; currentRole: ParentRole | null; onClose: () => void; onDone: () => void }): React.JSX.Element {
   const suggested = useMemo(() => {
     if (!expense || !currentRole) return '';
     const percentage = currentRole === 'father' ? Number(expense.fatherPercentage) : Number(expense.motherPercentage);
-    return (Number(expense.amount) * percentage / 100).toFixed(2);
-  }, [expense, currentRole]);
+    return Math.max(0,Number(expense.amount) * percentage / 100-reserved).toFixed(2);
+  }, [expense, currentRole, reserved]);
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [receipt, setReceipt] = useState<Receipt | null>(null);
@@ -510,14 +513,14 @@ function PaymentModal({ expense, currentRole, onClose, onDone }: { expense: Expe
     } finally { setBusy(false); }
   }
 
-  return <Modal visible={expense !== null} transparent animationType="slide" onRequestClose={onClose}><View style={styles.backdrop}><View style={styles.paymentModal}>
+  return <Modal visible={expense !== null} transparent animationType="slide" onRequestClose={onClose}><View style={styles.backdrop}><ScrollView keyboardShouldPersistTaps="handled" style={{maxHeight:"95%"}} contentContainerStyle={styles.paymentModal}>
     <View style={styles.modalHead}><View><Text style={styles.modalTitle}>Registra pagamento</Text><Text style={styles.meta}>{expense?.title}</Text></View><Pressable onPress={onClose}><Ionicons name="close" size={26} color={ui.colors.text} /></Pressable></View>
     <Text style={styles.label}>Importo rimborsato (€)</Text><TextInput style={styles.input} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={ui.colors.muted} />
     <Text style={styles.label}>Prova di pagamento</Text><View style={styles.actions}><Pressable style={styles.secondaryButton} onPress={() => void camera()}><Ionicons name="camera-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Foto</Text></Pressable><Pressable style={styles.secondaryButton} onPress={() => void pickFile()}><Ionicons name="document-attach-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>PDF / file</Text></Pressable></View>
     {receipt ? <Text style={styles.muted}>Allegato: {receipt.name}</Text> : null}
     <Text style={styles.label}>Note</Text><TextInput style={[styles.input, styles.notesInput]} multiline value={notes} onChangeText={setNotes} placeholder="Es. Bonifico effettuato" placeholderTextColor={ui.colors.muted} />
     <View style={styles.actions}><Pressable style={styles.cancelButton} onPress={onClose}><Text style={styles.cancelText}>Annulla</Text></Pressable><Pressable disabled={busy} style={styles.approveButton} onPress={() => void save()}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.approveText}>Conferma pagamento</Text>}</Pressable></View>
-  </View></View></Modal>;
+  </ScrollView></View></Modal>;
 }
 
 const styles = StyleSheet.create({

@@ -1,3 +1,4 @@
+import { useLiveRefresh } from '../services/live';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -54,6 +55,7 @@ export function HomeScreen({ onNavigate }: { onNavigate: (target: HomeDestinatio
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useLiveRefresh(load);
 
   const pendingExpenses = useMemo(() => expenses.filter((item) => item.canReview), [expenses]);
   const pendingSwaps = useMemo(() => swaps.filter((item) => item.canRespond), [swaps]);

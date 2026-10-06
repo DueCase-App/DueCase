@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
+import type { PoolClient } from 'pg';
 import { requireAuth, requireFamily } from '../auth.js';
 import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
@@ -29,15 +30,15 @@ const createSchema = z.object({
   notes: z.string().trim().max(2000).optional(),
 });
 
-async function expenseForFamily(expenseId: string, familyId: string) {
-  const { rows } = await pool.query<{
+async function expenseForFamily(expenseId: string, familyId: string, client?: PoolClient) {
+  const { rows } = await (client ?? pool).query<{
     id: string; status: string; amount: string; paidByUserId: string; paidByRole: 'father'|'mother'; fatherPercentage: string; motherPercentage: string;
   }>(
     `SELECT e.id, e.status, e.amount::numeric(12,2)::text AS amount,
             e.paid_by_user_id AS "paidByUserId", u.role AS "paidByRole",
             e.father_percentage::text AS "fatherPercentage", e.mother_percentage::text AS "motherPercentage"
        FROM expenses e JOIN users u ON u.id = e.paid_by_user_id
-      WHERE e.id = $1 AND e.family_id = $2`,
+      WHERE e.id = $1 AND e.family_id = $2 ${client ? 'FOR UPDATE OF e' : ''}`,
     [expenseId, familyId],
   );
   const expense = rows[0];
@@ -86,25 +87,36 @@ router.post('/:id/payments', uploadProof, asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const expenseId = uuid.parse(req.params.id);
   const body = createSchema.parse(req.body);
-  const expense = await expenseForFamily(expenseId, auth.familyId);
-  if (!['approved','to_pay','partially_paid','paid'].includes(expense.status)) throw new ApiError(409, 'La spesa deve essere approvata prima del pagamento', 'EXPENSE_NOT_PAYABLE');
-  if (expense.paidByUserId === auth.userId) throw new ApiError(409, 'Hai già anticipato questa spesa: il rimborso deve essere registrato dall’altro genitore', 'PAYMENT_WRONG_PAYER');
-
   const id = randomUUID();
   const paidAt = body.paidAt ?? new Date().toISOString();
-  await pool.query(
+  const client = await pool.connect();
+  let recipient: string;
+  try {
+    await client.query('BEGIN');
+  const expense = await expenseForFamily(expenseId, auth.familyId, client);
+  if (!['approved','to_pay','partially_paid'].includes(expense.status)) throw new ApiError(409, 'La spesa deve essere approvata prima del pagamento', 'EXPENSE_NOT_PAYABLE');
+  if (expense.paidByUserId === auth.userId) throw new ApiError(409, 'Hai già anticipato questa spesa: il rimborso deve essere registrato dall’altro genitore', 'PAYMENT_WRONG_PAYER');
+
+  const due = Math.round(Number(expense.amount) * (expense.paidByRole === 'father' ? Number(expense.motherPercentage) : Number(expense.fatherPercentage)));
+  const reserved = await client.query<{ cents: string }>(`SELECT ROUND(COALESCE(SUM(amount),0)*100)::text AS cents FROM expense_payments WHERE expense_id=$1 AND family_id=$2 AND status IN ('declared','confirmed')`, [expenseId,auth.familyId]);
+  const cents = Math.round(Number(body.amount)*100);
+  if(cents <= 0 || cents > due-Number(reserved.rows[0]?.cents ?? '0')) throw new ApiError(409,'L’importo supera il residuo da rimborsare, inclusi i pagamenti in attesa di conferma.','INVALID_PAYMENT_AMOUNT');
+  await client.query(
     `INSERT INTO expense_payments
       (id, family_id, expense_id, paid_by_user_id, amount, paid_at, receipt_filename, receipt_mime_type, receipt_data, notes)
      VALUES ($1,$2,$3,$4,$5::numeric,$6::timestamptz,$7,$8,$9,$10)`,
     [id, auth.familyId, expenseId, auth.userId, body.amount, paidAt, req.file?.originalname ?? null, req.file?.mimetype ?? null, req.file?.buffer ?? null, body.notes ?? null],
   );
-  await pool.query(`UPDATE expenses SET status = CASE WHEN status = 'paid' THEN status ELSE 'partially_paid' END, updated_at = NOW() WHERE id = $1 AND family_id = $2`, [expenseId, auth.familyId]);
-  await pool.query(
+  await client.query(
     `INSERT INTO family_activity_history (id, family_id, actor_user_id, entity_type, entity_id, action, details)
      VALUES ($1,$2,$3,'expense_payment',$4,'payment_declared',$5::jsonb)`,
     [randomUUID(), auth.familyId, auth.userId, id, JSON.stringify({ expenseId, amount: body.amount, paidAt })],
   );
-  await sendPushToUser(expense.paidByUserId, {
+    recipient = expense.paidByUserId;
+    await client.query('COMMIT');
+  } catch(error) { await client.query('ROLLBACK'); throw error; }
+  finally { client.release(); }
+  await sendPushToUser(recipient, {
     title: 'Pagamento registrato',
     body: `${parentRoleLabel(auth.role)} ha indicato un pagamento di € ${body.amount}. Conferma la ricezione.`,
     data: { type: 'payment_declared', screen: 'expenses', expenseId, paymentId: id },
@@ -116,12 +128,13 @@ router.post('/:id/payments/:paymentId/confirm', asyncHandler(async (req, res) =>
   const auth = requireFamily(req);
   const expenseId = uuid.parse(req.params.id);
   const paymentId = uuid.parse(req.params.paymentId);
-  const expense = await expenseForFamily(expenseId, auth.familyId);
-  if (expense.paidByUserId !== auth.userId) throw new ApiError(403, 'Solo chi ha anticipato la spesa può confermare la ricezione', 'PAYMENT_CONFIRM_NOT_ALLOWED');
-
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+  const expense = await expenseForFamily(expenseId, auth.familyId, client);
+  if (expense.paidByUserId !== auth.userId) throw new ApiError(403, 'Solo chi ha anticipato la spesa può confermare la ricezione', 'PAYMENT_CONFIRM_NOT_ALLOWED');
+
+
     const paymentResult = await client.query<{ paidByUserId: string; amount: string }>(
       `UPDATE expense_payments
           SET status = 'confirmed', confirmed_by_user_id = $1, confirmed_at = clock_timestamp()

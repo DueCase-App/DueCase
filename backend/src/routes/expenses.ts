@@ -217,7 +217,13 @@ router.get('/balance', asyncHandler(async (req, res) => {
               mother_paid,
               father_share,
               mother_share,
-              father_paid - father_share AS father_net
+              father_paid - father_share + COALESCE((
+                SELECT SUM(CASE WHEN payer.role = 'father' THEN p.amount ELSE -p.amount END)
+                FROM expense_payments p JOIN users payer ON payer.id = p.paid_by_user_id
+                JOIN expenses paid_expense ON paid_expense.id = p.expense_id
+                WHERE p.family_id = $1 AND p.status = 'confirmed'
+                  AND paid_expense.status IN ('approved','to_pay','partially_paid','paid','closed')
+              ),0) AS father_net
          FROM expense_totals
      )
      SELECT father_paid::numeric(12,2)::text AS "fatherPaid",

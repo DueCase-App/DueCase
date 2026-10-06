@@ -4,12 +4,12 @@
     "slug": "duecase",
     "owner": "tecnicoelioss-team",
     "scheme": "duecase",
-    "version": "0.2.6",
+    "version": "0.3.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "backgroundColor": "#FFF9F0",
     "primaryColor": "#1769E0",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/duecase-logo-hd.png",
     "plugins": [
       "expo-secure-store",
       "expo-document-picker",
@@ -18,12 +18,12 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#FFF8ED",
-          "image": "./assets/splash-icon.png",
+          "image": "./assets/duecase-logo-hd.png",
           "imageWidth": 220,
           "resizeMode": "contain",
           "dark": {
             "backgroundColor": "#FFF8ED",
-            "image": "./assets/splash-icon.png"
+            "image": "./assets/duecase-logo-hd.png"
           }
         }
       ],
@@ -48,21 +48,21 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tecnicoelios.duecase",
       "backgroundColor": "#FFF9F0",
-      "icon": "./assets/icon.png",
+      "icon": "./assets/duecase-logo-hd.png",
       "infoPlist": {
         "NSCameraUsageDescription": "DueCase usa la fotocamera esclusivamente per fotografare ricevute e documenti che scegli di allegare.",
         "NSPhotoLibraryUsageDescription": "DueCase accede alla libreria foto esclusivamente per permetterti di selezionare ricevute e documenti da allegare."
       },
       "config": {
         "usesNonExemptEncryption": false
-      }
+      },
+      "buildNumber": "30"
     },
     "android": {
       "package": "com.tecnicoelios.duecase",
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "monochromeImage": "./assets/adaptive-icon-monochrome.png",
+        "foregroundImage": "./assets/duecase-logo-hd.png",
         "backgroundColor": "#FFF8ED"
       },
       "permissions": [
@@ -71,7 +71,8 @@
       ],
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "versionCode": 30
     },
     "extra": {
       "eas": {

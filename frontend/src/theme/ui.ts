@@ -1,6 +1,6 @@
 export const ui = {
   colors: {
-    background: 'rgba(255, 249, 240, 0.96)',
+    background: 'transparent',
     backgroundSolid: '#FFF9F0',
     card: '#FFFEFB',
     primary: '#1769E0',
@@ -25,7 +25,7 @@ export const ui = {
     warningSoft: '#FFF2DF',
   },
   gradients: {
-    page: ['#EAF5FF', '#FFFDF8', '#FFF1DE'] as const,
+    page: ['#DCEFFF', '#FFF9F0', '#FFE4C3'] as const,
     header: ['#DCEFFF', '#FFF8ED', '#FFE7C7'] as const,
     nav: ['#FFFFFF', '#F7FBFF', '#FFF8ED'] as const,
     primary: ['#2A7BE8', '#1769E0', '#0F5AC4'] as const,

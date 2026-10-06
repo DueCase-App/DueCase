@@ -1,8 +1,9 @@
+import { dateSchema } from '../services/validation.js';
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, requireFamily } from '../auth.js';
-import { pool } from '../db.js';
+import { pool, transaction } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
 import { parentRoleSubject, sendPushToOtherParent, sendPushToUser } from '../services/notificationService.js';
 
@@ -11,7 +12,7 @@ router.use(requireAuth);
 
 const uuid = z.string().uuid();
 const role = z.enum(['father','mother']);
-const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const dateString = dateSchema;
 const patternSchema = z.object({
   custodianRole: role,
   overnight: z.boolean().optional().default(true),
@@ -92,6 +93,7 @@ router.put('/pattern/:childId/:weekday', asyncHandler(async (req, res) => {
      VALUES ($1,$2,$3,'custody_pattern',$4,'updated',$5::jsonb)`,
     [randomUUID(), auth.familyId, auth.userId, childId, JSON.stringify({ weekday, custodianRole: body.custodianRole, overnight: body.overnight })],
   );
+  await sendPushToOtherParent(auth.familyId,auth.userId,{title:'Schema permanenze aggiornato',body:`${parentRoleSubject(auth.role)} ha aggiornato lo schema settimanale.`,data:{type:'custody_pattern_updated',screen:'permanence',childId}});
   res.json(rows[0]);
 }));
 
@@ -158,6 +160,7 @@ router.put('/alternating-weekends/:childId', asyncHandler(async (req, res) => {
     })],
   );
 
+  await sendPushToOtherParent(auth.familyId,auth.userId,{title:'Weekend aggiornati',body:`${parentRoleSubject(auth.role)} ha aggiornato i weekend di ${child.displayName}.`,data:{type:'custody_weekend_updated',screen:'permanence',childId}});
   res.json({ ...rows[0], childName: child.displayName });
 }));
 
@@ -166,50 +169,7 @@ router.get('/current', asyncHandler(async (req, res) => {
   const date = req.query.date ? dateString.parse(req.query.date) : romeDateKey();
 
   const { rows } = await pool.query(
-    `WITH kids AS (
-       SELECT id, display_name FROM children WHERE family_id = $1
-     ), approved_exception AS (
-       SELECT DISTINCT ON (child_id) child_id, custodian_role, overnight, notes
-         FROM custody_exceptions
-        WHERE family_id = $1 AND custody_date = $2::date AND status = 'approved'
-        ORDER BY child_id, reviewed_at DESC NULLS LAST, created_at DESC
-     ), general_turn AS (
-       SELECT custodian_role, notes
-         FROM custody_turns
-        WHERE family_id = $1 AND custody_date = $2::date
-        ORDER BY updated_at DESC LIMIT 1
-     ), alternating_weekend AS (
-       SELECT child_id,
-              CASE
-                WHEN (((FLOOR((($2::date - anchor_saturday)::numeric) / 7)::int % 2) + 2) % 2) = 0
-                  THEN first_weekend_role
-                ELSE second_weekend_role
-              END AS custodian_role,
-              overnight,
-              notes
-         FROM custody_alternating_weekends
-        WHERE family_id = $1
-          AND EXTRACT(ISODOW FROM $2::date)::int IN (6, 7)
-     ), weekly AS (
-       SELECT child_id, custodian_role, overnight, notes
-         FROM custody_weekly_patterns
-        WHERE family_id = $1 AND weekday = EXTRACT(ISODOW FROM $2::date)::int
-     )
-     SELECT k.id AS "childId", k.display_name AS "childName",
-            COALESCE(e.custodian_role, gt.custodian_role, aw.custodian_role, w.custodian_role) AS "custodianRole",
-            COALESCE(e.overnight, aw.overnight, w.overnight, TRUE) AS overnight,
-            COALESCE(e.notes, gt.notes, aw.notes, w.notes) AS notes,
-            CASE WHEN e.child_id IS NOT NULL THEN 'exception'
-                 WHEN gt.custodian_role IS NOT NULL THEN 'calendar'
-                 WHEN aw.child_id IS NOT NULL THEN 'alternating_weekend'
-                 WHEN w.child_id IS NOT NULL THEN 'weekly_pattern'
-                 ELSE 'undefined' END AS source
-       FROM kids k
-       LEFT JOIN approved_exception e ON e.child_id = k.id
-       LEFT JOIN alternating_weekend aw ON aw.child_id = k.id
-       LEFT JOIN weekly w ON w.child_id = k.id
-       LEFT JOIN general_turn gt ON TRUE
-      ORDER BY k.display_name`,
+    `SELECT * FROM duecase_custody($1,$2::date)`,
     [auth.familyId, date],
   );
 
@@ -266,7 +226,7 @@ router.post('/exceptions', asyncHandler(async (req, res) => {
   await sendPushToOtherParent(auth.familyId, auth.userId, {
     title: 'Richiesta cambio permanenza',
     body: `${parentRoleSubject(auth.role)} ha richiesto una modifica per ${child.displayName} il ${body.custodyDate}.`,
-    data: { type: 'custody_exception', screen: 'calendar', exceptionId: id },
+    data: { type: 'custody_exception', screen: 'permanence', exceptionId: id },
   });
   res.status(201).json({ ...rows[0], childName: child.displayName, requestedByName: auth.displayName, canRespond: false });
 }));
@@ -275,7 +235,8 @@ router.post('/exceptions/:id/respond', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const id = uuid.parse(req.params.id);
   const body = responseSchema.parse(req.body);
-  const existing = await pool.query<{ requestedBy: string; status: string }>(
+  const {row,updated}=await transaction(async client=>{
+  const existing = await client.query<{ requestedBy: string; status: string }>(
     `SELECT requested_by AS "requestedBy", status FROM custody_exceptions
       WHERE id = $1 AND family_id = $2 FOR UPDATE`,
     [id, auth.familyId],
@@ -285,10 +246,10 @@ router.post('/exceptions/:id/respond', asyncHandler(async (req, res) => {
   if (row.requestedBy === auth.userId) throw new ApiError(403, 'Non puoi approvare la tua richiesta', 'SELF_REVIEW_NOT_ALLOWED');
   if (row.status !== 'pending') throw new ApiError(409, 'Richiesta già gestita', 'REQUEST_ALREADY_REVIEWED');
 
-  const updated = await pool.query(
+  const updated = await client.query(
     `UPDATE custody_exceptions
         SET status = $1, reviewed_by = $2, reviewed_by_role = $3, reviewed_at = clock_timestamp(), updated_at = NOW()
-      WHERE id = $4 AND family_id = $5
+      WHERE id = $4 AND family_id = $5 AND status = 'pending'
       RETURNING id, child_id AS "childId", custody_date::text AS "custodyDate",
                 custodian_role AS "custodianRole", overnight, notes, requested_by AS "requestedBy",
                 requested_by_role AS "requestedByRole", status, reviewed_by AS "reviewedBy",
@@ -296,15 +257,19 @@ router.post('/exceptions/:id/respond', asyncHandler(async (req, res) => {
                 created_at AS "createdAt", updated_at AS "updatedAt"`,
     [body.status, auth.userId, auth.role, id, auth.familyId],
   );
-  await pool.query(
+  if (!updated.rowCount) throw new ApiError(409, 'Richiesta già gestita', 'REQUEST_ALREADY_REVIEWED');
+  await client.query(
     `INSERT INTO family_activity_history (id, family_id, actor_user_id, entity_type, entity_id, action, details)
      VALUES ($1,$2,$3,'custody_exception',$4,$5,$6::jsonb)`,
     [randomUUID(), auth.familyId, auth.userId, id, body.status, JSON.stringify({ role: auth.role })],
   );
+    return {row,updated};
+  });
+  await pool.query(`UPDATE in_app_notifications SET read_at=clock_timestamp() WHERE user_id=$1 AND family_id=$2 AND entity_type='custody_exception' AND entity_id=$3 AND read_at IS NULL`,[auth.userId,auth.familyId,id]);
   await sendPushToUser(row.requestedBy, {
     title: body.status === 'approved' ? 'Cambio permanenza accettato' : 'Cambio permanenza rifiutato',
     body: `${parentRoleSubject(auth.role)} ha ${body.status === 'approved' ? 'accettato' : 'rifiutato'} la richiesta di cambio permanenza.`,
-    data: { type: `custody_exception_${body.status}`, screen: 'calendar', exceptionId: id },
+    data: { type: `custody_exception_${body.status}`, screen: 'permanence', exceptionId: id },
   });
   res.json({ ...updated.rows[0], canRespond: false });
 }));

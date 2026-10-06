@@ -1,10 +1,12 @@
+import { SafeModal as Modal } from '../components/SafeModal';
+import { useLiveRefresh } from '../services/live';
 import { Ionicons } from '@expo/vector-icons';
 import { fetch as expoFetch } from 'expo/fetch';
 import * as DocumentPicker from 'expo-document-picker';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { api } from '../services/api';
 import { cardShadow, ui } from '../theme/ui';
 import type { DocumentCategory, FamilyChild, FamilyDocument } from '../types/models';
@@ -36,6 +38,7 @@ export function DocumentsScreen(): React.JSX.Element {
     } finally { setLoading(false); setRefreshing(false); }
   }
   useEffect(() => { void load(); }, []);
+  useLiveRefresh(load);
 
   async function open(item: FamilyDocument, download = false): Promise<void> {
     try {

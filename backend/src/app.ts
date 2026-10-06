@@ -1,3 +1,4 @@
+import { rateLimit } from './services/rateLimit.js';
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
@@ -5,6 +6,8 @@ import { checkPremiumStatus, requireAuth } from './auth.js';
 import { config } from './config.js';
 import { checkDatabase } from './db.js';
 import { asyncHandler, errorHandler } from './http.js';
+import emailAuthRouter from './routes/emailAuth.js';
+import syncRouter from './routes/sync.js';
 import accountRouter from './routes/account.js';
 import agreementsRouter from './routes/agreements.js';
 import authRouter from './routes/auth.js';
@@ -37,10 +40,13 @@ app.get('/api/health', asyncHandler(async (_req, res) => {
   res.json({ ok: true, service: 'duecase-api' });
 }));
 
+app.use('/api/auth', rateLimit(60, 15*60*1000));
+app.use('/api/auth', emailAuthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/auth', accountRouter);
 
 // Famiglia, notifiche e storico sono consultabili anche senza Premium.
+app.use('/api/sync', syncRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/history', historyRouter);
 app.use('/api/family/children', requireAuth, checkPremiumStatus, familyChildrenRouter);

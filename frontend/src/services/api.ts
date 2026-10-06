@@ -60,24 +60,40 @@ export function setApiToken(token: string | null): void { accessToken = token; }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData = typeof FormData !== 'undefined' && init?.body instanceof FormData;
-  const response = await fetch(`${API_URL}${path}`, {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+  let response: Response;
+  try { response = await fetch(`${API_URL}${path}`, {
     ...init,
+    signal: controller.signal,
     headers: {
       ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
       ...authHeaders(),
       ...(init?.headers ?? {}),
     },
   });
+  } catch { throw new ApiClientError('Connessione non disponibile. Riprova tra poco.', 0, 'NETWORK_ERROR'); }
+  finally { clearTimeout(timer); }
   const payload = await response.json().catch(() => null) as { error?: string; code?: string } | T | null;
   if (!response.ok) {
     const errorPayload = payload as { error?: string; code?: string } | null;
-    throw new ApiClientError(errorPayload?.error ?? `HTTP ${response.status}`, response.status, errorPayload?.code);
+    throw new ApiClientError(response.status >= 500 ? 'Operazione non riuscita. Riprova tra poco.' : errorPayload?.error ?? `HTTP ${response.status}`, response.status, errorPayload?.code);
   }
   return payload as T;
 }
 
 export const api = {
+  sync: {
+    wait: (since:string) => request<{revision:string}>(`/sync?since=${encodeURIComponent(since)}`),
+    counts: () => request<{notifications:number;messages:number;agreements:number;expenses:number;calendar:number;permanence:number}>('/sync/counts'),
+  },
   auth: {
+    pushStatus: () => request<{registered:boolean}>('/auth/push-status'),
+    emailStatus: () => request<{configured:boolean;verified:boolean;required:boolean}>('/auth/email-status'),
+    requestEmail: () => request('/auth/verify-email/request',{method:'POST'}),
+    confirmEmail: (code:string) => request('/auth/verify-email/confirm',{method:'POST',body:JSON.stringify({code})}),
+    requestReset: (email:string) => request<{message:string}>('/auth/password-reset/request',{method:'POST',body:JSON.stringify({email})}),
+    confirmReset: (email:string,code:string,password:string,confirmPassword:string) => request('/auth/password-reset/confirm',{method:'POST',body:JSON.stringify({email,code,password,confirmPassword})}),
     register: (input: RegisterInput) => request<AuthResponse>('/auth/register', { method: 'POST', body: JSON.stringify(input) }),
     login: (input: { email: string; password: string }) => request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify(input) }),
     me: () => request<AuthUser>('/auth/me'),
@@ -173,10 +189,11 @@ export const api = {
     history: (id: string) => request<AgreementHistoryItem[]>(`/agreements/${encodeURIComponent(id)}/history`),
   },
   messages: {
-    list: (limit = 100) => request<LegalMessage[]>(`/messages?limit=${encodeURIComponent(String(limit))}`),
-    send: (text: string, attachment?: { uri: string; name: string; type: string; file?: Blob }) => {
+    list: (limit = 100, before?: string, beforeId?: string) => request<LegalMessage[]>(`/messages?limit=${encodeURIComponent(String(limit))}${before?'&before='+encodeURIComponent(before):''}${beforeId?'&beforeId='+encodeURIComponent(beforeId):''}`),
+    send: (text: string, attachment?: { uri: string; name: string; type: string; file?: Blob }, clientRequestId?: string) => {
       const form = new FormData();
       form.append('text', text);
+      if(clientRequestId) form.append('clientRequestId',clientRequestId);
       if (attachment) {
         if (attachment.file) form.append('attachment', attachment.file, attachment.name);
         else form.append('attachment', { uri: attachment.uri, name: attachment.name, type: attachment.type } as unknown as Blob);

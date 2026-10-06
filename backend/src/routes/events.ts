@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, requireFamily } from '../auth.js';
-import { pool } from '../db.js';
+import { pool, transaction } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
 import { parentRoleSubject, sendPushToOtherParent, sendPushToUser } from '../services/notificationService.js';
 
@@ -106,10 +106,10 @@ router.post('/', asyncHandler(async (req, res) => {
   );
   const { rows } = await pool.query(`${eventSelect} WHERE e.id = $1 AND e.family_id = $2`, [id, auth.familyId]);
 
-  if (body.requiresApproval) {
+  {
     await sendPushToOtherParent(auth.familyId, auth.userId, {
-      title: 'Nuova richiesta calendario',
-      body: `${parentRoleSubject(auth.role)} ha inserito “${body.title}”. Apri DueCase per rispondere.`,
+      title: body.requiresApproval ? 'Nuova richiesta calendario' : 'Nuovo evento',
+      body: `${parentRoleSubject(auth.role)} ha inserito “${body.title}”. ${body.requiresApproval ? 'Apri DueCase per rispondere.' : 'Apri il calendario per i dettagli.'}`,
       data: { type: 'event_approval', screen: 'calendar', eventId: id },
     });
   }
@@ -125,7 +125,8 @@ router.post('/:id/respond', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const id = uuid.parse(req.params.id);
   const body = respondSchema.parse(req.body);
-  const existingResult = await pool.query<{
+  const { rows, existing } = await transaction(async(client) => {
+  const existingResult = await client.query<{
     id: string;
     createdByUserId: string;
     status: string;
@@ -148,19 +149,23 @@ router.post('/:id/respond', asyncHandler(async (req, res) => {
   if (existing.createdByUserId === auth.userId) throw new ApiError(403, 'Non puoi approvare la tua richiesta', 'SELF_REVIEW_NOT_ALLOWED');
   if (existing.status !== 'pending') throw new ApiError(409, 'La richiesta è già stata gestita', 'EVENT_ALREADY_REVIEWED');
 
-  await pool.query(
+  const updated = await client.query(
     `UPDATE family_events
         SET status = $1, reviewed_by = $2, reviewed_at = clock_timestamp(), response_note = $3, updated_at = NOW()
-      WHERE id = $4 AND family_id = $5`,
+      WHERE id = $4 AND family_id = $5 AND status = 'pending'`,
     [body.status, auth.userId, body.note ?? null, id, auth.familyId],
   );
-  const { rows } = await pool.query(`${eventSelect} WHERE e.id = $1 AND e.family_id = $2`, [id, auth.familyId]);
-  await pool.query(
+  if (!updated.rowCount) throw new ApiError(409, 'Evento già gestito', 'EVENT_ALREADY_REVIEWED');
+  const { rows } = await client.query(`${eventSelect} WHERE e.id = $1 AND e.family_id = $2`, [id, auth.familyId]);
+  await client.query(
     `INSERT INTO family_activity_history (id, family_id, actor_user_id, entity_type, entity_id, action, details)
      VALUES ($1,$2,$3,'event',$4,$5,$6::jsonb)`,
     [randomUUID(), auth.familyId, auth.userId, id, body.status, JSON.stringify({ note: body.note ?? null })],
   );
 
+    return { rows, existing };
+  });
+  await pool.query(`UPDATE in_app_notifications SET read_at=clock_timestamp() WHERE user_id=$1 AND family_id=$2 AND entity_type='event' AND entity_id=$3 AND read_at IS NULL`,[auth.userId,auth.familyId,id]);
   await sendPushToUser(existing.createdByUserId, {
     title: body.status === 'confirmed' ? 'Evento approvato' : 'Evento rifiutato',
     body: `${parentRoleSubject(auth.role)} ha ${body.status === 'confirmed' ? 'approvato' : 'rifiutato'} “${existing.title}”.`,

@@ -1,14 +1,14 @@
+import { SafeModal as Modal } from '../components/SafeModal';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, {
   DateTimePickerAndroid,
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
-import { useMemo, useState, type ComponentProps } from 'react';
+import { useEffect, useMemo, useState, type ComponentProps } from 'react';
 import {
   Alert,
   ImageBackground,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -91,6 +91,8 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [joinExisting, setJoinExisting] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [role, setRole] = useState<ParentRole>('father');
   const [familyName, setFamilyName] = useState('');
@@ -107,10 +109,10 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
   const [error, setError] = useState<string | null>(null);
 
   const childrenLabel = useMemo(() => {
-    if (children.length === 0) return 'Aggiungi i tuoi figli';
+    if (!joinExisting && children.length === 0) return 'Aggiungi i tuoi figli';
     if (children.length === 1) return '1 figlio aggiunto';
     return `${children.length} figli aggiunti`;
-  }, [children.length]);
+  }, [children.length, joinExisting]);
 
   function chooseProfessional(): void {
     setAccountType('professional');
@@ -131,8 +133,8 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
 
   function openDatePicker(target: DateTarget): void {
     const currentValue = target === 'parent'
-      ? birthDate ?? defaultDate(30)
-      : childBirthDate ?? defaultDate(10);
+      ? birthDate ?? new Date()
+      : childBirthDate ?? new Date();
 
     if (Platform.OS === 'android') {
       DateTimePickerAndroid.open({
@@ -206,10 +208,11 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
     if (!birthDate) return setError('Seleziona la tua data di nascita.');
     if (!/^[A-Z0-9]{16}$/.test(normalizedTaxCode)) return setError('Inserisci un codice fiscale valido di 16 caratteri.');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return setError('Inserisci un indirizzo email valido.');
-    if (normalizedPhone.replace(/\D/g, '').length < 6) return setError('Inserisci un numero di telefono valido.');
-    if (password.length < 8) return setError('La password deve contenere almeno 8 caratteri.');
-    if (trimmedFamilyName.length < 2) return setError('Inserisci il nome della famiglia.');
-    if (children.length === 0) return setError('Aggiungi almeno un figlio per completare la famiglia.');
+    if (normalizedPhone && normalizedPhone.replace(/\D/g, '').length < 6) return setError('Inserisci un numero di telefono valido.');
+    if (password.length < 8 || !/[A-Z]/.test(password) || !/[^a-zA-Z0-9\s]/.test(password)) return setError('Usa almeno 8 caratteri, una maiuscola e un carattere speciale.');
+    if(password !== confirmPassword) return setError('Le password non coincidono.');
+    if (!joinExisting && trimmedFamilyName.length < 2) return setError('Inserisci il nome della famiglia.');
+    if (!joinExisting && children.length === 0) return setError('Aggiungi almeno un figlio per completare la famiglia.');
 
     const registerInput: RegisterInput = {
       displayName: `${trimmedFirstName} ${trimmedLastName}`.trim(),
@@ -218,11 +221,12 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
       birthDate: toIsoDate(birthDate),
       taxCode: normalizedTaxCode,
       email: normalizedEmail,
-      phone: normalizedPhone,
+      phone: normalizedPhone || undefined,
       password,
+      confirmPassword,
       role,
-      familyName: trimmedFamilyName,
-      children: children.map((child) => ({
+      familyName: joinExisting ? undefined : trimmedFamilyName,
+      children: (joinExisting ? [] : children).map((child) => ({
         displayName: child.displayName,
         birthDate: child.birthDate ? toIsoDate(child.birthDate) : null,
       })),
@@ -287,6 +291,7 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
                 required
                 value={birthDate}
                 placeholder="Seleziona la data"
+                onChangeDate={setBirthDate}
                 onPress={() => openDatePicker('parent')}
               />
               <FormField label="Codice fiscale" required icon="document-text-outline" value={taxCode} onChangeText={(value) => setTaxCode(normalizeTaxCode(value))} placeholder="Inserisci il tuo codice fiscale" autoCapitalize="characters" autoCorrect={false} maxLength={16} />
@@ -294,7 +299,7 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
 
             <View style={[styles.fieldRow, compact && styles.fieldRowStack]}>
               <FormField label="Email" required icon="mail-outline" value={email} onChangeText={setEmail} placeholder="La tua email" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} autoComplete="email" textContentType="emailAddress" />
-              <FormField label="Telefono" required icon="call-outline" value={phone} onChangeText={setPhone} placeholder="Inserisci il tuo numero" keyboardType="phone-pad" autoComplete="tel" textContentType="telephoneNumber" />
+              <FormField label="Telefono (facoltativo)" icon="call-outline" value={phone} onChangeText={setPhone} placeholder="Inserisci il tuo numero" keyboardType="phone-pad" autoComplete="tel" textContentType="telephoneNumber" />
             </View>
 
             <FormField
@@ -313,6 +318,8 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
               textContentType="newPassword"
             />
 
+            <Text style={styles.inviteDescription}>Almeno 8 caratteri, una maiuscola e un carattere speciale.</Text>
+            <FormField label="Conferma password" required icon="lock-closed-outline" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry={!passwordVisible} autoCapitalize="none" autoCorrect={false} placeholder="Ripeti la password" />
             <View style={styles.fieldBlock}>
               <RequiredLabel label="Ruolo" />
               <View style={styles.roleRow}>
@@ -321,6 +328,11 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
               </View>
             </View>
 
+            <View style={styles.accountSelector}>
+              <SelectorButton icon="home-outline" label="Crea famiglia" selected={!joinExisting} onPress={() => setJoinExisting(false)} />
+              <SelectorButton icon="people-outline" label="Ho un codice invito" selected={joinExisting} onPress={() => setJoinExisting(true)} />
+            </View>
+            {joinExisting ? <Text style={styles.inviteDescription}>Dopo la registrazione inserisci il codice dell’altro genitore. Non sarà creata una seconda famiglia.</Text> : <>
             <FormField
               label="Famiglia"
               required
@@ -365,6 +377,7 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
               <Switch value={inviteOtherParent} onValueChange={setInviteOtherParent} trackColor={{ false: '#D5DFEA', true: COLORS.blue }} thumbColor={COLORS.white} ios_backgroundColor="#D5DFEA" />
             </View>
 
+            </>}
             {error ? (
               <View style={styles.errorBox}>
                 <Ionicons name="alert-circle-outline" size={20} color={COLORS.danger} />
@@ -420,6 +433,7 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
                     label="Data di nascita"
                     value={childBirthDate}
                     placeholder="Seleziona la data"
+                    onChangeDate={setChildBirthDate}
                     onPress={() => openDatePicker('child')}
                   />
 
@@ -447,7 +461,7 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
                     onChange={handleIosDateChange}
                     locale="it-IT"
                   />
-                  <Pressable accessibilityRole="button" onPress={() => setIosDateTarget(null)} style={styles.dateModalButton}>
+                  <Pressable accessibilityRole="button" onPress={() => { if(iosDateTarget) applySelectedDate(iosDateTarget,iosPickerValue); setIosDateTarget(null); }} style={styles.dateModalButton}>
                     <Text style={styles.dateModalButtonText}>Fine</Text>
                   </Pressable>
                 </View>
@@ -487,24 +501,28 @@ function FormField({ label, required = false, icon, rightIcon, onRightPress, sty
   );
 }
 
-function DateField({ label, required = false, value, placeholder, onPress }: {
-  label: string;
-  required?: boolean;
-  value: Date | null;
-  placeholder: string;
-  onPress: () => void;
+function DateField({ label, required = false, value, placeholder, onPress, onChangeDate }: {
+  label: string; required?: boolean; value: Date | null; placeholder: string; onPress: () => void; onChangeDate: (date: Date | null) => void;
 }): React.JSX.Element {
-  const formatted = formatItalianDate(value);
-  return (
-    <View style={styles.formField}>
-      <RequiredLabel label={label} required={required} />
-      <Pressable accessibilityRole="button" accessibilityLabel={`${label}: ${formatted || placeholder}`} onPress={onPress} style={({ pressed }) => [styles.inputShell, pressed && styles.pressed]}>
-        <Ionicons name="calendar-outline" size={22} color={COLORS.muted} />
-        <Text style={[styles.dateValue, !formatted && styles.datePlaceholder]}>{formatted || placeholder}</Text>
-        <Ionicons name="chevron-down" size={20} color={COLORS.muted} />
-      </Pressable>
+  const [draft, setDraft] = useState(formatItalianDate(value));
+  useEffect(() => { if(value) setDraft(formatItalianDate(value)); }, [value]);
+  function change(text: string) {
+    const digits = text.replace(/\D/g,'').slice(0,8);
+    const formatted = digits.slice(0,2) + (digits.length>2 ? '/' + digits.slice(2,4) : '') + (digits.length>4 ? '/' + digits.slice(4) : '');
+    setDraft(formatted);
+    const day=Number(digits.slice(0,2)), month=Number(digits.slice(2,4)), year=Number(digits.slice(4));
+    const d = new Date(year,month-1,day,12);
+    onChangeDate(digits.length===8 && year>=1900 && d.getFullYear()===year && d.getMonth()===month-1 && d.getDate()===day && d<=new Date() ? d : null);
+  }
+  if(Platform.OS==='web')return <View style={styles.formField}><RequiredLabel label={label} required={required}/><input aria-label={label} type="date" min="1900-01-01" max={toIsoDate(new Date())} value={value?toIsoDate(value):''} onChange={e=>onChangeDate(e.target.value?new Date(e.target.value+'T00:00:00'):null)} style={{padding:14,fontSize:16,borderRadius:14,border:'1px solid #C5D9EF',background:'#E9F0F8',color:'#15345F'}}/></View>;
+  return <View style={styles.formField}>
+    <RequiredLabel label={label} required={required} />
+    <View style={styles.inputShell}>
+      <TextInput accessibilityLabel={label} value={draft} onChangeText={change} keyboardType="number-pad" placeholder="gg/mm/aaaa" placeholderTextColor={COLORS.muted} style={styles.input} maxLength={10} />
+      <Pressable accessibilityLabel={'Apri calendario: '+label} onPress={onPress} hitSlop={12}><Ionicons name="calendar-outline" size={24} color={COLORS.blue} /></Pressable>
     </View>
-  );
+    {draft.length===10 && !value ? <Text style={styles.errorText}>Inserisci una data valida non futura.</Text> : null}
+  </View>;
 }
 
 function SelectorButton({ icon, label, selected, onPress }: { icon: IconName; label: string; selected: boolean; onPress: () => void }): React.JSX.Element {

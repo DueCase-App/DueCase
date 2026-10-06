@@ -1,3 +1,4 @@
+import { PasswordReset } from '../components/PasswordReset';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
@@ -21,6 +22,7 @@ type LoginScreenProps = { onShowRegister: () => void };
 export function LoginScreen({ onShowRegister }: LoginScreenProps): React.JSX.Element {
   const { login } = useAuth();
   const insets = useSafeAreaInsets();
+  const [resetOpen,setResetOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -60,7 +62,7 @@ export function LoginScreen({ onShowRegister }: LoginScreenProps): React.JSX.Ele
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.brandArea}>
-              <Image source={require('../../assets/duecase-logo.png')} resizeMode="contain" style={styles.logo} accessibilityLabel="Logo DueCase" />
+              <Image source={require('../../assets/duecase-logo-hd.png')} resizeMode="contain" style={styles.logo} accessibilityLabel="Logo DueCase" />
               <Text style={styles.brandName}>DueCase</Text>
               <Text style={styles.payoff}>Due case, un’unica squadra.</Text>
               <Text style={styles.brandDescription}>Organizza, concorda e documenta la gestione dei tuoi figli in modo semplice e sicuro.</Text>
@@ -91,6 +93,8 @@ export function LoginScreen({ onShowRegister }: LoginScreenProps): React.JSX.Ele
                 </View>
               </View>
 
+              <Pressable onPress={()=>setResetOpen(true)}><Text style={{color:ui.colors.primary,fontWeight:'700'}}>Password dimenticata?</Text></Pressable>
+              <PasswordReset visible={resetOpen} onClose={()=>setResetOpen(false)} />
               {error ? <View style={styles.errorBox}><Ionicons name="alert-circle-outline" size={20} color={ui.colors.danger} /><Text style={styles.errorText}>{error}</Text></View> : null}
 
               <Pressable disabled={loading} onPress={() => void submit()} style={styles.buttonShell}>

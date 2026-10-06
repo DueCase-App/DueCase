@@ -13,7 +13,8 @@
     "migrate": "tsx src/scripts/migrate.ts",
     "start": "node dist/scripts/migrate.js && node dist/server.js",
     "seed": "tsx src/scripts/seed.ts",
-    "migrate:prod": "node dist/scripts/migrate.js"
+    "migrate:prod": "node dist/scripts/migrate.js",
+    "test": "npm run build && node --test tests/*.test.mjs"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
@@ -29,6 +30,7 @@
     "zod": "^4.1.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@types/bcrypt": "^6.0.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",

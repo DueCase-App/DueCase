@@ -1,9 +1,10 @@
+import { useLiveRefresh } from '../services/live';
+import { SafeModal as Modal } from '../components/SafeModal';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -123,10 +124,11 @@ export function CalendarScreen(): React.JSX.Element {
   }, [month]);
 
   useEffect(() => { void load(); }, [load]);
+  useLiveRefresh(load);
 
   const byDate = useMemo(() => new Map(days.map((day) => [day.custodyDate, day])), [days]);
   const ownDays = useMemo(
-    () => days.filter((day) => day.custodianRole === user?.role).map((day) => day.custodyDate).sort(),
+    () => [...new Set(days.filter((day) => day.custodianRole === user?.role && day.source === 'calendar').map((day) => day.custodyDate))].sort(),
     [days, user?.role],
   );
   const pendingDates = useMemo(() => new Set(requests.flatMap((request) => [request.targetDate, request.proposedDate])), [requests]);
@@ -146,7 +148,8 @@ export function CalendarScreen(): React.JSX.Element {
       const day = byDate.get(date);
       const eventInfo = eventDates.get(date);
       const pending = pendingDates.has(date) || eventInfo?.pending;
-      const background = day ? ROLE_COLORS[day.custodianRole] : ui.colors.primarySoft;
+      const mixed = new Set(days.filter(d=>d.custodyDate===date).map(d=>d.custodianRole)).size>1;
+      const background = mixed ? '#7958A6' : day ? ROLE_COLORS[day.custodianRole] : ui.colors.primarySoft;
       return [date, {
         customStyles: {
           container: {
@@ -164,6 +167,10 @@ export function CalendarScreen(): React.JSX.Element {
 
   function openSwap(date: string): void {
     if (!user) return;
+    const resolved=days.filter(d=>d.custodyDate===date);
+    if(resolved.some(d=>d.source!=='calendar')) {
+      Alert.alert(prettyDate(date),resolved.map(d=>`${d.childName}: ${d.custodianRole==='father'?'Papà':'Mamma'}`).join('\n')+'\nPer una modifica specifica usa le eccezioni nella sezione Permanenze.');return;
+    }
     const day = byDate.get(date);
     if (!day) {
       setEventDate(date);

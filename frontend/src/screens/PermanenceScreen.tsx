@@ -1,6 +1,9 @@
+import { SafeModal } from '../components/SafeModal';
+import { Calendar } from 'react-native-calendars';
+import { useLiveRefresh } from '../services/live';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api } from '../services/api';
 import { cardShadow, ui } from '../theme/ui';
 import type { AlternatingWeekendPattern, CustodyCurrent, CustodyException, CustodyPattern, FamilyChild, ParentRole } from '../types/models';
@@ -36,6 +39,10 @@ export function PermanenceScreen(): React.JSX.Element {
   const [alternating, setAlternating] = useState<AlternatingWeekendPattern[]>([]);
   const [current, setCurrent] = useState<CustodyCurrent | null>(null);
   const [exceptions, setExceptions] = useState<CustodyException[]>([]);
+  const [exceptionChild,setExceptionChild]=useState<FamilyChild|null>(null);
+  const [exceptionDate,setExceptionDate]=useState(localDateKey(new Date()));
+  const [exceptionRole,setExceptionRole]=useState<ParentRole>('father');
+  const [exceptionNotes,setExceptionNotes]=useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -57,6 +64,7 @@ export function PermanenceScreen(): React.JSX.Element {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  useLiveRefresh(load);
 
   const byChildDay = useMemo(() => new Map(patterns.map((item) => [`${item.childId}-${item.weekday}`, item])), [patterns]);
   const alternatingByChild = useMemo(() => new Map(alternating.map((item) => [item.childId, item])), [alternating]);
@@ -92,7 +100,12 @@ export function PermanenceScreen(): React.JSX.Element {
     finally { setBusy(null); }
   };
 
-  return (
+  async function proposeException(){
+    if(!exceptionChild||busy)return;setBusy('exception');
+    try{await api.permanence.createException({childId:exceptionChild.id,custodyDate:exceptionDate,custodianRole:exceptionRole,notes:exceptionNotes});setExceptionChild(null);await load();}
+    catch(e){Alert.alert('Cambio permanenza',e instanceof Error?e.message:'Invio non riuscito');}finally{setBusy(null);}
+  }
+  return (<>
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <View><Text style={styles.eyebrow}>ORGANIZZAZIONE SETTIMANALE</Text><Text style={styles.title}>Permanenze</Text><Text style={styles.subtitle}>Imposta lo schema normale, i weekend alternati e le eccezioni. Le modifiche approvate hanno sempre priorità.</Text></View>
       {loading ? <ActivityIndicator style={{ marginTop: 50 }} color={ui.colors.primary} /> : (
@@ -106,6 +119,7 @@ export function PermanenceScreen(): React.JSX.Element {
             const alternatingRule = alternatingByChild.get(child.id);
             return <View key={child.id} style={styles.childCard}>
               <View style={styles.childHeader}><View style={styles.childAvatar}><Ionicons name="happy-outline" size={23} color={ui.colors.primary} /></View><View><Text style={styles.childName}>{child.displayName}</Text><Text style={styles.childMeta}>Schema ordinario</Text></View></View>
+              <Pressable style={styles.weekendChoice} onPress={()=>{setExceptionChild(child);setExceptionDate(localDateKey(new Date()));setExceptionNotes('');}}><Ionicons name="calendar-outline" size={18} color={ui.colors.primary}/><Text style={styles.weekendChoiceText}>Proponi cambio per un giorno</Text></Pressable>
               <View style={styles.daysGrid}>
                 {weekdays.map((day) => {
                   const item = byChildDay.get(`${child.id}-${day.n}`);
@@ -139,6 +153,17 @@ export function PermanenceScreen(): React.JSX.Element {
         </>
       )}
     </ScrollView>
+    <SafeModal visible={!!exceptionChild} transparent animationType="slide" onRequestClose={()=>setExceptionChild(null)}>
+      <View style={{flex:1,justifyContent:'flex-end',backgroundColor:'rgba(12,43,99,.22)'}}><View style={{maxHeight:'95%',backgroundColor:'white',borderRadius:24,padding:18}}>
+       <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}><Text style={styles.sectionTitle}>Cambio · {exceptionChild?.displayName}</Text><Pressable accessibilityLabel="Chiudi" onPress={()=>setExceptionChild(null)} style={{padding:12}}><Ionicons name="close" size={26}/></Pressable></View>
+       <ScrollView keyboardShouldPersistTaps="handled"><Text style={styles.subtitle}>L’altro genitore dovrà approvare la proposta.</Text>
+        <Calendar current={exceptionDate} onDayPress={d=>setExceptionDate(d.dateString)} markedDates={{[exceptionDate]:{selected:true,selectedColor:ui.colors.primary}}}/>
+        <View style={styles.weekendActions}>{(['father','mother'] as const).map(r=><Pressable key={r} onPress={()=>setExceptionRole(r)} style={[styles.weekendChoice,exceptionRole===r&&styles.weekendChoiceActive]}><Text style={[styles.weekendChoiceText,exceptionRole===r&&styles.weekendChoiceTextActive]}>{roleLabel(r)}</Text></Pressable>)}</View>
+        <TextInput placeholder="Motivo del cambio" value={exceptionNotes} onChangeText={setExceptionNotes} multiline maxLength={2000} style={{padding:14,marginVertical:14,backgroundColor:ui.colors.input,borderRadius:12,minHeight:70}}/>
+        <Pressable disabled={!!busy} onPress={()=>void proposeException()} style={[styles.weekendChoice,styles.weekendChoiceActive]}><Text style={styles.weekendChoiceTextActive}>{busy?'Invio…':'Invia proposta'}</Text></Pressable>
+       </ScrollView>
+      </View></View>
+    </SafeModal></>
   );
 }
 

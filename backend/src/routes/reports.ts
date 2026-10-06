@@ -1,3 +1,4 @@
+import { dateSchema } from '../services/validation.js';
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -10,7 +11,7 @@ import { createLegalReportPdf } from '../services/legalPdfService.js';
 const router = Router();
 router.use(requireAuth);
 
-const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
+const dateString = dateSchema;
 const parentingTimeQuery = z.object({
   from: dateString.optional(),
   to: dateString.optional(),
@@ -47,6 +48,7 @@ type SwapReportRow = {
 };
 
 type CustodyReportRow = {
+  childName: string;
   custodyDate: string;
   custodianRole: 'father' | 'mother';
   notes: string | null;
@@ -89,47 +91,14 @@ function statusLabel(status: SwapReportRow['status']): string {
 router.get('/parenting-time', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const query = parentingTimeQuery.parse(req.query);
-  const from = query.from ?? null;
-  const to = query.to ?? null;
-
-  const [timeResult, coverageResult] = await Promise.all([
-    pool.query<ParentingTimeRow>(
-      `WITH clipped AS (
-         SELECT custodian_role,
-                GREATEST(
-                  starts_at,
-                  COALESCE(($2::date)::timestamp AT TIME ZONE 'UTC', starts_at)
-                ) AS clipped_start,
-                LEAST(
-                  ends_at,
-                  COALESCE((($3::date + 1)::timestamp AT TIME ZONE 'UTC'), ends_at)
-                ) AS clipped_end
-           FROM custody_turns
-          WHERE family_id = $1
-            AND custody_date IS NOT NULL
-            AND custodian_role IN ('father', 'mother')
-            AND ($2::date IS NULL OR ends_at > (($2::date)::timestamp AT TIME ZONE 'UTC'))
-            AND ($3::date IS NULL OR starts_at < ((($3::date + 1)::timestamp AT TIME ZONE 'UTC')))
-       )
-       SELECT custodian_role AS "custodianRole",
-              COALESCE(SUM(EXTRACT(EPOCH FROM (clipped_end - clipped_start))), 0)::text AS seconds
-         FROM clipped
-        WHERE clipped_end > clipped_start
-        GROUP BY custodian_role`,
-      [auth.familyId, from, to],
-    ),
-    pool.query<ParentingCoverageRow>(
-      `SELECT MIN(custody_date)::text AS "firstDate",
-              MAX(custody_date)::text AS "lastDate"
-         FROM custody_turns
-        WHERE family_id = $1
-          AND custody_date IS NOT NULL
-          AND custodian_role IN ('father', 'mother')
-          AND ($2::date IS NULL OR custody_date >= $2::date)
-          AND ($3::date IS NULL OR custody_date <= $3::date)`,
-      [auth.familyId, from, to],
-    ),
-  ]);
+  const from = query.from ?? new Date().toISOString().slice(0,7)+'-01';
+  const to = query.to ?? new Date().toISOString().slice(0,10);
+  if ((new Date(to).getTime()-new Date(from).getTime())/86400000 > 366) throw new ApiError(400,'Seleziona al massimo un anno.','RANGE_TOO_LARGE');
+  const timeResult = await pool.query<ParentingTimeRow>(`SELECT c."custodianRole", (COUNT(*)*86400)::text AS seconds
+    FROM generate_series($2::date,$3::date,interval '1 day') d
+    CROSS JOIN LATERAL duecase_custody($1,d::date) c
+    WHERE c."custodianRole" IS NOT NULL GROUP BY c."custodianRole"`,[auth.familyId,from,to]);
+  const coverageResult = { rows: [{firstDate:from,lastDate:to}] };
 
   const secondsByRole = { father: 0, mother: 0 };
   for (const row of timeResult.rows) {
@@ -168,7 +137,7 @@ router.get('/parenting-time', asyncHandler(async (req, res) => {
     father,
     mother,
     chart: [father, mother],
-    source: 'custody_turns_current_approved_state',
+    source: 'planned_child_days_24h_each_not_measured_time',
   });
 }));
 
@@ -177,7 +146,7 @@ router.get('/pdf', asyncHandler(async (req, res) => {
   const reportId = randomUUID();
   const generatedAt = new Date().toISOString();
 
-  const [familyResult, expenseResult, swapResult, custodyResult, messageResult] = await Promise.all([
+  const [familyResult, expenseResult, swapResult, custodyResult, messageResult, agreementResult, eventResult, paymentResult, attachmentResult] = await Promise.all([
     pool.query<{ name: string }>(
       `SELECT name FROM families WHERE id = $1`,
       [auth.familyId],
@@ -198,7 +167,7 @@ router.get('/pdf', asyncHandler(async (req, res) => {
          LEFT JOIN users payer ON payer.id = e.paid_by_user_id
          LEFT JOIN users reviewer ON reviewer.id = e.reviewed_by_user_id
         WHERE e.family_id = $1
-          AND e.status = 'approved'
+          AND e.status IN ('approved','to_pay','partially_paid','paid','closed')
         ORDER BY e.expense_date ASC, e.created_at ASC, e.id ASC`,
       [auth.familyId],
     ),
@@ -221,15 +190,11 @@ router.get('/pdf', asyncHandler(async (req, res) => {
       [auth.familyId],
     ),
     pool.query<CustodyReportRow>(
-      `SELECT custody_date::text AS "custodyDate",
-              custodian_role AS "custodianRole",
-              notes,
-              to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt"
-         FROM custody_turns
-        WHERE family_id = $1
-          AND custody_date IS NOT NULL
-          AND custodian_role IS NOT NULL
-        ORDER BY custody_date ASC`,
+      `SELECT d::date::text AS "custodyDate",c."childName",c."custodianRole",c.notes,
+        CURRENT_TIMESTAMP::text AS "updatedAt"
+        FROM generate_series(date_trunc('month',CURRENT_DATE),CURRENT_DATE,interval '1 day') d
+        CROSS JOIN LATERAL duecase_custody($1,d::date) c
+        WHERE c."custodianRole" IS NOT NULL ORDER BY d,c."childName"`,
       [auth.familyId],
     ),
     pool.query<MessageReportRow>(
@@ -255,6 +220,10 @@ router.get('/pdf', asyncHandler(async (req, res) => {
         ORDER BY m.created_at ASC, m.id ASC`,
       [auth.familyId],
     ),
+    pool.query(`SELECT id,title,body,category,status,response_note,created_at,reviewed_at FROM family_agreements WHERE family_id=$1 ORDER BY created_at,id`,[auth.familyId]),
+    pool.query(`SELECT id,title,starts_at,ends_at,status,location,notes FROM family_events WHERE family_id=$1 ORDER BY starts_at,id`,[auth.familyId]),
+    pool.query(`SELECT p.id,e.title,p.amount::text,p.status,p.paid_at,p.confirmed_at,u.role AS payer_role FROM expense_payments p JOIN expenses e ON e.id=p.expense_id LEFT JOIN users u ON u.id=p.paid_by_user_id WHERE p.family_id=$1 ORDER BY p.created_at,p.id`,[auth.familyId]),
+    pool.query(`SELECT id,message_id,filename,mime_type,file_size_bytes,data_hash FROM duecase_message_attachments WHERE family_id=$1 ORDER BY created_at,id`,[auth.familyId]),
   ]);
 
   const familyName = familyResult.rows[0]?.name ?? auth.familyName ?? 'Famiglia DueCase';
@@ -271,12 +240,16 @@ router.get('/pdf', asyncHandler(async (req, res) => {
   });
 
   const dataset = {
-    schemaVersion: 'DUECASE-LEGAL-REPORT-V1',
+    schemaVersion: 'DUECASE-LEGAL-REPORT-V2',
     reportId,
     generatedAt,
     family: { id: auth.familyId, name: familyName },
     generatedBy: { id: auth.userId, displayName: auth.displayName, role: auth.role },
     approvedExpenses: expenseResult.rows,
+    payments: paymentResult.rows,
+    agreements: agreementResult.rows,
+    events: eventResult.rows,
+    attachments: attachmentResult.rows,
     calendar: {
       swapRequests: swapResult.rows,
       currentCustodySnapshot: custodyResult.rows,
@@ -297,7 +270,7 @@ router.get('/pdf', asyncHandler(async (req, res) => {
   );
 
   const custodyLines = custodyResult.rows.map((turn, index) =>
-    `${index + 1}. ${turn.custodyDate} - custodia assegnata a ${roleLabel(turn.custodianRole)}; ultimo aggiornamento ${turn.updatedAt}${turn.notes ? `; note: ${turn.notes}` : ''}.`,
+    `${index + 1}. ${turn.custodyDate} - ${turn.childName}: permanenza pianificata con ${roleLabel(turn.custodianRole)}; ultimo aggiornamento ${turn.updatedAt}${turn.notes ? `; note: ${turn.notes}` : ''}.`,
   );
 
   const messageLines = messages.map((message, index) =>
@@ -314,7 +287,11 @@ router.get('/pdf', asyncHandler(async (req, res) => {
     sections: [
       { title: `Spese approvate (${expenseLines.length})`, lines: expenseLines },
       { title: `Richieste e modifiche calendario (${swapLines.length})`, lines: swapLines },
-      { title: `Stato calendario corrente (${custodyLines.length})`, lines: custodyLines },
+      { title: `Permanenze pianificate nel mese corrente (${custodyLines.length})`, lines: custodyLines },
+      { title: 'Accordi', lines: agreementResult.rows.map(r=>`${r.created_at} - ${r.title}: ${r.body} | stato: ${r.status} | risposta: ${r.response_note??'-'}`) },
+      { title: 'Eventi', lines: eventResult.rows.map(r=>`${r.starts_at} - ${r.title} | stato: ${r.status} | ${r.location??''} | ${r.notes??''}`) },
+      { title: 'Rimborsi', lines: paymentResult.rows.map(r=>`${r.paid_at} - ${r.title}: EUR ${r.amount} da ${roleLabel(r.payer_role)} | ${r.status} | conferma: ${r.confirmed_at??'in attesa'}`) },
+      { title: 'Allegati dei messaggi', lines: attachmentResult.rows.map(r=>`${r.filename} | messaggio: ${r.message_id} | ${r.file_size_bytes} byte | SHA-256: ${r.data_hash}`) },
       { title: `Messaggi storici immutabili (${messageLines.length})`, lines: messageLines },
     ],
   });

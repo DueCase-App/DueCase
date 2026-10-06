@@ -14,6 +14,7 @@ router.use(requireAuth);
 
 const uuid = z.string().uuid();
 const createSchema = z.object({
+  clientRequestId: z.string().uuid().optional(),
   text: z.string().max(10000).optional().default(''),
 });
 const toneSchema = z.object({
@@ -21,6 +22,7 @@ const toneSchema = z.object({
 });
 const listSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
+  beforeId: uuid.optional(),
   before: z.string().optional().refine((value) => !value || !Number.isNaN(new Date(value).getTime()), 'Timestamp non valido.'),
 });
 
@@ -124,7 +126,9 @@ router.get('/', asyncHandler(async (req, res) => {
   let beforeFilter = '';
   if (query.before) {
     values.push(new Date(query.before).toISOString());
-    beforeFilter = ` AND m.created_at < $${values.length}::timestamptz`;
+    const timestampIndex=values.length;
+    if(query.beforeId){values.push(query.beforeId);beforeFilter=` AND (m.created_at,m.id) < ($${timestampIndex}::timestamptz,$${values.length}::uuid)`;}
+    else beforeFilter = ` AND m.created_at < $${timestampIndex}::timestamptz`;
   }
   values.push(query.limit);
   const { rows } = await pool.query<MessageRow>(
@@ -186,10 +190,15 @@ router.post('/', uploadAttachment, asyncHandler(async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query('SELECT id FROM users WHERE id=$1 FOR UPDATE',[auth.userId]);
+    if(body.clientRequestId) {
+      const previous=await client.query<MessageRow>(`${messageSelect} WHERE m.sender_id=$1 AND m.client_request_id=$2 AND m.family_id=$3`,[auth.userId,body.clientRequestId,auth.familyId]);
+      if(previous.rows[0]) {await client.query('COMMIT');res.json(serializeMessage(previous.rows[0],auth.userId));return;}
+    }
     await client.query(
-      `INSERT INTO messages (id, family_id, sender_id, sender_role, text, created_at, data_hash)
-       VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7)`,
-      [id, auth.familyId, auth.userId, auth.role, text, createdAt, dataHash],
+      `INSERT INTO messages (id, family_id, sender_id, sender_role, text, created_at, data_hash, client_request_id)
+       VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7, $8)`,
+      [id, auth.familyId, auth.userId, auth.role, text, createdAt, dataHash, body.clientRequestId ?? null],
     );
 
     if (req.file) {
@@ -244,6 +253,7 @@ router.put('/:id/read', asyncHandler(async (req, res) => {
     );
   }
 
+  await pool.query(`UPDATE in_app_notifications SET read_at=clock_timestamp() WHERE user_id=$1 AND family_id=$2 AND entity_type='message' AND entity_id=$3 AND read_at IS NULL`,[auth.userId,auth.familyId,messageId]);
   const refreshedResult = await pool.query<MessageRow>(`${messageSelect} WHERE m.id = $1 AND m.family_id = $2`, [messageId, auth.familyId]);
   const refreshed = refreshedResult.rows[0];
   if (!refreshed) throw new ApiError(500, 'Impossibile rileggere il messaggio.', 'MESSAGE_REFRESH_ERROR');

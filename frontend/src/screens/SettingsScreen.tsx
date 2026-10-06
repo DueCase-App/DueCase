@@ -1,3 +1,5 @@
+import { registerPushNotificationsAsync } from '../services/notifications';
+import { EmailVerification } from '../components/EmailVerification';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
@@ -21,6 +23,7 @@ function permissionLabel(status: Notifications.PermissionStatus | null): string 
 export function SettingsScreen(): React.JSX.Element {
   const { user, logout } = useAuth();
   const insets = useSafeAreaInsets();
+  const [pushRegistered,setPushRegistered]=useState(false);
   const [deleting, setDeleting] = useState(false);
   const [notificationStatus, setNotificationStatus] = useState<Notifications.PermissionStatus | null>(null);
   const appVersion = Constants.expoConfig?.version ?? '0.2.4';
@@ -29,6 +32,7 @@ export function SettingsScreen(): React.JSX.Element {
     try {
       const permission = await Notifications.getPermissionsAsync();
       setNotificationStatus(permission.status);
+      setPushRegistered((await api.auth.pushStatus()).registered);
     } catch {
       setNotificationStatus(null);
     }
@@ -41,8 +45,9 @@ export function SettingsScreen(): React.JSX.Element {
       if (notificationStatus !== Notifications.PermissionStatus.GRANTED) {
         const result = await Notifications.requestPermissionsAsync();
         setNotificationStatus(result.status);
-        if (result.status === Notifications.PermissionStatus.GRANTED) return;
+        if (result.status === Notifications.PermissionStatus.GRANTED) { await registerPushNotificationsAsync(); return; }
       }
+      if (notificationStatus === Notifications.PermissionStatus.GRANTED) { const token=await registerPushNotificationsAsync();setPushRegistered(Boolean(token));Alert.alert('Notifiche',token?'Dispositivo collegato. La ricezione va verificata con un invio di prova.':'Autorizzazione concessa, ma collegamento push non riuscito. Controllare rete e configurazione del servizio.');return; }
       if (Platform.OS !== 'web') await Linking.openSettings();
       else Alert.alert('Notifiche', 'Le autorizzazioni delle notifiche vanno gestite dalle impostazioni del browser.');
     } catch (error) {
@@ -69,7 +74,7 @@ export function SettingsScreen(): React.JSX.Element {
   const confirmDelete = (): void => {
     Alert.alert(
       'Elimina account',
-      'Questa operazione elimina definitivamente il tuo account e i dati personali/mutabili collegati. I registri legali append-only possono essere conservati in forma scollegata per preservarne l’integrità.',
+      'Questa operazione revoca l’accesso ed elimina il tuo profilo personale. Spese, messaggi, documenti e accordi già condivisi restano nello storico della famiglia come “Account eliminato”.',
       [
         { text: 'Annulla', style: 'cancel' },
         { text: 'Elimina definitivamente', style: 'destructive', onPress: () => void deleteAccount() },
@@ -94,14 +99,16 @@ export function SettingsScreen(): React.JSX.Element {
       <ScrollView
         style={styles.screen}
         contentContainerStyle={[styles.content, { paddingBottom: Math.max(92, insets.bottom + 72) }]}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={true}
+        keyboardShouldPersistTaps="handled"
       >
         <View style={styles.header}>
           <Text style={styles.eyebrow}>ACCOUNT E APP</Text>
           <Text style={styles.title}>Impostazioni</Text>
-          <Text style={styles.subtitle}>Profilo, famiglia, notifiche, privacy e stato dell’app.</Text>
+          <Text style={styles.subtitle}>Profilo, famiglia, notifiche e privacy. Scorri per tutte le opzioni.</Text>
         </View>
 
+        <EmailVerification />
         <View style={styles.profileCard}>
           <View style={styles.avatar}><Ionicons name={user?.role === 'mother' ? 'woman-outline' : 'man-outline'} size={30} color={ui.colors.primary} /></View>
           <View style={styles.flex}>
@@ -126,7 +133,7 @@ export function SettingsScreen(): React.JSX.Element {
           <SettingRow
             icon="notifications-outline"
             title="Notifiche push"
-            subtitle={`${permissionLabel(notificationStatus)} · tocca per gestirle`}
+            subtitle={`${notificationStatus===Notifications.PermissionStatus.GRANTED&&!pushRegistered?'Collegamento da completare':permissionLabel(notificationStatus)} · tocca per gestirle`}
             onPress={() => void manageNotifications()}
           />
         </View>

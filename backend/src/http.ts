@@ -29,7 +29,7 @@ export function errorHandler(
 ): void {
   if (error instanceof ZodError) {
     res.status(400).json({
-      error: 'Validation error',
+      error: error.issues[0]?.message ?? 'Controlla i dati inseriti.',
       code: 'VALIDATION_ERROR',
       details: error.flatten(),
     });
@@ -47,7 +47,7 @@ export function errorHandler(
 
   console.error('Unhandled API error', error instanceof Error ? error.message : error);
   res.status(500).json({
-    error: 'Internal server error',
+    error: 'Operazione non riuscita. Riprova tra poco; i dati inseriti restano disponibili.',
     code: 'INTERNAL_ERROR',
   });
 }
