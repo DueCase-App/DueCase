@@ -37,12 +37,35 @@ export type AuthUser = {
 
 export type AuthResponse = { token: string; user: AuthUser; };
 export type FamilyActionResponse = { family: FamilyInfo; memberCount: number; };
-export type FamilyChild = { id: string; displayName: string; birthDate: string | null; };
+
+export type FamilyChild = {
+  id: string;
+  familyId?: string;
+  displayName: string;
+  birthDate: string | null;
+  school?: string | null;
+  className?: string | null;
+  sports?: string | null;
+  extracurricular?: string | null;
+  usefulInfo?: string | null;
+  authorizations?: string | null;
+  sharedNotes?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+export type FamilyChildInput = Omit<FamilyChild, 'id' | 'familyId' | 'createdAt' | 'updatedAt'>;
+
 export type DailyCustody = { id: string; familyId: string; custodyDate: string; custodianRole: ParentRole; parentId: string | null; notes: string | null; createdAt: string; updatedAt: string; };
+export type CustodyCurrentChild = { childId: string; childName: string; custodianRole: ParentRole | null; overnight: boolean; notes: string | null; source: 'exception' | 'calendar' | 'weekly_pattern' | 'undefined'; };
+export type CustodyCurrent = { date: string; children: CustodyCurrentChild[]; };
+export type CustodyPattern = { id: string; childId: string; childName?: string; weekday: number; custodianRole: ParentRole; overnight: boolean; notes: string | null; createdAt: string; updatedAt: string; };
+export type CustodyException = { id: string; childId: string; childName?: string; custodyDate: string; custodianRole: ParentRole; overnight: boolean; notes: string | null; requestedBy: string; requestedByName?: string; requestedByRole?: ParentRole; status: 'pending' | 'approved' | 'rejected'; reviewedBy?: string | null; reviewedAt?: string | null; createdAt: string; updatedAt: string; canRespond: boolean; };
+
 export type SwapRequestStatus = 'pending' | 'approved' | 'rejected';
 export type SwapRequest = { id: string; familyId: string; requestedBy: string; requestedByName: string; requestedByRole: ParentRole; targetDate: string; proposedDate: string; status: SwapRequestStatus; notes: string | null; reviewedBy: string | null; reviewedAt: string | null; createdAt: string; updatedAt: string; canRespond: boolean; };
+
 export type ExpenseCategory = 'Scuola' | 'Salute' | 'Sport' | 'Svago';
-export type ExpenseStatus = 'pending_approval' | 'approved' | 'declined';
+export type ExpenseStatus = 'draft' | 'submitted' | 'pending_approval' | 'approved' | 'declined' | 'disputed' | 'to_pay' | 'partially_paid' | 'paid' | 'closed';
 export type OtpSignatureMetadata = {
   version: number;
   verifiedAt: string;
@@ -70,6 +93,8 @@ export type Expense = {
   notes: string | null;
   isExtraordinary: boolean;
   otpSignatureMetadata: OtpSignatureMetadata | null;
+  fatherPercentage?: string | number;
+  motherPercentage?: string | number;
   reviewedByUserId: string | null;
   reviewedAt: string | null;
   approvalOtpVerifiedAt?: string | null;
@@ -78,6 +103,41 @@ export type Expense = {
   canReview: boolean;
 };
 export type FamilyBalance = { fatherPaid: string; motherPaid: string; totalApproved: string; perParentShare: string; settlementAmount: string; creditorRole: ParentRole | null; debtorRole: ParentRole | null; currentUserRole: ParentRole; direction: 'receive' | 'pay' | 'settled'; };
+
 export type DocumentCategory = 'Salute' | 'Scuola' | 'Legale' | 'Altro';
 export type FamilyDocument = { id: string; familyId: string; title: string; description: string | null; fileUrl: string; uploadedByUserId: string | null; uploadedByName: string | null; uploadedByRole: ParentRole | null; category: DocumentCategory; mimeType: string | null; filename: string | null; fileSizeBytes: number | null; createdAt: string; updatedAt: string; };
-export type FamilyEvent = { id: string; familyId: string; title: string; startsAt: string; endsAt: string | null; location: string | null; notes: string | null; createdByUserId: string | null; createdAt: string; updatedAt: string; };
+
+export type FamilyEventType = 'custody' | 'overnight' | 'holiday' | 'vacation' | 'school' | 'sport' | 'medical' | 'birthday' | 'appointment' | 'personal' | 'other';
+export type FamilyEventStatus = 'pending' | 'confirmed' | 'rejected';
+export type FamilyEvent = { id: string; familyId: string; title: string; startsAt: string; endsAt: string | null; location: string | null; notes: string | null; childId?: string | null; eventType?: FamilyEventType; status?: FamilyEventStatus; requiresApproval?: boolean; createdByUserId: string | null; createdAt: string; updatedAt: string; };
+
+export type AgreementCategory = 'calendar' | 'vacation' | 'expense' | 'school' | 'sport' | 'medical' | 'organization' | 'other';
+export type AgreementStatus = 'pending' | 'approved' | 'rejected' | 'changes_requested';
+export type FamilyAgreement = {
+  id: string;
+  familyId: string;
+  createdBy: string;
+  createdByName?: string;
+  createdByRole?: ParentRole;
+  category: AgreementCategory;
+  title: string;
+  body: string;
+  status: AgreementStatus;
+  reviewedBy: string | null;
+  reviewedByName?: string | null;
+  reviewedByRole?: ParentRole | null;
+  responseNote: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  canRespond: boolean;
+};
+export type AgreementHistoryItem = { id: string; action: string; snapshot: unknown; createdAt: string; actorName: string | null; actorRole: ParentRole | null; };
+
+export type LegalMessage = { id: string; familyId: string; senderId: string; senderName: string; senderRole: ParentRole | null; text: string; createdAt: string; readAt: string | null; dataHash: string; isMine: boolean; integrityVerified: true; };
+export type ToneAnalysis = { aggressive: boolean; score: number; signals: string[]; reformulatedText: string | null; engine: string; };
+
+export type ParentingTimeSlice = { role: ParentRole; label: 'Papà' | 'Mamma' | string; seconds: number; hours: number; percentage: number; };
+export type ParentingTimeReport = { period: { from: string | null; to: string | null }; totalSeconds: number; totalHours: number; father: ParentingTimeSlice; mother: ParentingTimeSlice; chart: ParentingTimeSlice[]; source: string; };
+
+export type InAppNotification = { id: string; type: string; title: string; body: string; entityType: string | null; entityId: string | null; readAt: string | null; createdAt: string; };
