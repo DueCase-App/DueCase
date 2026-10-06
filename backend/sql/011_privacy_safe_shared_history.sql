@@ -1,5 +1,6 @@
 -- DueCase: storico condiviso compatibile con cancellazione account.
--- Salva il ruolo al momento dell'operazione e rimuove FK verso users dagli archivi storici.
+-- Idempotente e compatibile anche con database legacy in cui expense_payments
+-- esisteva già con un set ridotto di colonne.
 
 ALTER TABLE family_agreements ADD COLUMN IF NOT EXISTS created_by_role TEXT;
 ALTER TABLE family_agreements ADD COLUMN IF NOT EXISTS reviewed_by_role TEXT;
@@ -11,10 +12,34 @@ ALTER TABLE custody_exceptions ADD COLUMN IF NOT EXISTS reviewed_by_role TEXT;
 UPDATE custody_exceptions e SET requested_by_role = u.role FROM users u WHERE e.requested_by = u.id AND e.requested_by_role IS NULL;
 UPDATE custody_exceptions e SET reviewed_by_role = u.role FROM users u WHERE e.reviewed_by = u.id AND e.reviewed_by_role IS NULL;
 
+-- Compatibilità tabella pagamenti legacy. Le colonne vengono aggiunte senza
+-- distruggere eventuali dati già presenti; i nuovi record usano questo schema.
+ALTER TABLE expense_payments ADD COLUMN IF NOT EXISTS family_id UUID;
+ALTER TABLE expense_payments ADD COLUMN IF NOT EXISTS paid_by_user_id UUID;
+ALTER TABLE expense_payments ADD COLUMN IF NOT EXISTS amount NUMERIC(12,2);
+ALTER TABLE expense_payments ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'declared';
+ALTER TABLE expense_payments ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
+ALTER TABLE expense_payments ADD COLUMN IF NOT EXISTS receipt_filename TEXT;
+ALTER TABLE expense_payments ADD COLUMN IF NOT EXISTS receipt_mime_type TEXT;
+ALTER TABLE expense_payments ADD COLUMN IF NOT EXISTS receipt_data BYTEA;
+ALTER TABLE expense_payments ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE expense_payments ADD COLUMN IF NOT EXISTS confirmed_by_user_id UUID;
+ALTER TABLE expense_payments ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ;
+ALTER TABLE expense_payments ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE expense_payments ADD COLUMN IF NOT EXISTS paid_by_role TEXT;
 ALTER TABLE expense_payments ADD COLUMN IF NOT EXISTS confirmed_by_role TEXT;
-UPDATE expense_payments p SET paid_by_role = u.role FROM users u WHERE p.paid_by_user_id = u.id AND p.paid_by_role IS NULL;
-UPDATE expense_payments p SET confirmed_by_role = u.role FROM users u WHERE p.confirmed_by_user_id = u.id AND p.confirmed_by_role IS NULL;
+
+UPDATE expense_payments p
+   SET paid_by_role = u.role
+  FROM users u
+ WHERE p.paid_by_user_id = u.id
+   AND p.paid_by_role IS NULL;
+
+UPDATE expense_payments p
+   SET confirmed_by_role = u.role
+  FROM users u
+ WHERE p.confirmed_by_user_id = u.id
+   AND p.confirmed_by_role IS NULL;
 
 DO $$
 DECLARE r RECORD;
@@ -35,10 +60,19 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'family_agreements_created_role_check') THEN
     ALTER TABLE family_agreements ADD CONSTRAINT family_agreements_created_role_check CHECK (created_by_role IS NULL OR created_by_role IN ('father','mother')) NOT VALID;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'family_agreements_reviewed_role_check') THEN
+    ALTER TABLE family_agreements ADD CONSTRAINT family_agreements_reviewed_role_check CHECK (reviewed_by_role IS NULL OR reviewed_by_role IN ('father','mother')) NOT VALID;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'custody_exceptions_requested_role_check') THEN
     ALTER TABLE custody_exceptions ADD CONSTRAINT custody_exceptions_requested_role_check CHECK (requested_by_role IS NULL OR requested_by_role IN ('father','mother')) NOT VALID;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'custody_exceptions_reviewed_role_check') THEN
+    ALTER TABLE custody_exceptions ADD CONSTRAINT custody_exceptions_reviewed_role_check CHECK (reviewed_by_role IS NULL OR reviewed_by_role IN ('father','mother')) NOT VALID;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'expense_payments_paid_role_check') THEN
     ALTER TABLE expense_payments ADD CONSTRAINT expense_payments_paid_role_check CHECK (paid_by_role IS NULL OR paid_by_role IN ('father','mother')) NOT VALID;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'expense_payments_confirmed_role_check') THEN
+    ALTER TABLE expense_payments ADD CONSTRAINT expense_payments_confirmed_role_check CHECK (confirmed_by_role IS NULL OR confirmed_by_role IN ('father','mother')) NOT VALID;
   END IF;
 END $$;
