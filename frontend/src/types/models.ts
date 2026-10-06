@@ -11,9 +11,10 @@ export type FamilyChild = { id: string; familyId?: string; displayName: string; 
 export type FamilyChildInput = Omit<FamilyChild, 'id' | 'familyId' | 'createdAt' | 'updatedAt'>;
 
 export type DailyCustody = { id: string; familyId: string; custodyDate: string; custodianRole: ParentRole; parentId: string | null; notes: string | null; createdAt: string; updatedAt: string; };
-export type CustodyCurrentChild = { childId: string; childName: string; custodianRole: ParentRole | null; overnight: boolean; notes: string | null; source: 'exception' | 'calendar' | 'weekly_pattern' | 'undefined'; };
+export type CustodyCurrentChild = { childId: string; childName: string; custodianRole: ParentRole | null; overnight: boolean; notes: string | null; source: 'exception' | 'calendar' | 'alternating_weekend' | 'weekly_pattern' | 'undefined'; };
 export type CustodyCurrent = { date: string; children: CustodyCurrentChild[]; };
 export type CustodyPattern = { id: string; childId: string; childName?: string; weekday: number; custodianRole: ParentRole; overnight: boolean; notes: string | null; createdAt: string; updatedAt: string; };
+export type AlternatingWeekendPattern = { id: string; childId: string; childName?: string; anchorSaturday: string; firstWeekendRole: ParentRole; secondWeekendRole: ParentRole; overnight: boolean; notes: string | null; createdAt: string; updatedAt: string; };
 export type CustodyException = { id: string; childId: string; childName?: string; custodyDate: string; custodianRole: ParentRole; overnight: boolean; notes: string | null; requestedBy: string; requestedByName?: string; requestedByRole?: ParentRole; status: 'pending' | 'approved' | 'rejected'; reviewedBy?: string | null; reviewedAt?: string | null; createdAt: string; updatedAt: string; canRespond: boolean; };
 
 export type SwapRequestStatus = 'pending' | 'approved' | 'rejected';
