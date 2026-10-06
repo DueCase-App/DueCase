@@ -270,20 +270,26 @@ function AuthenticatedApp({ requestedRoute, onRequestedRouteHandled }: {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'right', 'bottom', 'left']}>
+    <View style={styles.authenticatedRoot}>
       <StatusBar barStyle="dark-content" backgroundColor={ui.colors.background} translucent={false} />
       {desktop ? (
-        <View style={styles.desktopShell}>
-          <DesktopSidebar route={route} navigate={navigate} />
-          {page}
-        </View>
+        <SafeAreaView style={styles.safeArea} edges={['top', 'right', 'bottom', 'left']}>
+          <View style={styles.desktopShell}>
+            <DesktopSidebar route={route} navigate={navigate} />
+            {page}
+          </View>
+        </SafeAreaView>
       ) : (
         <>
-          {page}
-          <MobileNavigation active={mobileActive} onNavigate={(key) => {
-            if (key === 'more') setMoreOpen(true);
-            else navigate(key);
-          }} />
+          <SafeAreaView style={styles.mobilePageSafeArea} edges={['top', 'left', 'right']}>
+            {page}
+          </SafeAreaView>
+          <SafeAreaView style={styles.mobileNavSafeArea} edges={['bottom', 'left', 'right']}>
+            <MobileNavigation active={mobileActive} onNavigate={(key) => {
+              if (key === 'more') setMoreOpen(true);
+              else navigate(key);
+            }} />
+          </SafeAreaView>
         </>
       )}
 
@@ -322,7 +328,7 @@ function AuthenticatedApp({ requestedRoute, onRequestedRouteHandled }: {
           </Pressable>
         </Pressable>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -396,9 +402,12 @@ function FamilyCard(): React.JSX.Element {
 
 const styles = StyleSheet.create({
   appRoot: { flex: 1, backgroundColor: ui.colors.background },
+  authenticatedRoot: { flex: 1, backgroundColor: ui.colors.background },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: ui.colors.background },
   loadingText: { color: ui.colors.muted },
   safeArea: { flex: 1, backgroundColor: ui.colors.background },
+  mobilePageSafeArea: { flex: 1, backgroundColor: ui.colors.background },
+  mobileNavSafeArea: { flexShrink: 0, backgroundColor: '#FFF' },
   desktopShell: { flex: 1, flexDirection: 'row' },
   page: { flex: 1, minWidth: 0, backgroundColor: ui.colors.background },
   sidebar: { width: 232, backgroundColor: '#FFF', borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: ui.colors.border, paddingHorizontal: 12, paddingTop: Platform.OS === 'web' ? 18 : 10, paddingBottom: 16 },
@@ -415,8 +424,8 @@ const styles = StyleSheet.create({
   userAvatar: { width: 38, height: 38, borderRadius: 12, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
   userName: { fontSize: 12, fontWeight: '900', color: ui.colors.primaryDark },
   userRole: { fontSize: 10, color: ui.colors.muted, marginTop: 1 },
-  mobileNav: { flexDirection: 'row', flexShrink: 0, backgroundColor: '#FFF', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: ui.colors.border, paddingTop: 7, paddingBottom: 8, paddingHorizontal: 4 },
-  mobileNavItem: { flex: 1, minHeight: 58, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  mobileNav: { flexDirection: 'row', flexShrink: 0, backgroundColor: '#FFF', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: ui.colors.border, paddingTop: 8, paddingBottom: 10, paddingHorizontal: 4 },
+  mobileNavItem: { flex: 1, minHeight: 60, alignItems: 'center', justifyContent: 'center', gap: 2 },
   mobileIconWrap: { width: 40, height: 30, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   mobileIconWrapActive: { backgroundColor: ui.colors.primarySoft },
   mobileNavText: { color: ui.colors.muted, fontSize: 9, fontWeight: '800' },
