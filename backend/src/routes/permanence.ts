@@ -17,6 +17,13 @@ const patternSchema = z.object({
   overnight: z.boolean().optional().default(true),
   notes: z.string().trim().max(2000).nullable().optional(),
 });
+const alternatingWeekendSchema = z.object({
+  anchorSaturday: dateString,
+  firstWeekendRole: role,
+  secondWeekendRole: role,
+  overnight: z.boolean().optional().default(true),
+  notes: z.string().trim().max(2000).nullable().optional(),
+});
 const exceptionSchema = z.object({
   childId: uuid,
   custodyDate: dateString,
@@ -32,6 +39,14 @@ function romeDateKey(): string {
   }).formatToParts(new Date());
   const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${map.year}-${map.month}-${map.day}`;
+}
+
+function isSaturday(value: string): boolean {
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return false;
+  const date = new Date(Date.UTC(year, month - 1, day, 12));
+  const jsDay = date.getUTCDay();
+  return jsDay === 6;
 }
 
 router.get('/pattern', asyncHandler(async (req, res) => {
@@ -80,6 +95,72 @@ router.put('/pattern/:childId/:weekday', asyncHandler(async (req, res) => {
   res.json(rows[0]);
 }));
 
+router.get('/alternating-weekends', asyncHandler(async (req, res) => {
+  const auth = requireFamily(req);
+  const { rows } = await pool.query(
+    `SELECT p.id, p.child_id AS "childId", c.display_name AS "childName",
+            p.anchor_saturday::text AS "anchorSaturday",
+            p.first_weekend_role AS "firstWeekendRole",
+            p.second_weekend_role AS "secondWeekendRole",
+            p.overnight, p.notes,
+            p.created_at AS "createdAt", p.updated_at AS "updatedAt"
+       FROM custody_alternating_weekends p
+       JOIN children c ON c.id = p.child_id AND c.family_id = p.family_id
+      WHERE p.family_id = $1
+      ORDER BY c.display_name`,
+    [auth.familyId],
+  );
+  res.json(rows);
+}));
+
+router.put('/alternating-weekends/:childId', asyncHandler(async (req, res) => {
+  const auth = requireFamily(req);
+  const childId = uuid.parse(req.params.childId);
+  const body = alternatingWeekendSchema.parse(req.body);
+  if (!isSaturday(body.anchorSaturday)) {
+    throw new ApiError(400, 'La data iniziale dei weekend alternati deve essere un sabato', 'ANCHOR_MUST_BE_SATURDAY');
+  }
+
+  const childResult = await pool.query<{ displayName: string }>(
+    `SELECT display_name AS "displayName" FROM children WHERE id = $1 AND family_id = $2`,
+    [childId, auth.familyId],
+  );
+  const child = childResult.rows[0];
+  if (!child) throw new ApiError(404, 'Figlio non trovato', 'CHILD_NOT_FOUND');
+
+  const id = randomUUID();
+  const { rows } = await pool.query(
+    `INSERT INTO custody_alternating_weekends
+      (id, family_id, child_id, anchor_saturday, first_weekend_role, second_weekend_role, overnight, notes, created_by)
+     VALUES ($1,$2,$3,$4::date,$5,$6,$7,$8,$9)
+     ON CONFLICT (family_id, child_id)
+     DO UPDATE SET anchor_saturday = EXCLUDED.anchor_saturday,
+                   first_weekend_role = EXCLUDED.first_weekend_role,
+                   second_weekend_role = EXCLUDED.second_weekend_role,
+                   overnight = EXCLUDED.overnight,
+                   notes = EXCLUDED.notes,
+                   updated_at = NOW()
+     RETURNING id, child_id AS "childId", anchor_saturday::text AS "anchorSaturday",
+               first_weekend_role AS "firstWeekendRole", second_weekend_role AS "secondWeekendRole",
+               overnight, notes, created_at AS "createdAt", updated_at AS "updatedAt"`,
+    [id, auth.familyId, childId, body.anchorSaturday, body.firstWeekendRole, body.secondWeekendRole, body.overnight, body.notes ?? null, auth.userId],
+  );
+
+  await pool.query(
+    `INSERT INTO family_activity_history (id, family_id, actor_user_id, entity_type, entity_id, action, details)
+     VALUES ($1,$2,$3,'alternating_weekend',$4,'updated',$5::jsonb)`,
+    [randomUUID(), auth.familyId, auth.userId, childId, JSON.stringify({
+      childName: child.displayName,
+      anchorSaturday: body.anchorSaturday,
+      firstWeekendRole: body.firstWeekendRole,
+      secondWeekendRole: body.secondWeekendRole,
+      overnight: body.overnight,
+    })],
+  );
+
+  res.json({ ...rows[0], childName: child.displayName });
+}));
+
 router.get('/current', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const date = req.query.date ? dateString.parse(req.query.date) : romeDateKey();
@@ -97,21 +178,35 @@ router.get('/current', asyncHandler(async (req, res) => {
          FROM custody_turns
         WHERE family_id = $1 AND custody_date = $2::date
         ORDER BY updated_at DESC LIMIT 1
+     ), alternating_weekend AS (
+       SELECT child_id,
+              CASE
+                WHEN (((FLOOR((($2::date - anchor_saturday)::numeric) / 7)::int % 2) + 2) % 2) = 0
+                  THEN first_weekend_role
+                ELSE second_weekend_role
+              END AS custodian_role,
+              overnight,
+              notes
+         FROM custody_alternating_weekends
+        WHERE family_id = $1
+          AND EXTRACT(ISODOW FROM $2::date)::int IN (6, 7)
      ), weekly AS (
        SELECT child_id, custodian_role, overnight, notes
          FROM custody_weekly_patterns
         WHERE family_id = $1 AND weekday = EXTRACT(ISODOW FROM $2::date)::int
      )
      SELECT k.id AS "childId", k.display_name AS "childName",
-            COALESCE(e.custodian_role, gt.custodian_role, w.custodian_role) AS "custodianRole",
-            COALESCE(e.overnight, w.overnight, TRUE) AS overnight,
-            COALESCE(e.notes, gt.notes, w.notes) AS notes,
+            COALESCE(e.custodian_role, gt.custodian_role, aw.custodian_role, w.custodian_role) AS "custodianRole",
+            COALESCE(e.overnight, aw.overnight, w.overnight, TRUE) AS overnight,
+            COALESCE(e.notes, gt.notes, aw.notes, w.notes) AS notes,
             CASE WHEN e.child_id IS NOT NULL THEN 'exception'
                  WHEN gt.custodian_role IS NOT NULL THEN 'calendar'
+                 WHEN aw.child_id IS NOT NULL THEN 'alternating_weekend'
                  WHEN w.child_id IS NOT NULL THEN 'weekly_pattern'
                  ELSE 'undefined' END AS source
        FROM kids k
        LEFT JOIN approved_exception e ON e.child_id = k.id
+       LEFT JOIN alternating_weekend aw ON aw.child_id = k.id
        LEFT JOIN weekly w ON w.child_id = k.id
        LEFT JOIN general_turn gt ON TRUE
       ORDER BY k.display_name`,
