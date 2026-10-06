@@ -33,7 +33,29 @@ export type FamilyDocument = { id: string; familyId: string; title: string; desc
 
 export type FamilyEventType = 'custody' | 'overnight' | 'holiday' | 'vacation' | 'school' | 'sport' | 'medical' | 'birthday' | 'appointment' | 'personal' | 'other';
 export type FamilyEventStatus = 'pending' | 'confirmed' | 'rejected';
-export type FamilyEvent = { id: string; familyId: string; title: string; startsAt: string; endsAt: string | null; location: string | null; notes: string | null; childId?: string | null; eventType?: FamilyEventType; status?: FamilyEventStatus; requiresApproval?: boolean; createdByUserId: string | null; createdAt: string; updatedAt: string; };
+export type FamilyEvent = {
+  id: string;
+  familyId: string;
+  title: string;
+  startsAt: string;
+  endsAt: string | null;
+  location: string | null;
+  notes: string | null;
+  childId: string | null;
+  childName?: string | null;
+  eventType: FamilyEventType;
+  status: FamilyEventStatus;
+  requiresApproval: boolean;
+  createdByUserId: string | null;
+  createdByName?: string | null;
+  createdByRole?: ParentRole | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  responseNote?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  canRespond?: boolean;
+};
 
 export type AgreementCategory = 'calendar' | 'vacation' | 'expense' | 'school' | 'sport' | 'medical' | 'organization' | 'other';
 export type AgreementStatus = 'pending' | 'approved' | 'rejected' | 'changes_requested';
