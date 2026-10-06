@@ -84,6 +84,8 @@ export function CalendarScreen(): React.JSX.Element {
   const [target, setTarget] = useState('');
   const [proposed, setProposed] = useState('');
   const [swapNotes, setSwapNotes] = useState('');
+  const [responseSwap, setResponseSwap] = useState<SwapRequest | null>(null);
+  const [swapResponseNote, setSwapResponseNote] = useState('');
 
   const [eventModal, setEventModal] = useState(false);
   const [eventTitle, setEventTitle] = useState('');
@@ -195,10 +197,16 @@ export function CalendarScreen(): React.JSX.Element {
     } finally { setBusy(false); }
   }
 
-  async function reviewSwap(request: SwapRequest, action: 'approve' | 'reject'): Promise<void> {
+  async function reviewSwap(action: 'approve' | 'reject'): Promise<void> {
+    if (!responseSwap) return;
     try {
       setBusy(true);
-      action === 'approve' ? await api.swapRequests.approve(request.id) : await api.swapRequests.reject(request.id);
+      const note = swapResponseNote.trim() || null;
+      action === 'approve'
+        ? await api.swapRequests.approve(responseSwap.id, note)
+        : await api.swapRequests.reject(responseSwap.id, note);
+      setResponseSwap(null);
+      setSwapResponseNote('');
       await load();
       Alert.alert(action === 'approve' ? 'Cambio approvato' : 'Cambio rifiutato');
     } catch (error) {
@@ -346,7 +354,8 @@ export function CalendarScreen(): React.JSX.Element {
         </View>
         <View style={styles.swapBox}><Ionicons name="calendar-outline" size={19} color={ui.colors.primary} /><Text style={styles.swap}>{prettyDate(request.targetDate)}</Text><Ionicons name="swap-horizontal" size={18} color={ui.colors.orange} /><Text style={styles.swap}>{prettyDate(request.proposedDate)}</Text></View>
         {request.notes ? <Text style={styles.note}>“{request.notes}”</Text> : null}
-        {request.canRespond ? <View style={styles.actions}><Pressable disabled={busy} style={styles.reject} onPress={() => void reviewSwap(request, 'reject')}><Text style={styles.rejectText}>Rifiuta</Text></Pressable><Pressable disabled={busy} style={styles.accept} onPress={() => void reviewSwap(request, 'approve')}><Text style={styles.acceptText}>Accetta</Text></Pressable></View> : <Text style={styles.muted}>In attesa dell’altro genitore.</Text>}
+        {request.responseNote ? <Text style={styles.note}>Risposta: “{request.responseNote}”</Text> : null}
+        {request.canRespond ? <Pressable disabled={busy} style={styles.reviewEventButton} onPress={() => { setResponseSwap(request); setSwapResponseNote(''); }}><Text style={styles.reviewEventText}>Rispondi al cambio turno</Text><Ionicons name="chevron-forward" size={18} color="#FFF" /></Pressable> : <Text style={styles.muted}>In attesa dell’altro genitore.</Text>}
       </View>)}
     </ScrollView>
 
@@ -371,6 +380,14 @@ export function CalendarScreen(): React.JSX.Element {
         <Pressable style={styles.approvalRow} onPress={() => setEventNeedsApproval((value) => !value)}><View style={[styles.checkbox, eventNeedsApproval && styles.checkboxActive]}>{eventNeedsApproval ? <Ionicons name="checkmark" size={15} color="#FFF" /> : null}</View><View style={styles.flex}><Text style={styles.bold}>Richiedi approvazione</Text><Text style={styles.muted}>L’evento resta in attesa finché l’altro genitore non decide.</Text></View></Pressable>
         <Pressable disabled={busy} style={styles.primaryButton} onPress={() => void createEvent()}><Text style={styles.primaryButtonText}>{busy ? 'Salvataggio…' : eventNeedsApproval ? 'Invia richiesta' : 'Salva evento'}</Text></Pressable>
       </ScrollView>
+    </View></View></Modal>
+
+    <Modal visible={Boolean(responseSwap)} transparent animationType="fade" onRequestClose={() => setResponseSwap(null)}><View style={styles.centerBackdrop}><View style={styles.responseModal}>
+      <ModalHeader title="Rispondi al cambio turno" onClose={() => setResponseSwap(null)} />
+      <Text style={styles.bold}>{responseSwap ? `${prettyDate(responseSwap.targetDate)} ↔ ${prettyDate(responseSwap.proposedDate)}` : ''}</Text>
+      {responseSwap?.notes ? <Text style={styles.note}>Richiesta: “{responseSwap.notes}”</Text> : null}
+      <Text style={styles.label}>Commento facoltativo</Text><TextInput value={swapResponseNote} onChangeText={setSwapResponseNote} multiline style={[styles.input, styles.notes]} placeholder="Aggiungi una nota alla decisione" placeholderTextColor={ui.colors.muted} />
+      <View style={styles.actions}><Pressable disabled={busy} style={styles.reject} onPress={() => void reviewSwap('reject')}><Text style={styles.rejectText}>Rifiuta</Text></Pressable><Pressable disabled={busy} style={styles.accept} onPress={() => void reviewSwap('approve')}><Text style={styles.acceptText}>Accetta</Text></Pressable></View>
     </View></View></Modal>
 
     <Modal visible={Boolean(responseEvent)} transparent animationType="fade" onRequestClose={() => setResponseEvent(null)}><View style={styles.centerBackdrop}><View style={styles.responseModal}>
