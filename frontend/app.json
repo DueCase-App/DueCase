@@ -72,8 +72,7 @@
       ],
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
-      ],
-      "edgeToEdgeEnabled": true
+      ]
     },
     "extra": {
       "eas": {
