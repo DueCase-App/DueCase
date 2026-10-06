@@ -16,6 +16,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { ApiClientError, api } from '../services/api';
 import { cardShadow, ui } from '../theme/ui';
@@ -33,6 +34,7 @@ function formatTimestamp(value: string): string {
 export function MessagesScreen(): React.JSX.Element {
   const { user } = useAuth();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const compact = width < 720;
   const scrollRef = useRef<ScrollView>(null);
   const [messages, setMessages] = useState<LegalMessage[]>([]);
@@ -101,73 +103,95 @@ export function MessagesScreen(): React.JSX.Element {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={8}>
-      <View style={[styles.shell, !compact && styles.shellWide]}>
-        <View style={styles.header}>
-          <View style={styles.headerCopy}>
-            <Text style={styles.eyebrow}>COMUNICAZIONI CONDIVISE</Text>
-            <Text style={styles.title}>Messaggi</Text>
-            <Text style={styles.subtitle}>Chat tra Mamma e Papà · testo e allegati protetti da hash SHA-256.</Text>
+    <SafeAreaView style={styles.safeArea} edges={['bottom', 'left', 'right']}>
+      <KeyboardAvoidingView
+        style={styles.screen}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+      >
+        <View style={[styles.shell, !compact && styles.shellWide, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
+          <View style={styles.header}>
+            <View style={styles.headerCopy}>
+              <Text style={styles.eyebrow}>COMUNICAZIONI CONDIVISE</Text>
+              <Text style={styles.title}>Messaggi</Text>
+              <Text style={styles.subtitle}>Chat tra Mamma e Papà · testo e allegati protetti da hash SHA-256.</Text>
+            </View>
+            <View style={styles.integrityPill}><Ionicons name="shield-checkmark-outline" size={17} color={ui.colors.success} /><Text style={styles.integrityText}>Integrità attiva</Text></View>
           </View>
-          <View style={styles.integrityPill}><Ionicons name="shield-checkmark-outline" size={17} color={ui.colors.success} /><Text style={styles.integrityText}>Integrità attiva</Text></View>
-        </View>
 
-        <View style={styles.chatCard}>
-          {loading ? <ActivityIndicator style={{ marginTop: 50 }} color={ui.colors.primary} /> : (
-            <ScrollView ref={scrollRef} style={styles.messagesArea} contentContainerStyle={styles.messagesContent} keyboardShouldPersistTaps="handled">
-              {messages.length === 0 ? <View style={styles.empty}><Ionicons name="chatbubbles-outline" size={38} color={ui.colors.primary} /><Text style={styles.emptyTitle}>Nessun messaggio</Text><Text style={styles.emptyText}>Le comunicazioni inviate qui resteranno ordinate e verificabili.</Text></View> : null}
-              {messages.map((message) => {
-                const mine = message.senderId === user?.id || message.isMine;
-                return (
-                  <View key={message.id} style={[styles.row, mine ? styles.rowMine : styles.rowOther]}>
-                    <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleOther]}>
-                      <Text style={[styles.sender, mine && styles.senderMine]}>{mine ? 'Tu' : roleLabel(message.senderRole)}</Text>
-                      {message.text ? <Text style={[styles.messageText, mine && styles.messageTextMine]}>{message.text}</Text> : null}
-                      {message.attachments?.map((item) => (
-                        <Pressable key={item.id} style={[styles.attachmentCard, mine && styles.attachmentCardMine]} onPress={() => setPreviewAttachment(item)}>
-                          {item.mimeType.startsWith('image/') ? <Image source={api.messages.attachmentSource(item.fileUrl)} style={styles.attachmentImage} resizeMode="cover" /> : <View style={styles.fileIcon}><Ionicons name="document-text-outline" size={26} color={mine ? '#FFF' : ui.colors.primary} /></View>}
-                          <View style={styles.attachmentCopy}><Text numberOfLines={1} style={[styles.attachmentName, mine && styles.messageTextMine]}>{item.filename}</Text><Text style={[styles.attachmentMeta, mine && styles.timeMine]}>SHA-256 verificabile · {(item.fileSizeBytes / 1024).toFixed(0)} KB</Text></View>
-                        </Pressable>
-                      ))}
-                      <View style={styles.messageMeta}><Text style={[styles.time, mine && styles.timeMine]}>{formatTimestamp(message.createdAt)}</Text>{mine ? <Ionicons name={message.readAt ? 'checkmark-done' : 'checkmark'} size={15} color={message.readAt ? '#D7F1FF' : '#C6D9EE'} /> : null}<Ionicons name="shield-checkmark" size={13} color={mine ? '#D7F1FF' : ui.colors.success} /></View>
+          <View style={styles.chatCard}>
+            {loading ? <ActivityIndicator style={{ marginTop: 50 }} color={ui.colors.primary} /> : (
+              <ScrollView
+                ref={scrollRef}
+                style={styles.messagesArea}
+                contentContainerStyle={styles.messagesContent}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+              >
+                {messages.length === 0 ? <View style={styles.empty}><Ionicons name="chatbubbles-outline" size={38} color={ui.colors.primary} /><Text style={styles.emptyTitle}>Nessun messaggio</Text><Text style={styles.emptyText}>Le comunicazioni inviate qui resteranno ordinate e verificabili.</Text></View> : null}
+                {messages.map((message) => {
+                  const mine = message.senderId === user?.id || message.isMine;
+                  return (
+                    <View key={message.id} style={[styles.row, mine ? styles.rowMine : styles.rowOther]}>
+                      <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleOther]}>
+                        <Text style={[styles.sender, mine && styles.senderMine]}>{mine ? 'Tu' : roleLabel(message.senderRole)}</Text>
+                        {message.text ? <Text style={[styles.messageText, mine && styles.messageTextMine]}>{message.text}</Text> : null}
+                        {message.attachments?.map((item) => (
+                          <Pressable key={item.id} style={[styles.attachmentCard, mine && styles.attachmentCardMine]} onPress={() => setPreviewAttachment(item)}>
+                            {item.mimeType.startsWith('image/') ? <Image source={api.messages.attachmentSource(item.fileUrl)} style={styles.attachmentImage} resizeMode="cover" /> : <View style={styles.fileIcon}><Ionicons name="document-text-outline" size={26} color={mine ? '#FFF' : ui.colors.primary} /></View>}
+                            <View style={styles.attachmentCopy}><Text numberOfLines={1} style={[styles.attachmentName, mine && styles.messageTextMine]}>{item.filename}</Text><Text style={[styles.attachmentMeta, mine && styles.timeMine]}>SHA-256 verificabile · {(item.fileSizeBytes / 1024).toFixed(0)} KB</Text></View>
+                          </Pressable>
+                        ))}
+                        <View style={styles.messageMeta}><Text style={[styles.time, mine && styles.timeMine]}>{formatTimestamp(message.createdAt)}</Text>{mine ? <Ionicons name={message.readAt ? 'checkmark-done' : 'checkmark'} size={15} color={message.readAt ? '#D7F1FF' : '#C6D9EE'} /> : null}<Ionicons name="shield-checkmark" size={13} color={mine ? '#D7F1FF' : ui.colors.success} /></View>
+                      </View>
                     </View>
-                  </View>
-                );
-              })}
-            </ScrollView>
-          )}
+                  );
+                })}
+              </ScrollView>
+            )}
 
-          {attachment ? <View style={styles.pendingAttachment}><Ionicons name="attach-outline" size={19} color={ui.colors.primary} /><View style={styles.pendingCopy}><Text numberOfLines={1} style={styles.pendingName}>{attachment.name}</Text><Text style={styles.pendingMeta}>Verrà archiviato con hash SHA-256</Text></View><Pressable onPress={() => setAttachment(null)}><Ionicons name="close-circle" size={23} color={ui.colors.muted} /></Pressable></View> : null}
-          <View style={styles.composer}>
-            <Pressable style={styles.attachButton} onPress={() => void pickAttachment()} accessibilityLabel="Aggiungi allegato"><Ionicons name="attach" size={23} color={ui.colors.primary} /></Pressable>
-            <TextInput value={text} onChangeText={setText} placeholder="Scrivi a Mamma o Papà…" placeholderTextColor={ui.colors.muted} multiline maxLength={10000} style={styles.input} />
-            <Pressable disabled={(!text.trim() && !attachment) || sending} onPress={() => void requestSend()} style={[styles.sendButton, ((!text.trim() && !attachment) || sending) && { opacity: 0.45 }]}>{sending ? <ActivityIndicator color="#FFF" /> : <Ionicons name="send" size={20} color="#FFF" />}</Pressable>
+            {attachment ? <View style={styles.pendingAttachment}><Ionicons name="attach-outline" size={19} color={ui.colors.primary} /><View style={styles.pendingCopy}><Text numberOfLines={1} style={styles.pendingName}>{attachment.name}</Text><Text style={styles.pendingMeta}>Verrà archiviato con hash SHA-256</Text></View><Pressable onPress={() => setAttachment(null)}><Ionicons name="close-circle" size={23} color={ui.colors.muted} /></Pressable></View> : null}
+            <View style={styles.composer}>
+              <Pressable style={styles.attachButton} onPress={() => void pickAttachment()} accessibilityLabel="Aggiungi allegato"><Ionicons name="attach" size={23} color={ui.colors.primary} /></Pressable>
+              <TextInput value={text} onChangeText={setText} placeholder="Scrivi a Mamma o Papà…" placeholderTextColor={ui.colors.muted} multiline maxLength={10000} style={styles.input} />
+              <Pressable disabled={(!text.trim() && !attachment) || sending} onPress={() => void requestSend()} style={[styles.sendButton, ((!text.trim() && !attachment) || sending) && { opacity: 0.45 }]}>{sending ? <ActivityIndicator color="#FFF" /> : <Ionicons name="send" size={20} color="#FFF" />}</Pressable>
+            </View>
+            <Text style={styles.helper}><Ionicons name="sparkles-outline" size={13} /> ToneMeter controlla il testo prima dell’invio; gli allegati restano protetti separatamente da SHA-256.</Text>
           </View>
-          <Text style={styles.helper}><Ionicons name="sparkles-outline" size={13} /> ToneMeter controlla il testo prima dell’invio; gli allegati restano protetti separatamente da SHA-256.</Text>
         </View>
-      </View>
 
-      <Modal visible={toneOpen} transparent animationType="fade" onRequestClose={() => setToneOpen(false)}><View style={styles.modalBackdrop}><View style={styles.toneCard}>
-        <View style={styles.toneIcon}><Ionicons name="heart-outline" size={26} color={ui.colors.orange} /></View><Text style={styles.toneTitle}>Possiamo rendere il messaggio più neutro</Text><Text style={styles.toneDescription}>Il ToneMeter ha rilevato un tono potenzialmente conflittuale{tone?.signals.length ? `: ${tone.signals.join(', ')}` : ''}.</Text>
-        {tone?.reformulatedText ? <View style={styles.suggestion}><Text style={styles.suggestionLabel}>PROPOSTA</Text><Text style={styles.suggestionText}>{tone.reformulatedText}</Text></View> : null}
-        <Pressable style={styles.useSuggestion} onPress={() => { if (tone?.reformulatedText) { setText(tone.reformulatedText); setToneOpen(false); } }}><Text style={styles.useSuggestionText}>Usa questa versione</Text></Pressable>
-        <Pressable style={styles.sendAnyway} onPress={() => void actuallySend(text)}><Text style={styles.sendAnywayText}>Invia comunque il testo originale</Text></Pressable>
-        <Pressable style={styles.cancel} onPress={() => setToneOpen(false)}><Text style={styles.cancelText}>Torna a modificare</Text></Pressable>
-      </View></View></Modal>
+        <Modal visible={toneOpen} transparent animationType="fade" onRequestClose={() => setToneOpen(false)}>
+          <SafeAreaView style={styles.modalSafeArea} edges={['top', 'right', 'bottom', 'left']}>
+            <View style={styles.modalBackdrop}><View style={styles.toneCard}>
+              <View style={styles.toneIcon}><Ionicons name="heart-outline" size={26} color={ui.colors.orange} /></View><Text style={styles.toneTitle}>Possiamo rendere il messaggio più neutro</Text><Text style={styles.toneDescription}>Il ToneMeter ha rilevato un tono potenzialmente conflittuale{tone?.signals.length ? `: ${tone.signals.join(', ')}` : ''}.</Text>
+              {tone?.reformulatedText ? <View style={styles.suggestion}><Text style={styles.suggestionLabel}>PROPOSTA</Text><Text style={styles.suggestionText}>{tone.reformulatedText}</Text></View> : null}
+              <Pressable style={styles.useSuggestion} onPress={() => { if (tone?.reformulatedText) { setText(tone.reformulatedText); setToneOpen(false); } }}><Text style={styles.useSuggestionText}>Usa questa versione</Text></Pressable>
+              <Pressable style={styles.sendAnyway} onPress={() => void actuallySend(text)}><Text style={styles.sendAnywayText}>Invia comunque il testo originale</Text></Pressable>
+              <Pressable style={styles.cancel} onPress={() => setToneOpen(false)}><Text style={styles.cancelText}>Torna a modificare</Text></Pressable>
+            </View></View>
+          </SafeAreaView>
+        </Modal>
 
-      <Modal visible={previewAttachment !== null} transparent animationType="fade" onRequestClose={() => setPreviewAttachment(null)}><View style={styles.modalBackdrop}><View style={styles.previewCard}>
-        <View style={styles.previewHeader}><View style={{ flex: 1 }}><Text style={styles.toneTitle}>Allegato protetto</Text><Text numberOfLines={1} style={styles.toneDescription}>{previewAttachment?.filename}</Text></View><Pressable onPress={() => setPreviewAttachment(null)}><Ionicons name="close" size={25} color={ui.colors.text} /></Pressable></View>
-        {previewAttachment?.mimeType.startsWith('image/') ? <Image source={api.messages.attachmentSource(previewAttachment.fileUrl)} style={styles.previewImage} resizeMode="contain" /> : <View style={styles.pdfPreview}><Ionicons name="document-text-outline" size={52} color={ui.colors.primary} /><Text style={styles.emptyTitle}>Documento PDF</Text><Text style={styles.emptyText}>Il file è archiviato nel messaggio e verificato dal backend prima dell’apertura.</Text></View>}
-        <Text selectable style={styles.hashText}>SHA-256: {previewAttachment?.dataHash}</Text>
-      </View></View></Modal>
-    </KeyboardAvoidingView>
+        <Modal visible={previewAttachment !== null} transparent animationType="fade" onRequestClose={() => setPreviewAttachment(null)}>
+          <SafeAreaView style={styles.modalSafeArea} edges={['top', 'right', 'bottom', 'left']}>
+            <View style={styles.modalBackdrop}><View style={styles.previewCard}>
+              <View style={styles.previewHeader}><View style={{ flex: 1 }}><Text style={styles.toneTitle}>Allegato protetto</Text><Text numberOfLines={1} style={styles.toneDescription}>{previewAttachment?.filename}</Text></View><Pressable onPress={() => setPreviewAttachment(null)}><Ionicons name="close" size={25} color={ui.colors.text} /></Pressable></View>
+              {previewAttachment?.mimeType.startsWith('image/') ? <Image source={api.messages.attachmentSource(previewAttachment.fileUrl)} style={styles.previewImage} resizeMode="contain" /> : <View style={styles.pdfPreview}><Ionicons name="document-text-outline" size={52} color={ui.colors.primary} /><Text style={styles.emptyTitle}>Documento PDF</Text><Text style={styles.emptyText}>Il file è archiviato nel messaggio e verificato dal backend prima dell’apertura.</Text></View>}
+              <Text selectable style={styles.hashText}>SHA-256: {previewAttachment?.dataHash}</Text>
+            </View></View>
+          </SafeAreaView>
+        </Modal>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: ui.colors.background },
+  modalSafeArea: { flex: 1, backgroundColor: 'rgba(10,50,103,0.30)' },
   screen: { flex: 1, backgroundColor: ui.colors.background },
-  shell: { flex: 1, padding: 14 },
-  shellWide: { paddingHorizontal: 28, paddingTop: 20 },
+  shell: { flex: 1, paddingHorizontal: 14, paddingTop: 18 },
+  shellWide: { paddingHorizontal: 28, paddingTop: 22 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
   headerCopy: { flex: 1 },
   eyebrow: { fontSize: 10, fontWeight: '900', color: ui.colors.orange, letterSpacing: 1 },
@@ -177,7 +201,7 @@ const styles = StyleSheet.create({
   integrityText: { color: ui.colors.success, fontWeight: '900', fontSize: 11 },
   chatCard: { ...cardShadow, flex: 1, width: '100%', maxWidth: 1000, alignSelf: 'center', backgroundColor: ui.colors.card, borderWidth: 1, borderColor: ui.colors.border, borderRadius: 18, overflow: 'hidden' },
   messagesArea: { flex: 1 },
-  messagesContent: { padding: 16, gap: 9, flexGrow: 1 },
+  messagesContent: { padding: 16, paddingBottom: 28, gap: 9, flexGrow: 1 },
   row: { width: '100%', flexDirection: 'row' },
   rowMine: { justifyContent: 'flex-end' },
   rowOther: { justifyContent: 'flex-start' },
@@ -202,11 +226,11 @@ const styles = StyleSheet.create({
   pendingCopy: { flex: 1, minWidth: 0 },
   pendingName: { color: ui.colors.primaryDark, fontWeight: '900', fontSize: 12 },
   pendingMeta: { color: ui.colors.muted, fontSize: 9 },
-  composer: { borderTopWidth: 1, borderTopColor: ui.colors.border, padding: 10, flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  composer: { borderTopWidth: 1, borderTopColor: ui.colors.border, padding: 12, flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   attachButton: { width: 44, height: 48, borderRadius: 14, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
   input: { flex: 1, minHeight: 48, maxHeight: 130, borderRadius: 14, backgroundColor: ui.colors.input, color: '#202124', paddingHorizontal: 14, paddingVertical: 12, textAlignVertical: 'top' },
   sendButton: { width: 48, height: 48, borderRadius: 16, backgroundColor: ui.colors.primary, alignItems: 'center', justifyContent: 'center' },
-  helper: { paddingHorizontal: 13, paddingBottom: 10, fontSize: 10, color: ui.colors.muted },
+  helper: { paddingHorizontal: 13, paddingBottom: 14, fontSize: 10, color: ui.colors.muted },
   empty: { flex: 1, minHeight: 260, alignItems: 'center', justifyContent: 'center', gap: 8 },
   emptyTitle: { fontSize: 18, fontWeight: '900', color: ui.colors.primaryDark },
   emptyText: { textAlign: 'center', color: ui.colors.muted, maxWidth: 360 },
