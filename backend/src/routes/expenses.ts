@@ -60,6 +60,26 @@ const formBoolean = z.preprocess((value) => {
   return value;
 }, z.boolean());
 
+const percentageSchema = z.preprocess((value) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value === 'string') return Number(value.replace(',', '.'));
+  return value;
+}, z.number().min(0).max(100).optional());
+
+const childIdsSchema = z.preprocess((value) => {
+  if (value === undefined || value === null || value === '') return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}, z.array(uuid).max(12));
+
 const createExpenseSchema = z.object({
   title: z.string().trim().min(1).max(160),
   amount: moneySchema,
@@ -67,6 +87,19 @@ const createExpenseSchema = z.object({
   expenseDate: z.string().date().optional(),
   notes: z.string().trim().max(2000).optional(),
   isExtraordinary: formBoolean,
+  fatherPercentage: percentageSchema,
+  motherPercentage: percentageSchema,
+  childIds: childIdsSchema,
+}).superRefine((value, ctx) => {
+  const father = value.fatherPercentage ?? 50;
+  const mother = value.motherPercentage ?? 50;
+  if (Math.abs((father + mother) - 100) > 0.001) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['motherPercentage'],
+      message: 'Le percentuali di Papà e Mamma devono sommare 100%.',
+    });
+  }
 });
 
 const verifyOtpSchema = z.object({
@@ -119,6 +152,20 @@ const expenseSelect = `
          e.notes,
          e.is_extraordinary AS "isExtraordinary",
          e.otp_signature_metadata AS "otpSignatureMetadata",
+         e.father_percentage::numeric(5,2)::text AS "fatherPercentage",
+         e.mother_percentage::numeric(5,2)::text AS "motherPercentage",
+         COALESCE((
+           SELECT json_agg(ec.child_id ORDER BY c.display_name)
+             FROM expense_children ec
+             JOIN children c ON c.id = ec.child_id AND c.family_id = ec.family_id
+            WHERE ec.expense_id = e.id AND ec.family_id = e.family_id
+         ), '[]'::json) AS "childIds",
+         COALESCE((
+           SELECT json_agg(json_build_object('id', c.id, 'displayName', c.display_name) ORDER BY c.display_name)
+             FROM expense_children ec
+             JOIN children c ON c.id = ec.child_id AND c.family_id = ec.family_id
+            WHERE ec.expense_id = e.id AND ec.family_id = e.family_id
+         ), '[]'::json) AS children,
          e.reviewed_by_user_id AS "reviewedByUserId",
          e.reviewed_at AS "reviewedAt",
          e.approval_otp_verified_at AS "approvalOtpVerifiedAt",
@@ -147,29 +194,52 @@ router.get('/', asyncHandler(async (req, res) => {
 router.get('/balance', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const { rows } = await pool.query<{
-    fatherPaid: string; motherPaid: string; totalApproved: string; perParentShare: string; settlementAmount: string; creditorRole: ParentRole | null; debtorRole: ParentRole | null;
+    fatherPaid: string;
+    motherPaid: string;
+    totalApproved: string;
+    fatherShare: string;
+    motherShare: string;
+    settlementAmount: string;
+    creditorRole: ParentRole | null;
+    debtorRole: ParentRole | null;
   }>(
-    `WITH totals AS (
+    `WITH expense_totals AS (
        SELECT COALESCE(SUM(e.amount) FILTER (WHERE u.role = 'father'), 0::numeric) AS father_paid,
-              COALESCE(SUM(e.amount) FILTER (WHERE u.role = 'mother'), 0::numeric) AS mother_paid
+              COALESCE(SUM(e.amount) FILTER (WHERE u.role = 'mother'), 0::numeric) AS mother_paid,
+              COALESCE(SUM(e.amount * e.father_percentage / 100), 0::numeric) AS father_share,
+              COALESCE(SUM(e.amount * e.mother_percentage / 100), 0::numeric) AS mother_share
          FROM expenses e
          JOIN users u ON u.id = e.paid_by_user_id
-        WHERE e.family_id = $1 AND e.status = 'approved'
+        WHERE e.family_id = $1
+          AND e.status IN ('approved','to_pay','partially_paid','paid','closed')
+     ), calculated AS (
+       SELECT father_paid,
+              mother_paid,
+              father_share,
+              mother_share,
+              father_paid - father_share AS father_net
+         FROM expense_totals
      )
      SELECT father_paid::numeric(12,2)::text AS "fatherPaid",
             mother_paid::numeric(12,2)::text AS "motherPaid",
             (father_paid + mother_paid)::numeric(12,2)::text AS "totalApproved",
-            ROUND((father_paid + mother_paid) / 2, 2)::numeric(12,2)::text AS "perParentShare",
-            ROUND(ABS(father_paid - mother_paid) / 2, 2)::numeric(12,2)::text AS "settlementAmount",
-            CASE WHEN father_paid > mother_paid THEN 'father' WHEN mother_paid > father_paid THEN 'mother' ELSE NULL END AS "creditorRole",
-            CASE WHEN father_paid > mother_paid THEN 'mother' WHEN mother_paid > father_paid THEN 'father' ELSE NULL END AS "debtorRole"
-       FROM totals`,
+            father_share::numeric(12,2)::text AS "fatherShare",
+            mother_share::numeric(12,2)::text AS "motherShare",
+            ABS(father_net)::numeric(12,2)::text AS "settlementAmount",
+            CASE WHEN father_net > 0.004 THEN 'father' WHEN father_net < -0.004 THEN 'mother' ELSE NULL END AS "creditorRole",
+            CASE WHEN father_net > 0.004 THEN 'mother' WHEN father_net < -0.004 THEN 'father' ELSE NULL END AS "debtorRole"
+       FROM calculated`,
     [auth.familyId],
   );
   const balance = rows[0];
   if (!balance) throw new ApiError(500, 'Impossibile calcolare il bilancio', 'BALANCE_ERROR');
   const direction = balance.creditorRole === null ? 'settled' : balance.creditorRole === auth.role ? 'receive' : 'pay';
-  res.json({ ...balance, currentUserRole: auth.role, direction });
+  res.json({
+    ...balance,
+    perParentShare: Number(balance.fatherShare) === Number(balance.motherShare) ? balance.fatherShare : null,
+    currentUserRole: auth.role,
+    direction,
+  });
 }));
 
 router.get('/:id/receipt', asyncHandler(async (req, res) => {
@@ -193,16 +263,87 @@ router.post('/', uploadReceipt, asyncHandler(async (req, res) => {
   const body = createExpenseSchema.parse(req.body);
   const id = randomUUID();
   const receiptUrl = req.file ? `/expenses/${id}/receipt` : null;
+  const fatherPercentage = body.fatherPercentage ?? 50;
+  const motherPercentage = body.motherPercentage ?? 50;
+  const childIds = [...new Set(body.childIds)];
+  const client = await pool.connect();
 
-  await pool.query(
-    `INSERT INTO expenses
-      (id, family_id, title, amount, category, paid_by_user_id,
-       receipt_url, receipt_mime_type, receipt_filename, receipt_data,
-       status, expense_date, notes, is_extraordinary)
-     VALUES ($1, $2, $3, $4::numeric, $5, $6, $7, $8, $9, $10,
-             'pending_approval', COALESCE($11::date, CURRENT_DATE), $12, $13)`,
-    [id, auth.familyId, body.title, body.amount, body.category, auth.userId, receiptUrl, req.file?.mimetype ?? null, req.file?.originalname ?? null, req.file?.buffer ?? null, body.expenseDate ?? null, body.notes || null, body.isExtraordinary],
-  );
+  try {
+    await client.query('BEGIN');
+
+    if (childIds.length > 0) {
+      const validChildren = await client.query<{ id: string }>(
+        `SELECT id FROM children WHERE family_id = $1 AND id = ANY($2::uuid[])`,
+        [auth.familyId, childIds],
+      );
+      if (validChildren.rows.length !== childIds.length) {
+        throw new ApiError(400, 'Uno o più figli selezionati non appartengono alla famiglia.', 'INVALID_EXPENSE_CHILD');
+      }
+    }
+
+    await client.query(
+      `INSERT INTO expenses
+        (id, family_id, title, amount, category, paid_by_user_id,
+         receipt_url, receipt_mime_type, receipt_filename, receipt_data,
+         status, expense_date, notes, is_extraordinary, father_percentage, mother_percentage)
+       VALUES ($1, $2, $3, $4::numeric, $5, $6, $7, $8, $9, $10,
+               'pending_approval', COALESCE($11::date, CURRENT_DATE), $12, $13, $14::numeric, $15::numeric)`,
+      [
+        id,
+        auth.familyId,
+        body.title,
+        body.amount,
+        body.category,
+        auth.userId,
+        receiptUrl,
+        req.file?.mimetype ?? null,
+        req.file?.originalname ?? null,
+        req.file?.buffer ?? null,
+        body.expenseDate ?? null,
+        body.notes || null,
+        body.isExtraordinary,
+        fatherPercentage,
+        motherPercentage,
+      ],
+    );
+
+    for (const childId of childIds) {
+      await client.query(
+        `INSERT INTO expense_children (expense_id, child_id, family_id)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (expense_id, child_id) DO NOTHING`,
+        [id, childId, auth.familyId],
+      );
+    }
+
+    await client.query(
+      `INSERT INTO family_activity_history
+        (id, family_id, actor_user_id, entity_type, entity_id, action, details)
+       VALUES ($1,$2,$3,'expense',$4,'created',$5::jsonb)`,
+      [
+        randomUUID(),
+        auth.familyId,
+        auth.userId,
+        id,
+        JSON.stringify({
+          amount: body.amount,
+          category: body.category,
+          fatherPercentage,
+          motherPercentage,
+          childIds,
+          isExtraordinary: body.isExtraordinary,
+          role: auth.role,
+        }),
+      ],
+    );
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 
   await sendPushToOtherParent(auth.familyId, auth.userId, {
     title: body.isExtraordinary ? 'Nuova spesa straordinaria' : 'Nuova spesa da approvare',
@@ -397,6 +538,12 @@ async function verifyExpenseOtp(req: Request, code: string): Promise<Record<stri
         WHERE id = $4 AND family_id = $5`,
       [auth.userId, verifiedAt, JSON.stringify(metadata), expenseId, auth.familyId],
     );
+    await client.query(
+      `INSERT INTO family_activity_history
+        (id, family_id, actor_user_id, entity_type, entity_id, action, details)
+       VALUES ($1,$2,$3,'expense',$4,'approved_otp',$5::jsonb)`,
+      [randomUUID(), auth.familyId, auth.userId, expenseId, JSON.stringify({ otpRequestId: otpRequest.id, verifiedAt: iso, role: auth.role })],
+    );
     await client.query('COMMIT');
     committed = true;
   } catch (error) {
@@ -443,6 +590,13 @@ async function approveOrdinaryExpense(req: Request): Promise<Record<string, unkn
     throw new ApiError(409, 'Spesa non disponibile per la revisione', 'EXPENSE_NOT_REVIEWABLE');
   }
 
+  await pool.query(
+    `INSERT INTO family_activity_history
+      (id, family_id, actor_user_id, entity_type, entity_id, action, details)
+     VALUES ($1,$2,$3,'expense',$4,'approved',$5::jsonb)`,
+    [randomUUID(), auth.familyId, auth.userId, expenseId, JSON.stringify({ role: auth.role })],
+  );
+
   const updated = await readExpense(expenseId, auth.familyId, auth.userId);
   const paidByUserId = updated.paidByUserId as string | null;
   if (paidByUserId) {
@@ -467,6 +621,12 @@ async function declineExpense(req: Request): Promise<Record<string, unknown>> {
   );
   if (result.rowCount !== 1) throw new ApiError(409, 'Spesa non disponibile per la revisione', 'EXPENSE_NOT_REVIEWABLE');
   await pool.query(`UPDATE otp_requests SET status = 'expired' WHERE expense_id = $1 AND status = 'pending'`, [expenseId]);
+  await pool.query(
+    `INSERT INTO family_activity_history
+      (id, family_id, actor_user_id, entity_type, entity_id, action, details)
+     VALUES ($1,$2,$3,'expense',$4,'declined',$5::jsonb)`,
+    [randomUUID(), auth.familyId, auth.userId, expenseId, JSON.stringify({ role: auth.role })],
+  );
 
   const updated = await readExpense(expenseId, auth.familyId, auth.userId);
   const paidByUserId = updated.paidByUserId as string | null;
