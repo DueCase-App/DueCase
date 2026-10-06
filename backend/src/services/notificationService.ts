@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Expo } from 'expo-server-sdk';
 import { pool } from '../db.js';
 
@@ -13,12 +14,12 @@ export type NotificationInput = {
   data?: NotificationData;
 };
 
-export function parentRoleLabel(role: 'father' | 'mother'): 'Padre' | 'Madre' {
-  return role === 'father' ? 'Padre' : 'Madre';
+export function parentRoleLabel(role: 'father' | 'mother'): 'Papà' | 'Mamma' {
+  return role === 'father' ? 'Papà' : 'Mamma';
 }
 
-export function parentRoleSubject(role: 'father' | 'mother'): 'Il Padre' | 'La Madre' {
-  return role === 'father' ? 'Il Padre' : 'La Madre';
+export function parentRoleSubject(role: 'father' | 'mother'): 'Papà' | 'Mamma' {
+  return role === 'father' ? 'Papà' : 'Mamma';
 }
 
 export function formatItalianDate(value: string): string {
@@ -43,6 +44,44 @@ export function formatEuroAmount(value: string | number): string {
 
 export function isValidExpoPushToken(token: string): boolean {
   return Expo.isExpoPushToken(token);
+}
+
+function notificationType(notification: NotificationInput): string {
+  const value = notification.data?.type;
+  return typeof value === 'string' && value.trim() ? value.slice(0, 120) : 'general';
+}
+
+function notificationEntity(notification: NotificationInput): { type: string | null; id: string | null } {
+  const data = notification.data ?? {};
+  const candidates: Array<[string, string]> = [
+    ['expenseId', 'expense'], ['paymentId', 'expense_payment'], ['agreementId', 'agreement'],
+    ['messageId', 'message'], ['eventId', 'event'], ['exceptionId', 'custody_exception'],
+    ['documentId', 'document'], ['childId', 'child'],
+  ];
+  for (const [key, type] of candidates) {
+    const value = data[key];
+    if (typeof value === 'string' && /^[0-9a-f-]{36}$/i.test(value)) return { type, id: value };
+  }
+  return { type: null, id: null };
+}
+
+async function persistInAppNotification(
+  userId: string,
+  familyId: string,
+  notification: NotificationInput,
+): Promise<void> {
+  try {
+    const entity = notificationEntity(notification);
+    await pool.query(
+      `INSERT INTO in_app_notifications
+        (id, family_id, user_id, type, title, body, entity_type, entity_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [randomUUID(), familyId, userId, notificationType(notification), notification.title, notification.body, entity.type, entity.id],
+    );
+  } catch (error) {
+    // La notifica non deve mai annullare l'azione principale.
+    console.error('Unable to persist in-app notification', { userId, familyId, error });
+  }
 }
 
 async function clearInvalidToken(userId: string, token: string): Promise<void> {
@@ -87,16 +126,11 @@ async function deliver(userId: string, token: string, notification: Notification
         message: ticket.message,
         details: ticket.details,
       });
-
-      if (ticket.details?.error === 'DeviceNotRegistered') {
-        await clearInvalidToken(userId, token);
-      }
+      if (ticket.details?.error === 'DeviceNotRegistered') await clearInvalidToken(userId, token);
       return false;
     }
-
     return true;
   } catch (error) {
-    // Notifications must never roll back the business action that triggered them.
     console.error('Expo push notification failed', { userId, error });
     return false;
   }
@@ -104,16 +138,18 @@ async function deliver(userId: string, token: string, notification: Notification
 
 export async function sendPushToUser(userId: string, notification: NotificationInput): Promise<boolean> {
   try {
-    const { rows } = await pool.query<{ expoPushToken: string | null }>(
-      `SELECT expo_push_token AS "expoPushToken"
+    const { rows } = await pool.query<{ familyId: string | null; expoPushToken: string | null }>(
+      `SELECT family_id AS "familyId", expo_push_token AS "expoPushToken"
          FROM users
         WHERE id = $1`,
       [userId],
     );
 
-    const token = rows[0]?.expoPushToken;
-    if (!token) return false;
-    return await deliver(userId, token, notification);
+    const recipient = rows[0];
+    if (!recipient) return false;
+    if (recipient.familyId) await persistInAppNotification(userId, recipient.familyId, notification);
+    if (!recipient.expoPushToken) return false;
+    return await deliver(userId, recipient.expoPushToken, notification);
   } catch (error) {
     console.error('Unable to load push token for user', { userId, error });
     return false;
@@ -137,7 +173,9 @@ export async function sendPushToOtherParent(
     );
 
     const recipient = rows[0];
-    if (!recipient?.expoPushToken) return false;
+    if (!recipient) return false;
+    await persistInAppNotification(recipient.id, familyId, notification);
+    if (!recipient.expoPushToken) return false;
     return await deliver(recipient.id, recipient.expoPushToken, notification);
   } catch (error) {
     console.error('Unable to load other parent push token', { familyId, actorUserId, error });
