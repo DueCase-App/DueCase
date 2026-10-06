@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { requireAuth, requireFamily } from '../auth.js';
 import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
-import { parentRoleSubject, sendPushToOtherParent } from '../services/notificationService.js';
+import { parentRoleSubject, sendPushToOtherParent, sendPushToUser } from '../services/notificationService.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -125,9 +125,21 @@ router.post('/:id/respond', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const id = uuid.parse(req.params.id);
   const body = respondSchema.parse(req.body);
-  const existingResult = await pool.query(
-    `SELECT id, created_by_user_id AS "createdByUserId", status, requires_approval AS "requiresApproval"
-       FROM family_events WHERE id = $1 AND family_id = $2 FOR UPDATE`,
+  const existingResult = await pool.query<{
+    id: string;
+    createdByUserId: string;
+    status: string;
+    requiresApproval: boolean;
+    title: string;
+  }>(
+    `SELECT id,
+            created_by_user_id AS "createdByUserId",
+            status,
+            requires_approval AS "requiresApproval",
+            title
+       FROM family_events
+      WHERE id = $1 AND family_id = $2
+      FOR UPDATE`,
     [id, auth.familyId],
   );
   const existing = existingResult.rows[0];
@@ -148,6 +160,17 @@ router.post('/:id/respond', asyncHandler(async (req, res) => {
      VALUES ($1,$2,$3,'event',$4,$5,$6::jsonb)`,
     [randomUUID(), auth.familyId, auth.userId, id, body.status, JSON.stringify({ note: body.note ?? null })],
   );
+
+  await sendPushToUser(existing.createdByUserId, {
+    title: body.status === 'confirmed' ? 'Evento approvato' : 'Evento rifiutato',
+    body: `${parentRoleSubject(auth.role)} ha ${body.status === 'confirmed' ? 'approvato' : 'rifiutato'} “${existing.title}”.`,
+    data: {
+      type: body.status === 'confirmed' ? 'event_approved' : 'event_rejected',
+      screen: 'calendar',
+      eventId: id,
+    },
+  });
+
   res.json({ ...rows[0], canRespond: false });
 }));
 
