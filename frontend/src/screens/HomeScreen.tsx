@@ -11,6 +11,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { cardShadow, ui } from '../theme/ui';
@@ -92,6 +93,7 @@ function expenseStatusLabel(status: Expense['status']): string {
 export function HomeScreen({ onNavigate }: { onNavigate: (target: HomeDestination) => void }): React.JSX.Element {
   const { user } = useAuth();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [children, setChildren] = useState<FamilyChild[]>([]);
   const [custody, setCustody] = useState<CustodyCurrent | null>(null);
   const [events, setEvents] = useState<FamilyEvent[]>([]);
@@ -172,100 +174,106 @@ export function HomeScreen({ onNavigate }: { onNavigate: (target: HomeDestinatio
   }, [custody]);
 
   if (loading) {
-    return <View style={styles.center}><ActivityIndicator size="large" color={ui.colors.primary} /><Text style={styles.muted}>Caricamento Home…</Text></View>;
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['bottom', 'left', 'right']}>
+        <View style={styles.center}><ActivityIndicator size="large" color={ui.colors.primary} /><Text style={styles.muted}>Caricamento Home…</Text></View>
+      </SafeAreaView>
+    );
   }
 
   const firstEvent = events[0] ?? null;
   const quickWidth = width >= 1050 ? '31.8%' : width >= 620 ? '48.7%' : '100%';
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={refreshing} tintColor={ui.colors.primary} onRefresh={() => { setRefreshing(true); void load(); }} />}
-    >
-      <View style={styles.content}>
-        <View style={styles.topBar}>
-          <View style={styles.brandRow}>
-            <View style={styles.logoMark}><Ionicons name="home" size={25} color="#FFFFFF" /><View style={styles.logoAccent}><Ionicons name="heart" size={10} color="#FFFFFF" /></View></View>
-            <Text style={styles.brandBlue}>Due</Text><Text style={styles.brandOrange}>Case</Text>
-          </View>
-          <Pressable accessibilityRole="button" accessibilityLabel={`${notificationCount} notifiche o richieste`} onPress={() => onNavigate('notifications')} style={styles.bellButton}>
-            <Ionicons name="notifications-outline" size={26} color={ui.colors.primaryDark} />
-            {notificationCount > 0 ? <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{Math.min(notificationCount, 99)}</Text></View> : null}
-          </Pressable>
-        </View>
-
-        <Pressable style={[styles.custodyCard, cardShadow]} onPress={() => onNavigate('permanence')}>
-          <Text style={styles.dateText}>{formatLongDate()}</Text>
-          <Text style={styles.custodyPerson}>{custodySummary.title}</Text>
-          <View style={styles.childBadges}>
-            {(custody?.children ?? []).length > 0 ? custody?.children.map((child) => (
-              <View key={child.childId} style={[styles.childBadge, child.custodianRole === 'mother' ? styles.motherBadge : styles.fatherBadge]}>
-                <Text style={styles.childBadgeText}>{child.childName} · {parentLabel(child.custodianRole)}</Text>
-                {child.overnight ? <Ionicons name="moon-outline" size={13} color={ui.colors.muted} /> : null}
-              </View>
-            )) : children.map((child) => <View key={child.id} style={[styles.childBadge, styles.undefinedBadge]}><Text style={styles.childBadgeText}>{child.displayName} · Da definire</Text></View>)}
-          </View>
-          <View style={styles.cardLink}><Text style={styles.cardLinkText}>Gestisci permanenze</Text><Ionicons name="chevron-forward" size={18} color={ui.colors.primary} /></View>
-        </Pressable>
-
-        <View style={styles.summaryGrid}>
-          <SummaryCard icon="checkmark-done-outline" value={pendingExpenses.length + pendingSwaps.length + pendingAgreements.length} label="Richieste da gestire" onPress={() => onNavigate('agreements')} />
-          <SummaryCard icon="wallet-outline" value={outstandingPayments.length} label="Pagamenti aperti" onPress={() => onNavigate('expenses')} />
-          <SummaryCard icon="notifications-outline" value={notifications.length} label="Nuove notifiche" onPress={() => onNavigate('notifications')} />
-        </View>
-
-        <SectionHeader title="Prossimi eventi" action="Vedi tutti" onPress={() => onNavigate('calendar')} />
-        {firstEvent ? (
-          <Pressable style={[styles.eventCard, cardShadow]} onPress={() => onNavigate('calendar')}>
-            <View style={styles.eventIcon}><Ionicons name="calendar-outline" size={27} color={ui.colors.primary} /></View>
-            <View style={styles.eventContent}>
-              <Text style={styles.eventDate}>{formatEventDate(firstEvent.startsAt)}</Text>
-              <Text style={styles.eventTitle}>{firstEvent.title}</Text>
-              <View style={styles.eventMetaRow}>
-                <Ionicons name="time-outline" size={18} color={ui.colors.muted} />
-                <Text style={styles.eventMeta}>{formatEventTime(firstEvent.startsAt)}{firstEvent.endsAt ? ` – ${formatEventTime(firstEvent.endsAt)}` : ''}</Text>
-                {firstEvent.location ? <><Ionicons name="location-outline" size={18} color={ui.colors.muted} /><Text style={[styles.eventMeta, styles.flexText]} numberOfLines={1}>{firstEvent.location}</Text></> : null}
-              </View>
+    <SafeAreaView style={styles.safeArea} edges={['bottom', 'left', 'right']}>
+      <ScrollView
+        style={styles.screen}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(64, insets.bottom + 48) }]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} tintColor={ui.colors.primary} onRefresh={() => { setRefreshing(true); void load(); }} />}
+      >
+        <View style={styles.content}>
+          <View style={styles.topBar}>
+            <View style={styles.brandRow}>
+              <View style={styles.logoMark}><Ionicons name="home" size={25} color="#FFFFFF" /><View style={styles.logoAccent}><Ionicons name="heart" size={10} color="#FFFFFF" /></View></View>
+              <Text style={styles.brandBlue}>Due</Text><Text style={styles.brandOrange}>Case</Text>
             </View>
-            <Ionicons name="chevron-forward" size={22} color={ui.colors.muted} />
-          </Pressable>
-        ) : (
-          <Pressable style={[styles.eventCard, cardShadow]} onPress={() => onNavigate('calendar')}>
-            <View style={styles.eventIcon}><Ionicons name="calendar-outline" size={27} color={ui.colors.primary} /></View>
-            <View style={styles.eventContent}><Text style={styles.eventTitle}>Nessun evento programmato</Text><Text style={styles.muted}>Gli appuntamenti futuri compariranno qui.</Text></View>
-            <Ionicons name="chevron-forward" size={22} color={ui.colors.muted} />
-          </Pressable>
-        )}
+            <Pressable accessibilityRole="button" accessibilityLabel={`${notificationCount} notifiche o richieste`} onPress={() => onNavigate('notifications')} style={styles.bellButton}>
+              <Ionicons name="notifications-outline" size={26} color={ui.colors.primaryDark} />
+              {notificationCount > 0 ? <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{Math.min(notificationCount, 99)}</Text></View> : null}
+            </Pressable>
+          </View>
 
-        <Text style={styles.sectionTitle}>Accesso rapido</Text>
-        <View style={styles.quickGrid}>
-          <QuickCard width={quickWidth} icon="chatbubble-outline" title="Messaggi" subtitle="Comunicazioni ordinate e verificabili" onPress={() => onNavigate('messages')} />
-          <QuickCard width={quickWidth} icon="document-text-outline" title="Documenti" subtitle="File condivisi della famiglia" onPress={() => onNavigate('documents')} />
-          <QuickCard width={quickWidth} icon="people-outline" title="Figli" subtitle="Scuola, sport e informazioni" onPress={() => onNavigate('children')} />
-          <QuickCard width={quickWidth} icon="document-text-outline" title="Accordi" subtitle="Proposte, risposte e storico" onPress={() => onNavigate('agreements')} />
-          <QuickCard width={quickWidth} icon="bar-chart-outline" title="Dossier" subtitle="Statistiche e tracciabilità" onPress={() => onNavigate('dossier')} />
-          <QuickCard width={quickWidth} icon="repeat-outline" title="Permanenze" subtitle="Schema settimanale ed eccezioni" onPress={() => onNavigate('permanence')} />
-        </View>
-
-        <SectionHeader title="Ultime attività" action="Documenti" onPress={() => onNavigate('documents')} />
-        <View style={[styles.activityCard, cardShadow]}>
-          {recentActivities.length === 0 ? <Text style={styles.muted}>Nessuna attività recente.</Text> : recentActivities.map((activity, index) => (
-            <View key={activity.id} style={[styles.activityRow, index < recentActivities.length - 1 && styles.activityDivider]}>
-              <View style={[styles.activityIcon, activity.kind === 'document' ? styles.activityDocument : styles.activityExpense]}>
-                <Ionicons name={activity.kind === 'document' ? 'document-text-outline' : 'wallet-outline'} size={21} color={activity.kind === 'document' ? ui.colors.success : ui.colors.primary} />
-              </View>
-              <View style={styles.activityText}><Text style={styles.activityTitle}>{activity.title}</Text><Text style={styles.activitySubtitle} numberOfLines={1}>{activity.subtitle}</Text></View>
-              <Text style={styles.activityTime}>{relativeTime(activity.createdAt)}</Text>
+          <Pressable style={[styles.custodyCard, cardShadow]} onPress={() => onNavigate('permanence')}>
+            <Text style={styles.dateText}>{formatLongDate()}</Text>
+            <Text style={styles.custodyPerson}>{custodySummary.title}</Text>
+            <View style={styles.childBadges}>
+              {(custody?.children ?? []).length > 0 ? custody?.children.map((child) => (
+                <View key={child.childId} style={[styles.childBadge, child.custodianRole === 'mother' ? styles.motherBadge : styles.fatherBadge]}>
+                  <Text style={styles.childBadgeText}>{child.childName} · {parentLabel(child.custodianRole)}</Text>
+                  {child.overnight ? <Ionicons name="moon-outline" size={13} color={ui.colors.muted} /> : null}
+                </View>
+              )) : children.map((child) => <View key={child.id} style={[styles.childBadge, styles.undefinedBadge]}><Text style={styles.childBadgeText}>{child.displayName} · Da definire</Text></View>)}
             </View>
-          ))}
-        </View>
+            <View style={styles.cardLink}><Text style={styles.cardLinkText}>Gestisci permanenze</Text><Ionicons name="chevron-forward" size={18} color={ui.colors.primary} /></View>
+          </Pressable>
 
-        <Text style={styles.welcome}>Ciao {user?.firstName ?? user?.displayName.split(' ')[0] ?? ''}</Text>
-      </View>
-    </ScrollView>
+          <View style={styles.summaryGrid}>
+            <SummaryCard icon="checkmark-done-outline" value={pendingExpenses.length + pendingSwaps.length + pendingAgreements.length} label="Richieste da gestire" onPress={() => onNavigate('agreements')} />
+            <SummaryCard icon="wallet-outline" value={outstandingPayments.length} label="Pagamenti aperti" onPress={() => onNavigate('expenses')} />
+            <SummaryCard icon="notifications-outline" value={notifications.length} label="Nuove notifiche" onPress={() => onNavigate('notifications')} />
+          </View>
+
+          <SectionHeader title="Prossimi eventi" action="Vedi tutti" onPress={() => onNavigate('calendar')} />
+          {firstEvent ? (
+            <Pressable style={[styles.eventCard, cardShadow]} onPress={() => onNavigate('calendar')}>
+              <View style={styles.eventIcon}><Ionicons name="calendar-outline" size={27} color={ui.colors.primary} /></View>
+              <View style={styles.eventContent}>
+                <Text style={styles.eventDate}>{formatEventDate(firstEvent.startsAt)}</Text>
+                <Text style={styles.eventTitle}>{firstEvent.title}</Text>
+                <View style={styles.eventMetaRow}>
+                  <Ionicons name="time-outline" size={18} color={ui.colors.muted} />
+                  <Text style={styles.eventMeta}>{formatEventTime(firstEvent.startsAt)}{firstEvent.endsAt ? ` – ${formatEventTime(firstEvent.endsAt)}` : ''}</Text>
+                  {firstEvent.location ? <><Ionicons name="location-outline" size={18} color={ui.colors.muted} /><Text style={[styles.eventMeta, styles.flexText]} numberOfLines={1}>{firstEvent.location}</Text></> : null}
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={22} color={ui.colors.muted} />
+            </Pressable>
+          ) : (
+            <Pressable style={[styles.eventCard, cardShadow]} onPress={() => onNavigate('calendar')}>
+              <View style={styles.eventIcon}><Ionicons name="calendar-outline" size={27} color={ui.colors.primary} /></View>
+              <View style={styles.eventContent}><Text style={styles.eventTitle}>Nessun evento programmato</Text><Text style={styles.muted}>Gli appuntamenti futuri compariranno qui.</Text></View>
+              <Ionicons name="chevron-forward" size={22} color={ui.colors.muted} />
+            </Pressable>
+          )}
+
+          <Text style={styles.sectionTitle}>Accesso rapido</Text>
+          <View style={styles.quickGrid}>
+            <QuickCard width={quickWidth} icon="chatbubble-outline" title="Messaggi" subtitle="Comunicazioni ordinate e verificabili" onPress={() => onNavigate('messages')} />
+            <QuickCard width={quickWidth} icon="document-text-outline" title="Documenti" subtitle="File condivisi della famiglia" onPress={() => onNavigate('documents')} />
+            <QuickCard width={quickWidth} icon="people-outline" title="Figli" subtitle="Scuola, sport e informazioni" onPress={() => onNavigate('children')} />
+            <QuickCard width={quickWidth} icon="document-text-outline" title="Accordi" subtitle="Proposte, risposte e storico" onPress={() => onNavigate('agreements')} />
+            <QuickCard width={quickWidth} icon="bar-chart-outline" title="Dossier" subtitle="Statistiche e tracciabilità" onPress={() => onNavigate('dossier')} />
+            <QuickCard width={quickWidth} icon="repeat-outline" title="Permanenze" subtitle="Schema settimanale ed eccezioni" onPress={() => onNavigate('permanence')} />
+          </View>
+
+          <SectionHeader title="Ultime attività" action="Documenti" onPress={() => onNavigate('documents')} />
+          <View style={[styles.activityCard, cardShadow]}>
+            {recentActivities.length === 0 ? <Text style={styles.muted}>Nessuna attività recente.</Text> : recentActivities.map((activity, index) => (
+              <View key={activity.id} style={[styles.activityRow, index < recentActivities.length - 1 && styles.activityDivider]}>
+                <View style={[styles.activityIcon, activity.kind === 'document' ? styles.activityDocument : styles.activityExpense]}>
+                  <Ionicons name={activity.kind === 'document' ? 'document-text-outline' : 'wallet-outline'} size={21} color={activity.kind === 'document' ? ui.colors.success : ui.colors.primary} />
+                </View>
+                <View style={styles.activityText}><Text style={styles.activityTitle}>{activity.title}</Text><Text style={styles.activitySubtitle} numberOfLines={1}>{activity.subtitle}</Text></View>
+                <Text style={styles.activityTime}>{relativeTime(activity.createdAt)}</Text>
+              </View>
+            ))}
+          </View>
+
+          <Text style={styles.welcome}>Ciao {user?.firstName ?? user?.displayName.split(' ')[0] ?? ''}</Text>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -288,11 +296,12 @@ function QuickCard({ width, icon, title, subtitle, onPress }: { width: `${number
 }
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: ui.colors.background },
   screen: { flex: 1, backgroundColor: ui.colors.background },
-  scrollContent: { paddingBottom: 28 },
-  content: { width: '100%', maxWidth: 1180, alignSelf: 'center', paddingHorizontal: 18, paddingTop: 12, gap: 14 },
+  scrollContent: { minHeight: '100%' },
+  content: { width: '100%', maxWidth: 1180, alignSelf: 'center', paddingHorizontal: 18, paddingTop: 18, gap: 14 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: ui.colors.background },
-  topBar: { minHeight: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  topBar: { minHeight: 70, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   brandRow: { flexDirection: 'row', alignItems: 'center' },
   logoMark: { width: 48, height: 48, borderRadius: 14, marginRight: 8, backgroundColor: ui.colors.primary, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   logoAccent: { position: 'absolute', right: 4, bottom: 4, width: 17, height: 17, borderRadius: 9, backgroundColor: ui.colors.orange, alignItems: 'center', justifyContent: 'center' },
