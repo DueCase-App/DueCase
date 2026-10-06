@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -17,12 +19,13 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { ApiClientError, api } from '../services/api';
 import { cardShadow, ui } from '../theme/ui';
-import type { LegalMessage, ToneAnalysis } from '../types/models';
+import type { LegalMessage, MessageAttachment, ToneAnalysis } from '../types/models';
+
+type PendingAttachment = { uri: string; name: string; type: string; file?: Blob };
 
 function roleLabel(role: 'father' | 'mother' | null): string {
   return role === 'mother' ? 'Mamma' : role === 'father' ? 'Papà' : 'Account eliminato';
 }
-
 function formatTimestamp(value: string): string {
   return new Date(value).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
@@ -34,6 +37,8 @@ export function MessagesScreen(): React.JSX.Element {
   const scrollRef = useRef<ScrollView>(null);
   const [messages, setMessages] = useState<LegalMessage[]>([]);
   const [text, setText] = useState('');
+  const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<MessageAttachment | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [tone, setTone] = useState<ToneAnalysis | null>(null);
@@ -53,13 +58,21 @@ export function MessagesScreen(): React.JSX.Element {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (!loading) setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50); }, [loading, messages.length]);
 
+  const pickAttachment = async (): Promise<void> => {
+    const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true, multiple: false });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    if (asset) setAttachment({ uri: asset.uri, name: asset.name, type: asset.mimeType ?? 'application/octet-stream', file: asset.file ?? undefined });
+  };
+
   const actuallySend = async (value: string): Promise<void> => {
-    if (!value.trim() || sending) return;
+    if ((!value.trim() && !attachment) || sending) return;
     setSending(true);
     try {
-      const saved = await api.messages.send(value.trim());
+      const saved = await api.messages.send(value.trim(), attachment ?? undefined);
       setMessages((current) => [...current, saved]);
       setText('');
+      setAttachment(null);
       setToneOpen(false);
       setTone(null);
     } catch (error) {
@@ -69,7 +82,8 @@ export function MessagesScreen(): React.JSX.Element {
 
   const requestSend = async (): Promise<void> => {
     const value = text.trim();
-    if (!value) return;
+    if (!value && !attachment) return;
+    if (!value) { await actuallySend(''); return; }
     setSending(true);
     try {
       const analysis = await api.messages.analyzeTone(value);
@@ -78,14 +92,11 @@ export function MessagesScreen(): React.JSX.Element {
         setToneOpen(true);
         return;
       }
+      setSending(false);
       await actuallySend(value);
     } catch (error) {
-      if (error instanceof ApiClientError && error.code === 'PREMIUM_REQUIRED') {
-        Alert.alert('Premium richiesto', error.message);
-      } else {
-        // Il ToneMeter non deve rendere impossibile comunicare in caso di errore tecnico.
-        Alert.alert('Controllo tono non disponibile', 'Il testo non è stato inviato. Riprova tra poco.');
-      }
+      if (error instanceof ApiClientError && error.code === 'PREMIUM_REQUIRED') Alert.alert('Premium richiesto', error.message);
+      else Alert.alert('Controllo tono non disponibile', 'Il testo non è stato inviato. Riprova tra poco.');
     } finally { setSending(false); }
   };
 
@@ -93,10 +104,10 @@ export function MessagesScreen(): React.JSX.Element {
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={8}>
       <View style={[styles.shell, !compact && styles.shellWide]}>
         <View style={styles.header}>
-          <View>
+          <View style={styles.headerCopy}>
             <Text style={styles.eyebrow}>COMUNICAZIONI CONDIVISE</Text>
             <Text style={styles.title}>Messaggi</Text>
-            <Text style={styles.subtitle}>Conversazione tra Mamma e Papà · messaggi protetti SHA-256.</Text>
+            <Text style={styles.subtitle}>Chat tra Mamma e Papà · testo e allegati protetti da hash SHA-256.</Text>
           </View>
           <View style={styles.integrityPill}><Ionicons name="shield-checkmark-outline" size={17} color={ui.colors.success} /><Text style={styles.integrityText}>Integrità attiva</Text></View>
         </View>
@@ -104,25 +115,21 @@ export function MessagesScreen(): React.JSX.Element {
         <View style={styles.chatCard}>
           {loading ? <ActivityIndicator style={{ marginTop: 50 }} color={ui.colors.primary} /> : (
             <ScrollView ref={scrollRef} style={styles.messagesArea} contentContainerStyle={styles.messagesContent} keyboardShouldPersistTaps="handled">
-              {messages.length === 0 ? (
-                <View style={styles.empty}>
-                  <Ionicons name="chatbubbles-outline" size={38} color={ui.colors.primary} />
-                  <Text style={styles.emptyTitle}>Nessun messaggio</Text>
-                  <Text style={styles.emptyText}>Le comunicazioni inviate qui resteranno ordinate e verificabili.</Text>
-                </View>
-              ) : null}
+              {messages.length === 0 ? <View style={styles.empty}><Ionicons name="chatbubbles-outline" size={38} color={ui.colors.primary} /><Text style={styles.emptyTitle}>Nessun messaggio</Text><Text style={styles.emptyText}>Le comunicazioni inviate qui resteranno ordinate e verificabili.</Text></View> : null}
               {messages.map((message) => {
                 const mine = message.senderId === user?.id || message.isMine;
                 return (
                   <View key={message.id} style={[styles.row, mine ? styles.rowMine : styles.rowOther]}>
                     <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleOther]}>
                       <Text style={[styles.sender, mine && styles.senderMine]}>{mine ? 'Tu' : roleLabel(message.senderRole)}</Text>
-                      <Text style={[styles.messageText, mine && styles.messageTextMine]}>{message.text}</Text>
-                      <View style={styles.messageMeta}>
-                        <Text style={[styles.time, mine && styles.timeMine]}>{formatTimestamp(message.createdAt)}</Text>
-                        {mine ? <Ionicons name={message.readAt ? 'checkmark-done' : 'checkmark'} size={15} color={message.readAt ? '#D7F1FF' : '#C6D9EE'} /> : null}
-                        <Ionicons name="shield-checkmark" size={13} color={mine ? '#D7F1FF' : ui.colors.success} />
-                      </View>
+                      {message.text ? <Text style={[styles.messageText, mine && styles.messageTextMine]}>{message.text}</Text> : null}
+                      {message.attachments?.map((item) => (
+                        <Pressable key={item.id} style={[styles.attachmentCard, mine && styles.attachmentCardMine]} onPress={() => setPreviewAttachment(item)}>
+                          {item.mimeType.startsWith('image/') ? <Image source={api.messages.attachmentSource(item.fileUrl)} style={styles.attachmentImage} resizeMode="cover" /> : <View style={styles.fileIcon}><Ionicons name="document-text-outline" size={26} color={mine ? '#FFF' : ui.colors.primary} /></View>}
+                          <View style={styles.attachmentCopy}><Text numberOfLines={1} style={[styles.attachmentName, mine && styles.messageTextMine]}>{item.filename}</Text><Text style={[styles.attachmentMeta, mine && styles.timeMine]}>SHA-256 verificabile · {(item.fileSizeBytes / 1024).toFixed(0)} KB</Text></View>
+                        </Pressable>
+                      ))}
+                      <View style={styles.messageMeta}><Text style={[styles.time, mine && styles.timeMine]}>{formatTimestamp(message.createdAt)}</Text>{mine ? <Ionicons name={message.readAt ? 'checkmark-done' : 'checkmark'} size={15} color={message.readAt ? '#D7F1FF' : '#C6D9EE'} /> : null}<Ionicons name="shield-checkmark" size={13} color={mine ? '#D7F1FF' : ui.colors.success} /></View>
                     </View>
                   </View>
                 );
@@ -130,37 +137,29 @@ export function MessagesScreen(): React.JSX.Element {
             </ScrollView>
           )}
 
+          {attachment ? <View style={styles.pendingAttachment}><Ionicons name="attach-outline" size={19} color={ui.colors.primary} /><View style={styles.pendingCopy}><Text numberOfLines={1} style={styles.pendingName}>{attachment.name}</Text><Text style={styles.pendingMeta}>Verrà archiviato con hash SHA-256</Text></View><Pressable onPress={() => setAttachment(null)}><Ionicons name="close-circle" size={23} color={ui.colors.muted} /></Pressable></View> : null}
           <View style={styles.composer}>
-            <TextInput
-              value={text}
-              onChangeText={setText}
-              placeholder="Scrivi a Mamma o Papà…"
-              placeholderTextColor={ui.colors.muted}
-              multiline
-              maxLength={10000}
-              style={styles.input}
-            />
-            <Pressable disabled={!text.trim() || sending} onPress={() => void requestSend()} style={[styles.sendButton, (!text.trim() || sending) && { opacity: 0.45 }]}>
-              {sending ? <ActivityIndicator color="#FFF" /> : <Ionicons name="send" size={20} color="#FFF" />}
-            </Pressable>
+            <Pressable style={styles.attachButton} onPress={() => void pickAttachment()} accessibilityLabel="Aggiungi allegato"><Ionicons name="attach" size={23} color={ui.colors.primary} /></Pressable>
+            <TextInput value={text} onChangeText={setText} placeholder="Scrivi a Mamma o Papà…" placeholderTextColor={ui.colors.muted} multiline maxLength={10000} style={styles.input} />
+            <Pressable disabled={(!text.trim() && !attachment) || sending} onPress={() => void requestSend()} style={[styles.sendButton, ((!text.trim() && !attachment) || sending) && { opacity: 0.45 }]}>{sending ? <ActivityIndicator color="#FFF" /> : <Ionicons name="send" size={20} color="#FFF" />}</Pressable>
           </View>
-          <Text style={styles.helper}><Ionicons name="sparkles-outline" size={13} /> ToneMeter controlla il tono prima dell’invio e propone una formulazione più collaborativa se necessario.</Text>
+          <Text style={styles.helper}><Ionicons name="sparkles-outline" size={13} /> ToneMeter controlla il testo prima dell’invio; gli allegati restano protetti separatamente da SHA-256.</Text>
         </View>
       </View>
 
-      <Modal visible={toneOpen} transparent animationType="fade" onRequestClose={() => setToneOpen(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.toneCard}>
-            <View style={styles.toneIcon}><Ionicons name="heart-outline" size={26} color={ui.colors.orange} /></View>
-            <Text style={styles.toneTitle}>Possiamo rendere il messaggio più neutro</Text>
-            <Text style={styles.toneDescription}>Il ToneMeter ha rilevato un tono potenzialmente conflittuale{tone?.signals.length ? `: ${tone.signals.join(', ')}` : ''}.</Text>
-            {tone?.reformulatedText ? <View style={styles.suggestion}><Text style={styles.suggestionLabel}>PROPOSTA</Text><Text style={styles.suggestionText}>{tone.reformulatedText}</Text></View> : null}
-            <Pressable style={styles.useSuggestion} onPress={() => { if (tone?.reformulatedText) { setText(tone.reformulatedText); setToneOpen(false); } }}><Text style={styles.useSuggestionText}>Usa questa versione</Text></Pressable>
-            <Pressable style={styles.sendAnyway} onPress={() => void actuallySend(text)}><Text style={styles.sendAnywayText}>Invia comunque il testo originale</Text></Pressable>
-            <Pressable style={styles.cancel} onPress={() => setToneOpen(false)}><Text style={styles.cancelText}>Torna a modificare</Text></Pressable>
-          </View>
-        </View>
-      </Modal>
+      <Modal visible={toneOpen} transparent animationType="fade" onRequestClose={() => setToneOpen(false)}><View style={styles.modalBackdrop}><View style={styles.toneCard}>
+        <View style={styles.toneIcon}><Ionicons name="heart-outline" size={26} color={ui.colors.orange} /></View><Text style={styles.toneTitle}>Possiamo rendere il messaggio più neutro</Text><Text style={styles.toneDescription}>Il ToneMeter ha rilevato un tono potenzialmente conflittuale{tone?.signals.length ? `: ${tone.signals.join(', ')}` : ''}.</Text>
+        {tone?.reformulatedText ? <View style={styles.suggestion}><Text style={styles.suggestionLabel}>PROPOSTA</Text><Text style={styles.suggestionText}>{tone.reformulatedText}</Text></View> : null}
+        <Pressable style={styles.useSuggestion} onPress={() => { if (tone?.reformulatedText) { setText(tone.reformulatedText); setToneOpen(false); } }}><Text style={styles.useSuggestionText}>Usa questa versione</Text></Pressable>
+        <Pressable style={styles.sendAnyway} onPress={() => void actuallySend(text)}><Text style={styles.sendAnywayText}>Invia comunque il testo originale</Text></Pressable>
+        <Pressable style={styles.cancel} onPress={() => setToneOpen(false)}><Text style={styles.cancelText}>Torna a modificare</Text></Pressable>
+      </View></View></Modal>
+
+      <Modal visible={previewAttachment !== null} transparent animationType="fade" onRequestClose={() => setPreviewAttachment(null)}><View style={styles.modalBackdrop}><View style={styles.previewCard}>
+        <View style={styles.previewHeader}><View style={{ flex: 1 }}><Text style={styles.toneTitle}>Allegato protetto</Text><Text numberOfLines={1} style={styles.toneDescription}>{previewAttachment?.filename}</Text></View><Pressable onPress={() => setPreviewAttachment(null)}><Ionicons name="close" size={25} color={ui.colors.text} /></Pressable></View>
+        {previewAttachment?.mimeType.startsWith('image/') ? <Image source={api.messages.attachmentSource(previewAttachment.fileUrl)} style={styles.previewImage} resizeMode="contain" /> : <View style={styles.pdfPreview}><Ionicons name="document-text-outline" size={52} color={ui.colors.primary} /><Text style={styles.emptyTitle}>Documento PDF</Text><Text style={styles.emptyText}>Il file è archiviato nel messaggio e verificato dal backend prima dell’apertura.</Text></View>}
+        <Text selectable style={styles.hashText}>SHA-256: {previewAttachment?.dataHash}</Text>
+      </View></View></Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -170,6 +169,7 @@ const styles = StyleSheet.create({
   shell: { flex: 1, padding: 14 },
   shellWide: { paddingHorizontal: 28, paddingTop: 20 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
+  headerCopy: { flex: 1 },
   eyebrow: { fontSize: 10, fontWeight: '900', color: ui.colors.orange, letterSpacing: 1 },
   title: { fontSize: 28, fontWeight: '900', color: ui.colors.primaryDark },
   subtitle: { color: ui.colors.muted, marginTop: 3, maxWidth: 620 },
@@ -181,7 +181,7 @@ const styles = StyleSheet.create({
   row: { width: '100%', flexDirection: 'row' },
   rowMine: { justifyContent: 'flex-end' },
   rowOther: { justifyContent: 'flex-start' },
-  bubble: { maxWidth: '82%', borderRadius: 17, paddingHorizontal: 13, paddingVertical: 10 },
+  bubble: { maxWidth: '84%', borderRadius: 17, paddingHorizontal: 13, paddingVertical: 10 },
   bubbleMine: { backgroundColor: ui.colors.primary, borderBottomRightRadius: 5 },
   bubbleOther: { backgroundColor: ui.colors.input, borderBottomLeftRadius: 5 },
   sender: { fontSize: 10, fontWeight: '900', color: ui.colors.primary, marginBottom: 3 },
@@ -191,7 +191,19 @@ const styles = StyleSheet.create({
   messageMeta: { marginTop: 5, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4 },
   time: { fontSize: 10, color: ui.colors.muted },
   timeMine: { color: '#D7E9FB' },
+  attachmentCard: { marginTop: 8, minWidth: 210, maxWidth: 360, borderRadius: 12, borderWidth: 1, borderColor: ui.colors.border, padding: 8, flexDirection: 'row', gap: 9, alignItems: 'center', backgroundColor: '#FFF' },
+  attachmentCardMine: { backgroundColor: 'rgba(255,255,255,0.13)', borderColor: 'rgba(255,255,255,0.22)' },
+  attachmentImage: { width: 58, height: 58, borderRadius: 9, backgroundColor: ui.colors.input },
+  fileIcon: { width: 58, height: 58, borderRadius: 9, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  attachmentCopy: { flex: 1, minWidth: 0 },
+  attachmentName: { color: ui.colors.text, fontWeight: '900', fontSize: 12 },
+  attachmentMeta: { color: ui.colors.muted, fontSize: 9, marginTop: 3 },
+  pendingAttachment: { marginHorizontal: 10, marginTop: 8, backgroundColor: ui.colors.primarySoft, borderRadius: 12, padding: 9, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  pendingCopy: { flex: 1, minWidth: 0 },
+  pendingName: { color: ui.colors.primaryDark, fontWeight: '900', fontSize: 12 },
+  pendingMeta: { color: ui.colors.muted, fontSize: 9 },
   composer: { borderTopWidth: 1, borderTopColor: ui.colors.border, padding: 10, flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  attachButton: { width: 44, height: 48, borderRadius: 14, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
   input: { flex: 1, minHeight: 48, maxHeight: 130, borderRadius: 14, backgroundColor: ui.colors.input, color: '#202124', paddingHorizontal: 14, paddingVertical: 12, textAlignVertical: 'top' },
   sendButton: { width: 48, height: 48, borderRadius: 16, backgroundColor: ui.colors.primary, alignItems: 'center', justifyContent: 'center' },
   helper: { paddingHorizontal: 13, paddingBottom: 10, fontSize: 10, color: ui.colors.muted },
@@ -212,4 +224,9 @@ const styles = StyleSheet.create({
   sendAnywayText: { color: ui.colors.primaryDark, fontWeight: '800' },
   cancel: { minHeight: 40, alignItems: 'center', justifyContent: 'center' },
   cancelText: { color: ui.colors.muted, fontWeight: '800' },
+  previewCard: { width: '100%', maxWidth: 680, maxHeight: '88%', backgroundColor: '#FFF', borderRadius: 22, padding: 16, gap: 12 },
+  previewHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  previewImage: { width: '100%', height: 480, borderRadius: 14, backgroundColor: ui.colors.input },
+  pdfPreview: { minHeight: 280, borderRadius: 14, backgroundColor: ui.colors.input, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 20 },
+  hashText: { color: ui.colors.muted, fontSize: 10, lineHeight: 15 },
 });
