@@ -18,7 +18,7 @@ export type AlternatingWeekendPattern = { id: string; childId: string; childName
 export type CustodyException = { id: string; childId: string; childName?: string; custodyDate: string; custodianRole: ParentRole; overnight: boolean; notes: string | null; requestedBy: string; requestedByName?: string; requestedByRole?: ParentRole; status: 'pending' | 'approved' | 'rejected'; reviewedBy?: string | null; reviewedAt?: string | null; createdAt: string; updatedAt: string; canRespond: boolean; };
 
 export type SwapRequestStatus = 'pending' | 'approved' | 'rejected';
-export type SwapRequest = { id: string; familyId: string; requestedBy: string; requestedByName: string; requestedByRole: ParentRole; targetDate: string; proposedDate: string; status: SwapRequestStatus; notes: string | null; reviewedBy: string | null; reviewedAt: string | null; createdAt: string; updatedAt: string; canRespond: boolean; };
+export type SwapRequest = { id: string; familyId: string; requestedBy: string; requestedByName: string; requestedByRole: ParentRole; targetDate: string; proposedDate: string; status: SwapRequestStatus; notes: string | null; responseNote: string | null; reviewedBy: string | null; reviewedAt: string | null; createdAt: string; updatedAt: string; canRespond: boolean; };
 
 export type ExpenseCategory = 'Scuola' | 'Salute' | 'Sport' | 'Svago';
 export type ExpenseStatus = 'draft' | 'submitted' | 'pending_approval' | 'approved' | 'declined' | 'disputed' | 'to_pay' | 'partially_paid' | 'paid' | 'closed';
