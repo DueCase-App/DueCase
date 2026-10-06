@@ -69,4 +69,16 @@ export type ToneAnalysis = { aggressive: boolean; score: number; signals: string
 export type ParentingTimeSlice = { role: ParentRole; label: 'Papà' | 'Mamma' | string; seconds: number; hours: number; percentage: number; };
 export type ParentingTimeReport = { period: { from: string | null; to: string | null }; totalSeconds: number; totalHours: number; father: ParentingTimeSlice; mother: ParentingTimeSlice; chart: ParentingTimeSlice[]; source: string; };
 
+export type FamilyActivity = {
+  id: string;
+  entityType: string;
+  entityId: string | null;
+  action: string;
+  details: Record<string, unknown>;
+  createdAt: string;
+  actorUserId: string | null;
+  actorName: string | null;
+  actorRole: ParentRole | null;
+};
+
 export type InAppNotification = { id: string; type: string; title: string; body: string; entityType: string | null; entityId: string | null; readAt: string | null; createdAt: string; };
