@@ -121,8 +121,8 @@ export const api = {
   swapRequests: {
     list: (status?: SwapRequestStatus) => request<SwapRequest[]>(`/swap-requests${status ? `?status=${encodeURIComponent(status)}` : ''}`),
     create: (input: { targetDate: string; proposedDate: string; notes?: string }) => request<SwapRequest>('/swap-requests', { method: 'POST', body: JSON.stringify(input) }),
-    approve: (id: string) => request<SwapRequest>(`/swap-requests/${encodeURIComponent(id)}/approve`, { method: 'POST' }),
-    reject: (id: string) => request<SwapRequest>(`/swap-requests/${encodeURIComponent(id)}/reject`, { method: 'POST' }),
+    approve: (id: string, note?: string | null) => request<SwapRequest>(`/swap-requests/${encodeURIComponent(id)}/approve`, { method: 'POST', body: JSON.stringify({ note }) }),
+    reject: (id: string, note?: string | null) => request<SwapRequest>(`/swap-requests/${encodeURIComponent(id)}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
   },
   expenses: {
     list: () => request<Expense[]>('/expenses'),
