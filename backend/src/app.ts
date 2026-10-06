@@ -14,6 +14,7 @@ import expensePaymentsRouter from './routes/expensePayments.js';
 import expensesRouter from './routes/expenses.js';
 import familyRouter from './routes/family.js';
 import familyChildrenRouter from './routes/familyChildren.js';
+import historyRouter from './routes/history.js';
 import messagesRouter from './routes/messages.js';
 import notificationsRouter from './routes/notifications.js';
 import permanenceRouter from './routes/permanence.js';
@@ -38,8 +39,9 @@ app.get('/api/health', asyncHandler(async (_req, res) => {
 app.use('/api/auth', authRouter);
 app.use('/api/auth', accountRouter);
 
-// Famiglia e consultazione notifiche restano accessibili anche senza Premium.
+// Famiglia, notifiche e storico sono consultabili anche senza Premium.
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/history', historyRouter);
 app.use('/api/family/children', requireAuth, checkPremiumStatus, familyChildrenRouter);
 app.use('/api/family', familyRouter);
 
