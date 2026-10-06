@@ -151,11 +151,7 @@ function Root(): React.JSX.Element {
       </SafeAreaView>
     );
   } else if (!user) {
-    content = (
-      <SafeAreaView style={styles.safeArea} edges={['top', 'right', 'bottom', 'left']}>
-        <AuthenticationNavigator />
-      </SafeAreaView>
-    );
+    content = <AuthenticationNavigator />;
   } else if (!user.familyId) {
     content = (
       <SafeAreaView style={styles.safeArea} edges={['top', 'right', 'bottom', 'left']}>
