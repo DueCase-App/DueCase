@@ -512,7 +512,7 @@ function DateField({ label, required = false, value, placeholder, onPress, onCha
     setDraft(formatted);
     const day=Number(digits.slice(0,2)), month=Number(digits.slice(2,4)), year=Number(digits.slice(4));
     const d = new Date(year,month-1,day,12);
-    onChangeDate(digits.length===8 && year>=1900 && d.getFullYear()===year && d.getMonth()===month-1 && d.getDate()===day && d<=new Date() ? d : null);
+    onChangeDate(digits.length===8 && year>=1900 && d.getFullYear()===year && d.getMonth()===month-1 && d.getDate()===day && toIsoDate(d)<=toIsoDate(new Date()) ? d : null);
   }
   if(Platform.OS==='web')return <View style={styles.formField}><RequiredLabel label={label} required={required}/><input aria-label={label} type="date" min="1900-01-01" max={toIsoDate(new Date())} value={value?toIsoDate(value):''} onChange={e=>onChangeDate(e.target.value?new Date(e.target.value+'T00:00:00'):null)} style={{padding:14,fontSize:16,borderRadius:14,border:'1px solid #C5D9EF',background:'#E9F0F8',color:'#15345F'}}/></View>;
   return <View style={styles.formField}>
