@@ -119,7 +119,7 @@ export function requireFamily(req: Request): AuthContext & { familyId: string } 
 
 export async function checkPremiumStatus(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
-    if (!PREMIUM_MUTATION_METHODS.has(req.method.toUpperCase())) {
+    if (!PREMIUM_MUTATION_METHODS.has(req.method.toUpperCase()) || !config.PREMIUM_ENFORCEMENT_ENABLED) {
       next();
       return;
     }
