@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { requireAuth, requireFamily } from '../auth.js';
 import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
+import { parentRoleSubject, sendPushToOtherParent } from '../services/notificationService.js';
 
 const router = Router();
 const uuid = z.string().uuid();
@@ -103,6 +104,13 @@ router.post('/', uploadDocument, asyncHandler(async (req, res) => {
     await client.query('COMMIT');
   } catch (error) { await client.query('ROLLBACK'); throw error; }
   finally { client.release(); }
+
+  await sendPushToOtherParent(auth.familyId, auth.userId, {
+    title: 'Nuovo documento condiviso',
+    body: `${parentRoleSubject(auth.role)} ha caricato “${body.title}” nella sezione Documenti.`,
+    data: { type: 'document_uploaded', screen: 'documents', documentId: id },
+  });
+
   const { rows } = await pool.query(`${documentSelect} WHERE d.id = $1 AND d.family_id = $2`, [id, auth.familyId]);
   res.status(201).json(rows[0]);
 }));
