@@ -21,6 +21,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import type { ParentRole, RegisterInput } from '../types/models';
 
@@ -78,6 +79,7 @@ function normalizePhone(value: string): string {
 export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): React.JSX.Element {
   const { register } = useAuth();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const compact = width < 360;
   const heroHeight = Math.max(185, Math.min(360, width * 0.44));
 
@@ -239,216 +241,222 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={0}
-    >
-      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-        showsVerticalScrollIndicator={false}
+    <SafeAreaView style={styles.safeArea} edges={['top', 'right', 'bottom', 'left']}>
+      <KeyboardAvoidingView
+        style={styles.screen}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
-        <ImageBackground
-          source={require('../../assets/signup-header.jpg')}
-          resizeMode="cover"
-          style={[styles.hero, { height: heroHeight }]}
-          accessibilityIgnoresInvertColors
-        />
-
-        <View style={styles.card}>
-          <Text style={styles.title}>Crea il tuo account</Text>
-
-          <View style={styles.progressTrack} accessibilityLabel="Primo passaggio della registrazione">
-            <View style={[styles.progressSegment, styles.progressBlue]} />
-            <View style={[styles.progressSegment, styles.progressOrange]} />
-          </View>
-
-          <Text style={styles.subtitle}>Scegli come iniziare con DueCase.</Text>
-
-          <View style={styles.accountSelector}>
-            <SelectorButton icon="people" label="Sono un genitore" selected={accountType === 'parent'} onPress={() => setAccountType('parent')} />
-            <SelectorButton icon="briefcase-outline" label="Sono un professionista" selected={accountType === 'professional'} onPress={chooseProfessional} />
-          </View>
-
-          <View style={[styles.fieldRow, compact && styles.fieldRowStack]}>
-            <FormField label="Nome" required icon="person-outline" value={firstName} onChangeText={setFirstName} placeholder="Inserisci il tuo nome" autoCapitalize="words" autoComplete="given-name" textContentType="givenName" />
-            <FormField label="Cognome" required icon="person-outline" value={lastName} onChangeText={setLastName} placeholder="Inserisci il tuo cognome" autoCapitalize="words" autoComplete="family-name" textContentType="familyName" />
-          </View>
-
-          <View style={[styles.fieldRow, compact && styles.fieldRowStack]}>
-            <DateField
-              label="Data di nascita"
-              required
-              value={birthDate}
-              placeholder="Seleziona la data"
-              onPress={() => openDatePicker('parent')}
-            />
-            <FormField label="Codice fiscale" required icon="document-text-outline" value={taxCode} onChangeText={(value) => setTaxCode(normalizeTaxCode(value))} placeholder="Inserisci il tuo codice fiscale" autoCapitalize="characters" autoCorrect={false} maxLength={16} />
-          </View>
-
-          <View style={[styles.fieldRow, compact && styles.fieldRowStack]}>
-            <FormField label="Email" required icon="mail-outline" value={email} onChangeText={setEmail} placeholder="La tua email" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} autoComplete="email" textContentType="emailAddress" />
-            <FormField label="Telefono" required icon="call-outline" value={phone} onChangeText={setPhone} placeholder="Inserisci il tuo numero" keyboardType="phone-pad" autoComplete="tel" textContentType="telephoneNumber" />
-          </View>
-
-          <FormField
-            label="Password"
-            required
-            icon="lock-closed-outline"
-            rightIcon={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
-            onRightPress={() => setPasswordVisible((value) => !value)}
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Crea una password sicura"
-            secureTextEntry={!passwordVisible}
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="new-password"
-            textContentType="newPassword"
+        <StatusBar translucent={false} backgroundColor="#D9ECFA" barStyle="dark-content" />
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(56, insets.bottom + 40) }]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          showsVerticalScrollIndicator={false}
+        >
+          <ImageBackground
+            source={require('../../assets/signup-header.jpg')}
+            resizeMode="cover"
+            style={[styles.hero, { height: heroHeight }]}
+            accessibilityIgnoresInvertColors
           />
 
-          <View style={styles.fieldBlock}>
-            <RequiredLabel label="Ruolo" />
-            <View style={styles.roleRow}>
-              <RoleButton label="Padre" icon="person-outline" selected={role === 'father'} onPress={() => setRole('father')} />
-              <RoleButton label="Madre" icon="person-outline" selected={role === 'mother'} onPress={() => setRole('mother')} />
+          <View style={styles.card}>
+            <Text style={styles.title}>Crea il tuo account</Text>
+
+            <View style={styles.progressTrack} accessibilityLabel="Primo passaggio della registrazione">
+              <View style={[styles.progressSegment, styles.progressBlue]} />
+              <View style={[styles.progressSegment, styles.progressOrange]} />
             </View>
-          </View>
 
-          <FormField
-            label="Famiglia"
-            required
-            icon="people-outline"
-            rightIcon="information-circle-outline"
-            onRightPress={() => Alert.alert('Nome della famiglia', 'Usa un nome semplice che permetta a entrambi i genitori di riconoscere subito la famiglia condivisa.')}
-            value={familyName}
-            onChangeText={setFamilyName}
-            placeholder="Inserisci il nome della tua famiglia"
-            autoCapitalize="words"
-          />
+            <Text style={styles.subtitle}>Scegli come iniziare con DueCase.</Text>
 
-          <View style={styles.fieldBlock}>
-            <RequiredLabel label="Figli" />
-            <Pressable accessibilityRole="button" accessibilityLabel="Aggiungi un figlio" onPress={openChildModal} style={({ pressed }) => [styles.childrenRow, pressed && styles.pressed]}>
-              <Ionicons name="people-outline" size={24} color={COLORS.muted} />
-              <Text style={styles.childrenText}>{childrenLabel}</Text>
-              <Ionicons name="chevron-forward" size={22} color={COLORS.muted} />
-              <View style={styles.plusBadge}><Ionicons name="add" size={28} color={COLORS.white} /></View>
-            </Pressable>
-
-            {children.length > 0 ? (
-              <View style={styles.childChips}>
-                {children.map((child) => (
-                  <View key={child.id} style={styles.childChip}>
-                    <Text style={styles.childChipText} numberOfLines={1}>{child.displayName}</Text>
-                    <Pressable accessibilityRole="button" accessibilityLabel={`Rimuovi ${child.displayName}`} onPress={() => removeChild(child.id)} hitSlop={8}>
-                      <Ionicons name="close-circle" size={19} color={COLORS.muted} />
-                    </Pressable>
-                  </View>
-                ))}
-              </View>
-            ) : null}
-          </View>
-
-          <View style={styles.inviteRow}>
-            <View style={styles.inviteIcon}><Ionicons name="people-outline" size={28} color={COLORS.blue} /></View>
-            <View style={styles.inviteTextArea}>
-              <Text style={styles.inviteTitle}>Invito altro genitore</Text>
-              <Text style={styles.inviteDescription}>Invia un invito all’altro genitore per unirsi alla famiglia su DueCase.</Text>
+            <View style={styles.accountSelector}>
+              <SelectorButton icon="people" label="Sono un genitore" selected={accountType === 'parent'} onPress={() => setAccountType('parent')} />
+              <SelectorButton icon="briefcase-outline" label="Sono un professionista" selected={accountType === 'professional'} onPress={chooseProfessional} />
             </View>
-            <Switch value={inviteOtherParent} onValueChange={setInviteOtherParent} trackColor={{ false: '#D5DFEA', true: COLORS.blue }} thumbColor={COLORS.white} ios_backgroundColor="#D5DFEA" />
-          </View>
 
-          {error ? (
-            <View style={styles.errorBox}>
-              <Ionicons name="alert-circle-outline" size={20} color={COLORS.danger} />
-              <Text style={styles.errorText}>{error}</Text>
+            <View style={[styles.fieldRow, compact && styles.fieldRowStack]}>
+              <FormField label="Nome" required icon="person-outline" value={firstName} onChangeText={setFirstName} placeholder="Inserisci il tuo nome" autoCapitalize="words" autoComplete="given-name" textContentType="givenName" />
+              <FormField label="Cognome" required icon="person-outline" value={lastName} onChangeText={setLastName} placeholder="Inserisci il tuo cognome" autoCapitalize="words" autoComplete="family-name" textContentType="familyName" />
             </View>
-          ) : null}
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ disabled: loading }}
-            disabled={loading}
-            onPress={() => void submit()}
-            style={({ pressed }) => [styles.continueButton, pressed && !loading && styles.continueButtonPressed, loading && styles.continueButtonDisabled]}
-          >
-            <Text style={styles.continueText}>{loading ? 'Creazione account…' : 'Continua'}</Text>
-            {!loading ? <Ionicons name="chevron-forward" size={22} color={COLORS.white} /> : null}
-          </Pressable>
-
-          <Pressable onPress={onShowLogin} accessibilityRole="button" style={styles.loginLink}>
-            <Text style={styles.loginLinkText}>Hai già un account? <Text style={styles.loginLinkStrong}>Accedi</Text></Text>
-          </Pressable>
-        </View>
-      </ScrollView>
-
-      <Modal visible={childModalVisible} transparent animationType="fade" onRequestClose={() => setChildModalVisible(false)}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <ScrollView contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <View style={styles.modalCard}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Aggiungi un figlio</Text>
-                <Pressable accessibilityRole="button" accessibilityLabel="Chiudi" onPress={() => setChildModalVisible(false)} hitSlop={10}>
-                  <Ionicons name="close" size={28} color={COLORS.text} />
-                </Pressable>
-              </View>
-
-              <View style={styles.modalFieldBlock}>
-                <Text style={styles.modalLabel}>Nome <Text style={styles.required}>*</Text></Text>
-                <TextInput
-                  value={childName}
-                  onChangeText={setChildName}
-                  placeholder="Nome del figlio"
-                  placeholderTextColor={COLORS.modalPlaceholder}
-                  style={styles.modalTextInput}
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  selectionColor={COLORS.blue}
-                  returnKeyType="done"
-                />
-              </View>
-
+            <View style={[styles.fieldRow, compact && styles.fieldRowStack]}>
               <DateField
                 label="Data di nascita"
-                value={childBirthDate}
+                required
+                value={birthDate}
                 placeholder="Seleziona la data"
-                onPress={() => openDatePicker('child')}
+                onPress={() => openDatePicker('parent')}
               />
-
-              <Pressable accessibilityRole="button" onPress={addChild} style={({ pressed }) => [styles.modalButton, pressed && styles.pressed]}>
-                <Text style={styles.modalButtonText}>Aggiungi</Text>
-              </Pressable>
+              <FormField label="Codice fiscale" required icon="document-text-outline" value={taxCode} onChangeText={(value) => setTaxCode(normalizeTaxCode(value))} placeholder="Inserisci il tuo codice fiscale" autoCapitalize="characters" autoCorrect={false} maxLength={16} />
             </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </Modal>
 
-      {Platform.OS === 'ios' ? (
-        <Modal visible={iosDateTarget !== null} transparent animationType="fade" onRequestClose={() => setIosDateTarget(null)}>
-          <View style={styles.dateModalOverlay}>
-            <View style={styles.dateModalCard}>
-              <Text style={styles.dateModalTitle}>Seleziona la data</Text>
-              <DateTimePicker
-                value={iosPickerValue}
-                mode="date"
-                display="spinner"
-                minimumDate={MIN_DATE}
-                maximumDate={new Date()}
-                onChange={handleIosDateChange}
-                locale="it-IT"
-              />
-              <Pressable accessibilityRole="button" onPress={() => setIosDateTarget(null)} style={styles.dateModalButton}>
-                <Text style={styles.dateModalButtonText}>Fine</Text>
-              </Pressable>
+            <View style={[styles.fieldRow, compact && styles.fieldRowStack]}>
+              <FormField label="Email" required icon="mail-outline" value={email} onChangeText={setEmail} placeholder="La tua email" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} autoComplete="email" textContentType="emailAddress" />
+              <FormField label="Telefono" required icon="call-outline" value={phone} onChangeText={setPhone} placeholder="Inserisci il tuo numero" keyboardType="phone-pad" autoComplete="tel" textContentType="telephoneNumber" />
             </View>
+
+            <FormField
+              label="Password"
+              required
+              icon="lock-closed-outline"
+              rightIcon={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
+              onRightPress={() => setPasswordVisible((value) => !value)}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Crea una password sicura"
+              secureTextEntry={!passwordVisible}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="new-password"
+              textContentType="newPassword"
+            />
+
+            <View style={styles.fieldBlock}>
+              <RequiredLabel label="Ruolo" />
+              <View style={styles.roleRow}>
+                <RoleButton label="Papà" icon="person-outline" selected={role === 'father'} onPress={() => setRole('father')} />
+                <RoleButton label="Mamma" icon="person-outline" selected={role === 'mother'} onPress={() => setRole('mother')} />
+              </View>
+            </View>
+
+            <FormField
+              label="Famiglia"
+              required
+              icon="people-outline"
+              rightIcon="information-circle-outline"
+              onRightPress={() => Alert.alert('Nome della famiglia', 'Usa un nome semplice che permetta a Mamma e Papà di riconoscere subito la famiglia condivisa.')}
+              value={familyName}
+              onChangeText={setFamilyName}
+              placeholder="Inserisci il nome della tua famiglia"
+              autoCapitalize="words"
+            />
+
+            <View style={styles.fieldBlock}>
+              <RequiredLabel label="Figli" />
+              <Pressable accessibilityRole="button" accessibilityLabel="Aggiungi un figlio" onPress={openChildModal} style={({ pressed }) => [styles.childrenRow, pressed && styles.pressed]}>
+                <Ionicons name="people-outline" size={24} color={COLORS.muted} />
+                <Text style={styles.childrenText}>{childrenLabel}</Text>
+                <Ionicons name="chevron-forward" size={22} color={COLORS.muted} />
+                <View style={styles.plusBadge}><Ionicons name="add" size={28} color={COLORS.white} /></View>
+              </Pressable>
+
+              {children.length > 0 ? (
+                <View style={styles.childChips}>
+                  {children.map((child) => (
+                    <View key={child.id} style={styles.childChip}>
+                      <Text style={styles.childChipText} numberOfLines={1}>{child.displayName}</Text>
+                      <Pressable accessibilityRole="button" accessibilityLabel={`Rimuovi ${child.displayName}`} onPress={() => removeChild(child.id)} hitSlop={8}>
+                        <Ionicons name="close-circle" size={19} color={COLORS.muted} />
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+            </View>
+
+            <View style={styles.inviteRow}>
+              <View style={styles.inviteIcon}><Ionicons name="people-outline" size={28} color={COLORS.blue} /></View>
+              <View style={styles.inviteTextArea}>
+                <Text style={styles.inviteTitle}>Invito altro genitore</Text>
+                <Text style={styles.inviteDescription}>Invia un invito all’altro genitore per unirsi alla famiglia su DueCase.</Text>
+              </View>
+              <Switch value={inviteOtherParent} onValueChange={setInviteOtherParent} trackColor={{ false: '#D5DFEA', true: COLORS.blue }} thumbColor={COLORS.white} ios_backgroundColor="#D5DFEA" />
+            </View>
+
+            {error ? (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle-outline" size={20} color={COLORS.danger} />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: loading }}
+              disabled={loading}
+              onPress={() => void submit()}
+              style={({ pressed }) => [styles.continueButton, pressed && !loading && styles.continueButtonPressed, loading && styles.continueButtonDisabled]}
+            >
+              <Text style={styles.continueText}>{loading ? 'Creazione account…' : 'Continua'}</Text>
+              {!loading ? <Ionicons name="chevron-forward" size={22} color={COLORS.white} /> : null}
+            </Pressable>
+
+            <Pressable onPress={onShowLogin} accessibilityRole="button" style={styles.loginLink}>
+              <Text style={styles.loginLinkText}>Hai già un account? <Text style={styles.loginLinkStrong}>Accedi</Text></Text>
+            </Pressable>
           </View>
+        </ScrollView>
+
+        <Modal visible={childModalVisible} transparent animationType="fade" onRequestClose={() => setChildModalVisible(false)}>
+          <SafeAreaView style={styles.modalSafeArea} edges={['top', 'right', 'bottom', 'left']}>
+            <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+              <ScrollView contentContainerStyle={[styles.modalScrollContent, { paddingBottom: Math.max(24, insets.bottom + 16) }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                <View style={styles.modalCard}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>Aggiungi un figlio</Text>
+                    <Pressable accessibilityRole="button" accessibilityLabel="Chiudi" onPress={() => setChildModalVisible(false)} hitSlop={10}>
+                      <Ionicons name="close" size={28} color={COLORS.text} />
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.modalFieldBlock}>
+                    <Text style={styles.modalLabel}>Nome <Text style={styles.required}>*</Text></Text>
+                    <TextInput
+                      value={childName}
+                      onChangeText={setChildName}
+                      placeholder="Nome del figlio"
+                      placeholderTextColor={COLORS.modalPlaceholder}
+                      style={styles.modalTextInput}
+                      autoCapitalize="words"
+                      autoCorrect={false}
+                      selectionColor={COLORS.blue}
+                      returnKeyType="done"
+                    />
+                  </View>
+
+                  <DateField
+                    label="Data di nascita"
+                    value={childBirthDate}
+                    placeholder="Seleziona la data"
+                    onPress={() => openDatePicker('child')}
+                  />
+
+                  <Pressable accessibilityRole="button" onPress={addChild} style={({ pressed }) => [styles.modalButton, pressed && styles.pressed]}>
+                    <Text style={styles.modalButtonText}>Aggiungi</Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </KeyboardAvoidingView>
+          </SafeAreaView>
         </Modal>
-      ) : null}
-    </KeyboardAvoidingView>
+
+        {Platform.OS === 'ios' ? (
+          <Modal visible={iosDateTarget !== null} transparent animationType="fade" onRequestClose={() => setIosDateTarget(null)}>
+            <SafeAreaView style={styles.modalSafeArea} edges={['top', 'right', 'bottom', 'left']}>
+              <View style={styles.dateModalOverlay}>
+                <View style={styles.dateModalCard}>
+                  <Text style={styles.dateModalTitle}>Seleziona la data</Text>
+                  <DateTimePicker
+                    value={iosPickerValue}
+                    mode="date"
+                    display="spinner"
+                    minimumDate={MIN_DATE}
+                    maximumDate={new Date()}
+                    onChange={handleIosDateChange}
+                    locale="it-IT"
+                  />
+                  <Pressable accessibilityRole="button" onPress={() => setIosDateTarget(null)} style={styles.dateModalButton}>
+                    <Text style={styles.dateModalButtonText}>Fine</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </SafeAreaView>
+          </Modal>
+        ) : null}
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
@@ -518,12 +526,13 @@ function RoleButton({ label, icon, selected, onPress }: { label: string; icon: I
 }
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: '#D9ECFA' },
   screen: { flex: 1, backgroundColor: '#D9ECFA' },
-  scrollContent: { flexGrow: 1, backgroundColor: '#D9ECFA', paddingBottom: 0 },
+  scrollContent: { flexGrow: 1, backgroundColor: '#D9ECFA', paddingTop: 6 },
   hero: { width: '100%', backgroundColor: '#D9ECFA' },
   card: {
     width: '100%', maxWidth: 900, alignSelf: 'center', marginTop: -22, paddingTop: 28,
-    paddingHorizontal: 20, paddingBottom: 28, borderTopLeftRadius: 30, borderTopRightRadius: 30,
+    paddingHorizontal: 20, paddingBottom: 36, borderTopLeftRadius: 30, borderTopRightRadius: 30,
     backgroundColor: COLORS.white, shadowColor: COLORS.shadow, shadowOpacity: 0.16, shadowRadius: 18,
     shadowOffset: { width: 0, height: -4 }, elevation: 8, gap: 15,
   },
@@ -574,6 +583,7 @@ const styles = StyleSheet.create({
   loginLinkText: { color: COLORS.muted, fontSize: 13 },
   loginLinkStrong: { color: COLORS.blue, fontWeight: '900' },
   pressed: { opacity: 0.78 },
+  modalSafeArea: { flex: 1, backgroundColor: 'rgba(9, 35, 67, 0.42)' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(9, 35, 67, 0.42)' },
   modalScrollContent: { flexGrow: 1, justifyContent: 'center', padding: 20 },
   modalCard: { width: '100%', maxWidth: 520, alignSelf: 'center', borderRadius: 24, backgroundColor: COLORS.white, padding: 20, gap: 18, shadowColor: '#000000', shadowOpacity: 0.2, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 12 },
