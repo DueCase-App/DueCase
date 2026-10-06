@@ -55,7 +55,6 @@
     "android": {
       "package": "com.tecnicoelios.duecase",
       "softwareKeyboardLayoutMode": "resize",
-      "edgeToEdgeEnabled": false,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.POST_NOTIFICATIONS"
