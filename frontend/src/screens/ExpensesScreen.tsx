@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,33 +14,71 @@ import {
   Switch,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
+import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { cardShadow, ui } from '../theme/ui';
-import type { Expense, ExpenseCategory, FamilyBalance } from '../types/models';
+import type { Expense, ExpenseCategory, ExpensePayment, FamilyBalance, FamilyChild, ParentRole } from '../types/models';
 
 const categories: ExpenseCategory[] = ['Scuola', 'Salute', 'Sport', 'Svago'];
 type Receipt = { uri: string; name: string; type: string; file?: Blob };
-const euro = (value: string) => `${Number(value).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
-const statusLabel = (status: Expense['status']) => status === 'approved' ? 'Approvata' : status === 'declined' ? 'Contestata' : 'Da approvare';
+const euro = (value: string | number) => `${Number(value || 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+const roleLabel = (role: ParentRole | null | undefined) => role === 'father' ? 'Papà' : role === 'mother' ? 'Mamma' : 'Genitore';
+
+const expenseStatusLabel: Record<Expense['status'], string> = {
+  draft: 'Bozza',
+  submitted: 'Inviata',
+  pending_approval: 'Da approvare',
+  approved: 'Approvata · da regolare',
+  declined: 'Rifiutata',
+  disputed: 'Contestata',
+  to_pay: 'Da pagare',
+  partially_paid: 'Parzialmente pagata',
+  paid: 'Pagata',
+  closed: 'Chiusa',
+};
+
+function statusTone(status: Expense['status']): 'success' | 'danger' | 'warning' | 'info' {
+  if (status === 'paid' || status === 'closed') return 'success';
+  if (status === 'declined' || status === 'disputed') return 'danger';
+  if (status === 'pending_approval' || status === 'submitted' || status === 'draft') return 'warning';
+  return 'info';
+}
 
 export function ExpensesScreen(): React.JSX.Element {
+  const { user } = useAuth();
+  const { width } = useWindowDimensions();
   const [items, setItems] = useState<Expense[]>([]);
   const [balance, setBalance] = useState<FamilyBalance | null>(null);
+  const [children, setChildren] = useState<FamilyChild[]>([]);
+  const [payments, setPayments] = useState<Record<string, ExpensePayment[]>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [formVisible, setFormVisible] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<Expense | null>(null);
+  const [paymentReceipt, setPaymentReceipt] = useState<ExpensePayment | null>(null);
   const [otpExpense, setOtpExpense] = useState<Expense | null>(null);
   const [otpEmail, setOtpEmail] = useState<string | null>(null);
+  const [paymentExpense, setPaymentExpense] = useState<Expense | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [expenses, nextBalance] = await Promise.all([api.expenses.list(), api.expenses.balance()]);
-      setItems(expenses);
+      const [expenseItems, nextBalance, kids] = await Promise.all([
+        api.expenses.list(),
+        api.expenses.balance(),
+        api.family.children(),
+      ]);
+      setItems(expenseItems);
       setBalance(nextBalance);
+      setChildren(kids);
+      const paymentEntries = await Promise.all(expenseItems.map(async (expense) => {
+        try { return [expense.id, await api.expenses.payments(expense.id)] as const; }
+        catch { return [expense.id, [] as ExpensePayment[]] as const; }
+      }));
+      setPayments(Object.fromEntries(paymentEntries));
     } catch (error) {
       Alert.alert('Spese', error instanceof Error ? error.message : 'Errore di caricamento');
     } finally {
@@ -57,9 +96,7 @@ export function ExpensesScreen(): React.JSX.Element {
       await load();
     } catch (error) {
       Alert.alert('Spesa', error instanceof Error ? error.message : 'Operazione non riuscita');
-    } finally {
-      setBusy(null);
-    }
+    } finally { setBusy(null); }
   }
 
   async function approveOrdinary(expense: Expense): Promise<void> {
@@ -67,12 +104,10 @@ export function ExpensesScreen(): React.JSX.Element {
       setBusy(expense.id);
       await api.expenses.approve(expense.id);
       await load();
-      Alert.alert('Spesa approvata', 'La spesa è stata approvata.');
+      Alert.alert('Spesa approvata', 'La spesa è stata approvata ed è pronta per il rimborso previsto.');
     } catch (error) {
       Alert.alert('Spesa', error instanceof Error ? error.message : 'Operazione non riuscita');
-    } finally {
-      setBusy(null);
-    }
+    } finally { setBusy(null); }
   }
 
   async function requestOtp(expense: Expense): Promise<void> {
@@ -83,9 +118,7 @@ export function ExpensesScreen(): React.JSX.Element {
       setOtpExpense(expense);
     } catch (error) {
       Alert.alert('Firma OTP', error instanceof Error ? error.message : 'Impossibile inviare il codice OTP.');
-    } finally {
-      setBusy(null);
-    }
+    } finally { setBusy(null); }
   }
 
   async function approveWithOtp(code: string): Promise<void> {
@@ -96,13 +129,22 @@ export function ExpensesScreen(): React.JSX.Element {
       setOtpExpense(null);
       setOtpEmail(null);
       await load();
-      Alert.alert('Spesa approvata', 'La firma OTP è stata verificata e registrata correttamente.');
+      Alert.alert('Spesa approvata', 'La firma OTP è stata verificata e registrata.');
     } catch (error) {
       Alert.alert('Firma OTP', error instanceof Error ? error.message : 'Codice OTP non valido.');
       throw error;
-    } finally {
-      setBusy(null);
-    }
+    } finally { setBusy(null); }
+  }
+
+  async function confirmPayment(expense: Expense, payment: ExpensePayment): Promise<void> {
+    try {
+      setBusy(payment.id);
+      await api.expenses.confirmPayment(expense.id, payment.id);
+      await load();
+      Alert.alert('Pagamento confermato', 'La ricezione del pagamento è stata registrata nello storico.');
+    } catch (error) {
+      Alert.alert('Pagamento', error instanceof Error ? error.message : 'Conferma non riuscita.');
+    } finally { setBusy(null); }
   }
 
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={ui.colors.primary} /><Text style={styles.muted}>Caricamento spese…</Text></View>;
@@ -111,58 +153,105 @@ export function ExpensesScreen(): React.JSX.Element {
     ? 'Siete in pari'
     : balance.direction === 'receive'
       ? `Devi ricevere ${euro(balance.settlementAmount)}`
-      : `Devi dare ${euro(balance.settlementAmount)}`;
+      : `Devi rimborsare ${euro(balance.settlementAmount)}`;
+
+  const cardWidth = width >= 1050 ? '48.8%' : '100%';
 
   return (
     <View style={styles.screen}>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={ui.colors.primary} onRefresh={() => { setRefreshing(true); void load(); }} />}
       >
-        <View style={styles.header}>
-          <View style={styles.headerCopy}><Text style={styles.title}>Spese</Text><Text style={styles.muted}>Condivisione chiara e approvazioni tracciate.</Text></View>
-          <Pressable style={styles.addButton} onPress={() => setFormVisible(true)}><Ionicons name="add" size={20} color="#FFF" /><Text style={styles.addText}>Aggiungi</Text></Pressable>
-        </View>
-
-        <View style={[styles.balanceCard, cardShadow]}>
-          <Text style={styles.balanceLabel}>BILANCIO ATTUALE</Text>
-          <Text style={styles.balanceValue}>{balanceMessage}</Text>
-          {balance ? <Text style={styles.balanceMeta}>Padre {euro(balance.fatherPaid)} · Madre {euro(balance.motherPaid)} · quota {euro(balance.perParentShare)}</Text> : null}
-        </View>
-
-        <Text style={styles.sectionTitle}>Movimenti</Text>
-        {items.length === 0 ? (
-          <View style={[styles.card, cardShadow]}><Text style={styles.cardTitle}>Nessuna spesa</Text><Text style={styles.muted}>Aggiungi la prima spesa condivisa.</Text></View>
-        ) : items.map((expense) => (
-          <View key={expense.id} style={[styles.card, cardShadow]}>
-            <View style={styles.expenseTop}>
-              <View style={styles.expenseIcon}><Ionicons name="receipt-outline" size={22} color={ui.colors.primary} /></View>
-              <View style={styles.expenseCopy}><Text style={styles.cardTitle}>{expense.title}</Text><Text style={styles.meta}>{expense.category} · {new Date(`${expense.expenseDate}T12:00:00`).toLocaleDateString('it-IT')} · {expense.paidByName ?? (expense.paidByRole === 'father' ? 'Padre' : 'Madre')}</Text></View>
-              <Text style={styles.amount}>{euro(expense.amount)}</Text>
-            </View>
-
-            <View style={styles.badgeRow}>
-              <View style={[styles.statusPill, expense.status === 'approved' ? styles.statusApproved : expense.status === 'declined' ? styles.statusDeclined : styles.statusPending]}>
-                <Text style={[styles.statusText, expense.status === 'approved' ? styles.statusApprovedText : expense.status === 'declined' ? styles.statusDeclinedText : styles.statusPendingText]}>{statusLabel(expense.status)}</Text>
-              </View>
-              {expense.isExtraordinary ? <View style={styles.extraordinaryPill}><Ionicons name="shield-checkmark-outline" size={14} color={ui.colors.primary} /><Text style={styles.extraordinaryText}>Straordinaria</Text></View> : null}
-            </View>
-
-            {expense.notes ? <Text style={styles.muted}>{expense.notes}</Text> : null}
-            {expense.otpSignatureMetadata ? <Text style={styles.signedText}>Firma OTP verificata il {new Date(expense.otpSignatureMetadata.verifiedAt).toLocaleString('it-IT')}</Text> : null}
-            <View style={styles.actions}>
-              {expense.receiptUrl ? <Pressable style={styles.secondaryButton} onPress={() => setReceipt(expense)}><Ionicons name="image-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Ricevuta</Text></Pressable> : null}
-              {expense.canReview ? <>
-                <Pressable disabled={busy === expense.id} style={styles.declineButton} onPress={() => void decline(expense)}><Text style={styles.declineText}>Contesta</Text></Pressable>
-                <Pressable disabled={busy === expense.id} style={styles.approveButton} onPress={() => void (expense.isExtraordinary ? requestOtp(expense) : approveOrdinary(expense))}>{busy === expense.id ? <ActivityIndicator color="#FFF" /> : <><Ionicons name={expense.isExtraordinary ? 'shield-checkmark-outline' : 'checkmark-circle-outline'} size={18} color="#FFF" /><Text style={styles.approveText}>Approva</Text></>}</Pressable>
-              </> : null}
-            </View>
+        <View style={styles.content}>
+          <View style={styles.header}>
+            <View style={styles.headerCopy}><Text style={styles.title}>Spese</Text><Text style={styles.muted}>Quote personalizzabili, ricevute, approvazioni e rimborsi tracciati.</Text></View>
+            <Pressable style={styles.addButton} onPress={() => setFormVisible(true)}><Ionicons name="add" size={20} color="#FFF" /><Text style={styles.addText}>Aggiungi</Text></Pressable>
           </View>
-        ))}
+
+          <View style={[styles.balanceCard, cardShadow]}>
+            <Text style={styles.balanceLabel}>BILANCIO CONDIVISO</Text>
+            <Text style={styles.balanceValue}>{balanceMessage}</Text>
+            {balance ? (
+              <View style={styles.balanceRows}>
+                <Text style={styles.balanceMeta}>Anticipato: Papà {euro(balance.fatherPaid)} · Mamma {euro(balance.motherPaid)}</Text>
+                <Text style={styles.balanceMeta}>Quote dovute: Papà {euro(balance.fatherShare)} · Mamma {euro(balance.motherShare)}</Text>
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Movimenti</Text><Text style={styles.countText}>{items.length} spese</Text></View>
+          {items.length === 0 ? (
+            <View style={[styles.card, cardShadow]}><Text style={styles.cardTitle}>Nessuna spesa</Text><Text style={styles.muted}>Aggiungi la prima spesa condivisa.</Text></View>
+          ) : (
+            <View style={styles.grid}>
+              {items.map((expense) => {
+                const tone = statusTone(expense.status);
+                const expensePayments = payments[expense.id] ?? [];
+                const canPay = user?.id !== expense.paidByUserId && ['approved', 'to_pay', 'partially_paid'].includes(expense.status);
+                return (
+                  <View key={expense.id} style={[styles.card, cardShadow, { width: cardWidth }]}>
+                    <View style={styles.expenseTop}>
+                      <View style={styles.expenseIcon}><Ionicons name="receipt-outline" size={22} color={ui.colors.primary} /></View>
+                      <View style={styles.expenseCopy}>
+                        <Text style={styles.cardTitle}>{expense.title}</Text>
+                        <Text style={styles.meta}>{expense.category} · {new Date(`${expense.expenseDate}T12:00:00`).toLocaleDateString('it-IT')} · anticipata da {expense.paidByName ?? roleLabel(expense.paidByRole)}</Text>
+                      </View>
+                      <Text style={styles.amount}>{euro(expense.amount)}</Text>
+                    </View>
+
+                    <View style={styles.badgeRow}>
+                      <View style={[styles.statusPill, tone === 'success' ? styles.statusSuccess : tone === 'danger' ? styles.statusDanger : tone === 'warning' ? styles.statusWarning : styles.statusInfo]}>
+                        <Text style={[styles.statusText, tone === 'success' ? styles.statusSuccessText : tone === 'danger' ? styles.statusDangerText : tone === 'warning' ? styles.statusWarningText : styles.statusInfoText]}>{expenseStatusLabel[expense.status]}</Text>
+                      </View>
+                      {expense.isExtraordinary ? <View style={styles.extraordinaryPill}><Ionicons name="shield-checkmark-outline" size={14} color={ui.colors.primary} /><Text style={styles.extraordinaryText}>Straordinaria</Text></View> : null}
+                    </View>
+
+                    <View style={styles.splitBox}>
+                      <View style={styles.splitItem}><Text style={styles.splitRole}>Papà</Text><Text style={styles.splitValue}>{Number(expense.fatherPercentage).toLocaleString('it-IT')}%</Text></View>
+                      <View style={styles.splitDivider} />
+                      <View style={styles.splitItem}><Text style={styles.splitRole}>Mamma</Text><Text style={styles.splitValue}>{Number(expense.motherPercentage).toLocaleString('it-IT')}%</Text></View>
+                    </View>
+
+                    {expense.children?.length ? <View style={styles.childRow}><Ionicons name="people-outline" size={16} color={ui.colors.muted} /><Text style={styles.meta}>{expense.children.map((child) => child.displayName).join(', ')}</Text></View> : null}
+                    {expense.notes ? <Text style={styles.muted}>{expense.notes}</Text> : null}
+                    {expense.otpSignatureMetadata ? <Text style={styles.signedText}>Firma OTP verificata il {new Date(expense.otpSignatureMetadata.verifiedAt).toLocaleString('it-IT')}</Text> : null}
+
+                    {expensePayments.length > 0 ? (
+                      <View style={styles.paymentList}>
+                        <Text style={styles.paymentTitle}>Pagamenti</Text>
+                        {expensePayments.map((payment) => (
+                          <View key={payment.id} style={styles.paymentRow}>
+                            <View style={styles.paymentCopy}>
+                              <Text style={styles.paymentAmount}>{euro(payment.amount)} · {payment.status === 'confirmed' ? 'Ricevuto' : 'Da confermare'}</Text>
+                              <Text style={styles.meta}>{payment.paidByName ?? roleLabel(payment.paidByRole)} · {new Date(payment.paidAt).toLocaleString('it-IT')}</Text>
+                            </View>
+                            {payment.receiptUrl ? <Pressable style={styles.iconButton} onPress={() => setPaymentReceipt(payment)}><Ionicons name="document-attach-outline" size={20} color={ui.colors.primary} /></Pressable> : null}
+                            {payment.canConfirm ? <Pressable disabled={busy === payment.id} style={styles.confirmPaymentButton} onPress={() => void confirmPayment(expense, payment)}>{busy === payment.id ? <ActivityIndicator color="#FFF" /> : <Text style={styles.confirmPaymentText}>Conferma</Text>}</Pressable> : null}
+                          </View>
+                        ))}
+                      </View>
+                    ) : null}
+
+                    <View style={styles.actions}>
+                      {expense.receiptUrl ? <Pressable style={styles.secondaryButton} onPress={() => setReceipt(expense)}><Ionicons name="image-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Ricevuta</Text></Pressable> : null}
+                      {canPay ? <Pressable style={styles.secondaryButton} onPress={() => setPaymentExpense(expense)}><Ionicons name="card-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Registra pagamento</Text></Pressable> : null}
+                      {expense.canReview ? <>
+                        <Pressable disabled={busy === expense.id} style={styles.declineButton} onPress={() => void decline(expense)}><Text style={styles.declineText}>Rifiuta</Text></Pressable>
+                        <Pressable disabled={busy === expense.id} style={styles.approveButton} onPress={() => void (expense.isExtraordinary ? requestOtp(expense) : approveOrdinary(expense))}>{busy === expense.id ? <ActivityIndicator color="#FFF" /> : <><Ionicons name={expense.isExtraordinary ? 'shield-checkmark-outline' : 'checkmark-circle-outline'} size={18} color="#FFF" /><Text style={styles.approveText}>Approva</Text></>}</Pressable>
+                      </> : null}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
       </ScrollView>
 
-      <ExpenseModal visible={formVisible} onClose={() => setFormVisible(false)} onDone={(expense) => { setItems((current) => [expense, ...current]); setFormVisible(false); void load(); }} />
+      <ExpenseModal visible={formVisible} childrenList={children} onClose={() => setFormVisible(false)} onDone={() => { setFormVisible(false); void load(); }} />
+      <PaymentModal expense={paymentExpense} currentRole={user?.role ?? null} onClose={() => setPaymentExpense(null)} onDone={() => { setPaymentExpense(null); void load(); }} />
       <OtpApprovalModal
         expense={otpExpense}
         maskedEmail={otpEmail}
@@ -177,7 +266,11 @@ export function ExpensesScreen(): React.JSX.Element {
       />
 
       <Modal visible={receipt !== null} transparent animationType="fade" onRequestClose={() => setReceipt(null)}>
-        <View style={styles.backdrop}><View style={styles.preview}><View style={styles.modalHead}><Text style={styles.modalTitle}>Ricevuta</Text><Pressable onPress={() => setReceipt(null)}><Ionicons name="close" size={26} color={ui.colors.text} /></Pressable></View>{receipt?.receiptUrl ? <Image source={api.expenses.receiptSource(receipt.receiptUrl)} resizeMode="contain" style={styles.image} /> : null}</View></View>
+        <View style={styles.backdrop}><View style={styles.preview}><View style={styles.modalHead}><Text style={styles.modalTitle}>Ricevuta spesa</Text><Pressable onPress={() => setReceipt(null)}><Ionicons name="close" size={26} color={ui.colors.text} /></Pressable></View>{receipt?.receiptUrl ? <Image source={api.expenses.receiptSource(receipt.receiptUrl)} resizeMode="contain" style={styles.image} /> : null}</View></View>
+      </Modal>
+
+      <Modal visible={paymentReceipt !== null} transparent animationType="fade" onRequestClose={() => setPaymentReceipt(null)}>
+        <View style={styles.backdrop}><View style={styles.preview}><View style={styles.modalHead}><Text style={styles.modalTitle}>Prova di pagamento</Text><Pressable onPress={() => setPaymentReceipt(null)}><Ionicons name="close" size={26} color={ui.colors.text} /></Pressable></View>{paymentReceipt?.receiptUrl && paymentReceipt.receiptMimeType?.startsWith('image/') ? <Image source={api.expenses.paymentReceiptSource(paymentReceipt.receiptUrl)} resizeMode="contain" style={styles.image} /> : <View style={styles.filePreview}><Ionicons name="document-text-outline" size={46} color={ui.colors.primary} /><Text style={styles.cardTitle}>{paymentReceipt?.receiptFilename ?? 'Documento allegato'}</Text><Text style={styles.muted}>La prova di pagamento è archiviata e collegata a questa spesa.</Text></View>}</View></View>
       </Modal>
     </View>
   );
@@ -187,62 +280,41 @@ function OtpApprovalModal({ expense, maskedEmail, busy, onClose, onConfirm, onRe
   const [digits, setDigits] = useState(['', '', '', '', '', '']);
   const [resending, setResending] = useState(false);
   const refs = useRef<Array<TextInput | null>>([]);
-
   useEffect(() => { if (expense) { setDigits(['', '', '', '', '', '']); setTimeout(() => refs.current[0]?.focus(), 250); } }, [expense]);
-
   function changeDigit(index: number, value: string): void {
     const cleaned = value.replace(/\D/g, '').slice(-1);
     setDigits((current) => current.map((digit, i) => i === index ? cleaned : digit));
     if (cleaned && index < 5) refs.current[index + 1]?.focus();
   }
-
   const code = digits.join('');
   return (
     <Modal visible={expense !== null} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.otpModal}>
-          <View style={styles.otpIcon}><Ionicons name="shield-checkmark-outline" size={30} color={ui.colors.primary} /></View>
-          <Text style={styles.modalTitle}>Firma OTP</Text>
-          <Text style={styles.otpSubtitle}>Inserisci il codice di sicurezza a 6 cifre inviato per firmare l'approvazione di questa spesa straordinaria.</Text>
-          <Text style={styles.otpDelivery}>Codice inviato via email{maskedEmail ? ` a ${maskedEmail}` : ''}. Scade dopo 5 minuti.</Text>
-          <View style={styles.otpRow}>
-            {digits.map((digit, index) => (
-              <TextInput
-                key={index}
-                ref={(ref) => { refs.current[index] = ref; }}
-                value={digit}
-                onChangeText={(value) => changeDigit(index, value)}
-                onKeyPress={({ nativeEvent }) => { if (nativeEvent.key === 'Backspace' && !digit && index > 0) refs.current[index - 1]?.focus(); }}
-                keyboardType="number-pad"
-                inputMode="numeric"
-                maxLength={1}
-                textAlign="center"
-                style={[styles.otpInput, digit && styles.otpInputFilled]}
-                accessibilityLabel={`Cifra OTP ${index + 1}`}
-              />
-            ))}
-          </View>
-          <View style={styles.otpActions}>
-            <Pressable style={styles.cancelButton} onPress={onClose}><Text style={styles.cancelText}>Annulla</Text></Pressable>
-            <Pressable disabled={busy || code.length !== 6} style={[styles.approveButton, (busy || code.length !== 6) && styles.disabledButton]} onPress={() => void onConfirm(code)}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.approveText}>Conferma e Firma</Text>}</Pressable>
-          </View>
-          <Pressable disabled={resending} onPress={() => void (async () => { try { setResending(true); await onResend(); Alert.alert('Firma OTP', 'Nuovo codice inviato via email.'); } catch (error) { Alert.alert('Firma OTP', error instanceof Error ? error.message : 'Invio non riuscito'); } finally { setResending(false); } })()}>
-            <Text style={styles.resendText}>{resending ? 'Invio…' : 'Invia un nuovo codice'}</Text>
-          </Pressable>
-        </View>
-      </View>
+      <View style={styles.backdrop}><View style={styles.otpModal}>
+        <View style={styles.otpIcon}><Ionicons name="shield-checkmark-outline" size={30} color={ui.colors.primary} /></View>
+        <Text style={styles.modalTitle}>Firma OTP</Text>
+        <Text style={styles.otpSubtitle}>Inserisci il codice di sicurezza a 6 cifre inviato per firmare l'approvazione di questa spesa straordinaria.</Text>
+        <Text style={styles.otpDelivery}>Codice inviato via email{maskedEmail ? ` a ${maskedEmail}` : ''}. Scade dopo 5 minuti.</Text>
+        <View style={styles.otpRow}>{digits.map((digit, index) => <TextInput key={index} ref={(ref) => { refs.current[index] = ref; }} value={digit} onChangeText={(value) => changeDigit(index, value)} onKeyPress={({ nativeEvent }) => { if (nativeEvent.key === 'Backspace' && !digit && index > 0) refs.current[index - 1]?.focus(); }} keyboardType="number-pad" inputMode="numeric" maxLength={1} textAlign="center" style={[styles.otpInput, digit && styles.otpInputFilled]} accessibilityLabel={`Cifra OTP ${index + 1}`} />)}</View>
+        <View style={styles.otpActions}><Pressable style={styles.cancelButton} onPress={onClose}><Text style={styles.cancelText}>Annulla</Text></Pressable><Pressable disabled={busy || code.length !== 6} style={[styles.approveButton, (busy || code.length !== 6) && styles.disabledButton]} onPress={() => void onConfirm(code)}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.approveText}>Conferma e Firma</Text>}</Pressable></View>
+        <Pressable disabled={resending} onPress={() => void (async () => { try { setResending(true); await onResend(); Alert.alert('Firma OTP', 'Nuovo codice inviato via email.'); } catch (error) { Alert.alert('Firma OTP', error instanceof Error ? error.message : 'Invio non riuscito'); } finally { setResending(false); } })()}><Text style={styles.resendText}>{resending ? 'Invio…' : 'Invia un nuovo codice'}</Text></Pressable>
+      </View></View>
     </Modal>
   );
 }
 
-function ExpenseModal({ visible, onClose, onDone }: { visible: boolean; onClose: () => void; onDone: (expense: Expense) => void }): React.JSX.Element {
+function ExpenseModal({ visible, childrenList, onClose, onDone }: { visible: boolean; childrenList: FamilyChild[]; onClose: () => void; onDone: () => void }): React.JSX.Element {
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState<ExpenseCategory>('Scuola');
   const [notes, setNotes] = useState('');
   const [isExtraordinary, setIsExtraordinary] = useState(false);
+  const [fatherPercentage, setFatherPercentage] = useState('50');
+  const [motherPercentage, setMotherPercentage] = useState('50');
+  const [childIds, setChildIds] = useState<string[]>([]);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const toggleChild = (id: string): void => setChildIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
 
   async function fromLibrary(): Promise<void> {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -264,12 +336,15 @@ function ExpenseModal({ visible, onClose, onDone }: { visible: boolean; onClose:
 
   async function save(): Promise<void> {
     const normalized = amount.trim().replace(',', '.');
+    const father = Number(fatherPercentage.replace(',', '.'));
+    const mother = Number(motherPercentage.replace(',', '.'));
     if (!title.trim() || !/^\d{1,10}(?:\.\d{1,2})?$/.test(normalized) || Number(normalized) <= 0) { Alert.alert('Spesa', 'Inserisci titolo e importo valido.'); return; }
+    if (!Number.isFinite(father) || !Number.isFinite(mother) || father < 0 || mother < 0 || Math.abs(father + mother - 100) > 0.001) { Alert.alert('Percentuali', 'Le quote di Papà e Mamma devono sommare esattamente 100%.'); return; }
     try {
       setBusy(true);
-      const expense = await api.expenses.create({ title: title.trim(), amount: normalized, category, notes: notes.trim() || undefined, isExtraordinary, receipt: receipt ?? undefined });
-      onDone(expense);
-      setTitle(''); setAmount(''); setNotes(''); setIsExtraordinary(false); setReceipt(null);
+      await api.expenses.create({ title: title.trim(), amount: normalized, category, notes: notes.trim() || undefined, isExtraordinary, fatherPercentage: father, motherPercentage: mother, childIds, receipt: receipt ?? undefined });
+      onDone();
+      setTitle(''); setAmount(''); setNotes(''); setIsExtraordinary(false); setFatherPercentage('50'); setMotherPercentage('50'); setChildIds([]); setReceipt(null);
     } catch (error) {
       Alert.alert('Spesa', error instanceof Error ? error.message : 'Salvataggio non riuscito');
     } finally { setBusy(false); }
@@ -277,31 +352,87 @@ function ExpenseModal({ visible, onClose, onDone }: { visible: boolean; onClose:
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <ScrollView contentContainerStyle={styles.formModal} keyboardShouldPersistTaps="handled">
-          <View style={styles.modalHead}><Text style={styles.modalTitle}>Aggiungi spesa</Text><Pressable onPress={onClose}><Ionicons name="close" size={26} color={ui.colors.text} /></Pressable></View>
-          <Text style={styles.label}>Titolo</Text><TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="Es. Libri scolastici" placeholderTextColor={ui.colors.muted} />
-          <Text style={styles.label}>Importo (€)</Text><TextInput style={styles.input} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={ui.colors.muted} />
-          <Text style={styles.label}>Categoria</Text><View style={styles.chips}>{categories.map((item) => <Pressable key={item} onPress={() => setCategory(item)} style={[styles.chip, category === item && styles.chipSelected]}><Text style={[styles.chipText, category === item && styles.chipTextSelected]}>{item}</Text></Pressable>)}</View>
-          <View style={styles.extraordinaryToggle}>
-            <View style={styles.extraordinaryCopy}><Text style={styles.cardTitle}>Spesa straordinaria</Text><Text style={styles.meta}>Richiede la firma OTP dell’altro genitore per l’approvazione.</Text></View>
-            <Switch value={isExtraordinary} onValueChange={setIsExtraordinary} trackColor={{ false: '#D5DFEA', true: ui.colors.primary }} thumbColor="#FFF" />
-          </View>
-          <Text style={styles.label}>Nota</Text><TextInput style={[styles.input, styles.notesInput]} multiline value={notes} onChangeText={setNotes} placeholder="Aggiungi una nota" placeholderTextColor={ui.colors.muted} />
-          <Text style={styles.label}>Ricevuta (facoltativa)</Text>
-          <View style={styles.actions}><Pressable style={styles.secondaryButton} onPress={() => void fromCamera()}><Ionicons name="camera-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Scatta foto</Text></Pressable><Pressable style={styles.secondaryButton} onPress={() => void fromLibrary()}><Ionicons name="images-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Galleria</Text></Pressable></View>
-          {receipt ? <Text style={styles.muted}>Allegato: {receipt.name}</Text> : null}
-          <View style={styles.actions}><Pressable style={styles.cancelButton} onPress={onClose}><Text style={styles.cancelText}>Annulla</Text></Pressable><Pressable disabled={busy} style={styles.approveButton} onPress={() => void save()}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.approveText}>Salva spesa</Text>}</Pressable></View>
-        </ScrollView>
-      </View>
+      <View style={styles.backdrop}><ScrollView contentContainerStyle={styles.formModal} keyboardShouldPersistTaps="handled">
+        <View style={styles.modalHead}><Text style={styles.modalTitle}>Aggiungi spesa</Text><Pressable onPress={onClose}><Ionicons name="close" size={26} color={ui.colors.text} /></Pressable></View>
+        <Text style={styles.label}>Descrizione</Text><TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="Es. Libri scolastici" placeholderTextColor={ui.colors.muted} />
+        <Text style={styles.label}>Importo (€)</Text><TextInput style={styles.input} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={ui.colors.muted} />
+        <Text style={styles.label}>Categoria</Text><View style={styles.chips}>{categories.map((item) => <Pressable key={item} onPress={() => setCategory(item)} style={[styles.chip, category === item && styles.chipSelected]}><Text style={[styles.chipText, category === item && styles.chipTextSelected]}>{item}</Text></Pressable>)}</View>
+
+        <Text style={styles.label}>Figlio o figli interessati</Text>
+        <View style={styles.chips}>{childrenList.length ? childrenList.map((child) => <Pressable key={child.id} onPress={() => toggleChild(child.id)} style={[styles.chip, childIds.includes(child.id) && styles.chipSelected]}><Ionicons name={childIds.includes(child.id) ? 'checkmark-circle' : 'person-outline'} size={15} color={childIds.includes(child.id) ? ui.colors.primary : ui.colors.muted} /><Text style={[styles.chipText, childIds.includes(child.id) && styles.chipTextSelected]}>{child.displayName}</Text></Pressable>) : <Text style={styles.muted}>Nessun figlio inserito.</Text>}</View>
+
+        <Text style={styles.label}>Ripartizione</Text>
+        <View style={styles.percentageRow}><View style={styles.percentageField}><Text style={styles.percentageLabel}>Papà %</Text><TextInput style={styles.input} value={fatherPercentage} onChangeText={setFatherPercentage} keyboardType="decimal-pad" /></View><View style={styles.percentageField}><Text style={styles.percentageLabel}>Mamma %</Text><TextInput style={styles.input} value={motherPercentage} onChangeText={setMotherPercentage} keyboardType="decimal-pad" /></View></View>
+        <Text style={styles.percentageHint}>Totale: {(Number(fatherPercentage.replace(',', '.')) || 0) + (Number(motherPercentage.replace(',', '.')) || 0)}%</Text>
+
+        <View style={styles.extraordinaryToggle}><View style={styles.extraordinaryCopy}><Text style={styles.cardTitle}>Spesa straordinaria</Text><Text style={styles.meta}>Richiede firma OTP dell’altro genitore.</Text></View><Switch value={isExtraordinary} onValueChange={setIsExtraordinary} trackColor={{ false: '#D5DFEA', true: ui.colors.primary }} thumbColor="#FFF" /></View>
+        <Text style={styles.label}>Note</Text><TextInput style={[styles.input, styles.notesInput]} multiline value={notes} onChangeText={setNotes} placeholder="Aggiungi una nota" placeholderTextColor={ui.colors.muted} />
+        <Text style={styles.label}>Ricevuta</Text><View style={styles.actions}><Pressable style={styles.secondaryButton} onPress={() => void fromCamera()}><Ionicons name="camera-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Scatta foto</Text></Pressable><Pressable style={styles.secondaryButton} onPress={() => void fromLibrary()}><Ionicons name="images-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Galleria</Text></Pressable></View>
+        {receipt ? <Text style={styles.muted}>Allegato: {receipt.name}</Text> : null}
+        <View style={styles.actions}><Pressable style={styles.cancelButton} onPress={onClose}><Text style={styles.cancelText}>Annulla</Text></Pressable><Pressable disabled={busy} style={styles.approveButton} onPress={() => void save()}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.approveText}>Invia spesa</Text>}</Pressable></View>
+      </ScrollView></View>
     </Modal>
   );
+}
+
+function PaymentModal({ expense, currentRole, onClose, onDone }: { expense: Expense | null; currentRole: ParentRole | null; onClose: () => void; onDone: () => void }): React.JSX.Element {
+  const suggested = useMemo(() => {
+    if (!expense || !currentRole) return '';
+    const percentage = currentRole === 'father' ? Number(expense.fatherPercentage) : Number(expense.motherPercentage);
+    return (Number(expense.amount) * percentage / 100).toFixed(2);
+  }, [expense, currentRole]);
+  const [amount, setAmount] = useState('');
+  const [notes, setNotes] = useState('');
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => { if (expense) { setAmount(suggested); setNotes(''); setReceipt(null); } }, [expense, suggested]);
+
+  async function pickFile(): Promise<void> {
+    const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true, multiple: false });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    if (asset) setReceipt({ uri: asset.uri, name: asset.name, type: asset.mimeType ?? 'application/octet-stream', file: asset.file ?? undefined });
+  }
+
+  async function camera(): Promise<void> {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) { Alert.alert('Permesso richiesto', 'Consenti l’uso della fotocamera.'); return; }
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    if (asset) setReceipt({ uri: asset.uri, name: asset.fileName ?? `pagamento-${Date.now()}.jpg`, type: asset.mimeType ?? 'image/jpeg', file: asset.file });
+  }
+
+  async function save(): Promise<void> {
+    if (!expense) return;
+    const normalized = amount.trim().replace(',', '.');
+    if (!/^\d{1,10}(?:\.\d{1,2})?$/.test(normalized) || Number(normalized) <= 0) { Alert.alert('Pagamento', 'Inserisci un importo valido.'); return; }
+    try {
+      setBusy(true);
+      await api.expenses.createPayment(expense.id, { amount: normalized, notes: notes.trim() || undefined, receipt: receipt ?? undefined });
+      onDone();
+      Alert.alert('Pagamento registrato', 'L’altro genitore potrà confermare la ricezione.');
+    } catch (error) {
+      Alert.alert('Pagamento', error instanceof Error ? error.message : 'Registrazione non riuscita.');
+    } finally { setBusy(false); }
+  }
+
+  return <Modal visible={expense !== null} transparent animationType="slide" onRequestClose={onClose}><View style={styles.backdrop}><View style={styles.paymentModal}>
+    <View style={styles.modalHead}><View><Text style={styles.modalTitle}>Registra pagamento</Text><Text style={styles.meta}>{expense?.title}</Text></View><Pressable onPress={onClose}><Ionicons name="close" size={26} color={ui.colors.text} /></Pressable></View>
+    <Text style={styles.label}>Importo rimborsato (€)</Text><TextInput style={styles.input} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={ui.colors.muted} />
+    <Text style={styles.label}>Prova di pagamento</Text><View style={styles.actions}><Pressable style={styles.secondaryButton} onPress={() => void camera()}><Ionicons name="camera-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Foto</Text></Pressable><Pressable style={styles.secondaryButton} onPress={() => void pickFile()}><Ionicons name="document-attach-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>PDF / file</Text></Pressable></View>
+    {receipt ? <Text style={styles.muted}>Allegato: {receipt.name}</Text> : null}
+    <Text style={styles.label}>Note</Text><TextInput style={[styles.input, styles.notesInput]} multiline value={notes} onChangeText={setNotes} placeholder="Es. Bonifico effettuato" placeholderTextColor={ui.colors.muted} />
+    <View style={styles.actions}><Pressable style={styles.cancelButton} onPress={onClose}><Text style={styles.cancelText}>Annulla</Text></Pressable><Pressable disabled={busy} style={styles.approveButton} onPress={() => void save()}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.approveText}>Conferma pagamento</Text>}</Pressable></View>
+  </View></View></Modal>;
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: ui.colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: ui.colors.background },
-  content: { padding: 18, gap: 14, paddingBottom: 34 },
+  scrollContent: { paddingBottom: 34 },
+  content: { width: '100%', maxWidth: 1180, alignSelf: 'center', padding: 18, gap: 14 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   headerCopy: { flex: 1, gap: 3 },
   title: { fontSize: 28, fontWeight: '900', color: ui.colors.primaryDark },
@@ -311,26 +442,37 @@ const styles = StyleSheet.create({
   balanceCard: { backgroundColor: ui.colors.primaryDark, borderRadius: ui.radius.lg, padding: 20, gap: 6 },
   balanceLabel: { color: '#BFD8F1', fontWeight: '900', fontSize: 11, letterSpacing: 1.2 },
   balanceValue: { color: '#FFF', fontSize: 27, fontWeight: '900' },
+  balanceRows: { gap: 2 },
   balanceMeta: { color: '#DDEBFA', lineHeight: 19 },
-  sectionTitle: { fontSize: 21, fontWeight: '900', color: ui.colors.primaryDark, marginTop: 4 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sectionTitle: { fontSize: 21, fontWeight: '900', color: ui.colors.primaryDark },
+  countText: { color: ui.colors.muted, fontWeight: '700', fontSize: 12 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   card: { backgroundColor: ui.colors.card, borderRadius: ui.radius.lg, borderWidth: 1, borderColor: ui.colors.border, padding: 15, gap: 11 },
   expenseTop: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   expenseIcon: { width: 44, height: 44, borderRadius: 13, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
-  expenseCopy: { flex: 1, gap: 3 },
+  expenseCopy: { flex: 1, gap: 3, minWidth: 0 },
   cardTitle: { color: ui.colors.text, fontWeight: '900', fontSize: 16 },
   meta: { color: ui.colors.muted, fontSize: 12, lineHeight: 17 },
   amount: { color: ui.colors.text, fontWeight: '900', fontSize: 17 },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   statusPill: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   statusText: { fontWeight: '900', fontSize: 12 },
-  statusApproved: { backgroundColor: ui.colors.successSoft }, statusApprovedText: { color: ui.colors.success },
-  statusDeclined: { backgroundColor: ui.colors.dangerSoft }, statusDeclinedText: { color: ui.colors.danger },
-  statusPending: { backgroundColor: ui.colors.warningSoft }, statusPendingText: { color: ui.colors.warning },
+  statusSuccess: { backgroundColor: ui.colors.successSoft }, statusSuccessText: { color: ui.colors.success },
+  statusDanger: { backgroundColor: ui.colors.dangerSoft }, statusDangerText: { color: ui.colors.danger },
+  statusWarning: { backgroundColor: ui.colors.warningSoft }, statusWarningText: { color: ui.colors.warning },
+  statusInfo: { backgroundColor: ui.colors.primarySoft }, statusInfoText: { color: ui.colors.primary },
   extraordinaryPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ui.colors.primarySoft, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   extraordinaryText: { color: ui.colors.primary, fontWeight: '900', fontSize: 12 },
+  splitBox: { minHeight: 58, flexDirection: 'row', alignItems: 'center', borderRadius: 13, backgroundColor: ui.colors.input, paddingHorizontal: 10 },
+  splitItem: { flex: 1, alignItems: 'center', gap: 2 },
+  splitDivider: { width: 1, height: 34, backgroundColor: ui.colors.border },
+  splitRole: { color: ui.colors.muted, fontSize: 11, fontWeight: '800' },
+  splitValue: { color: ui.colors.primaryDark, fontSize: 17, fontWeight: '900' },
+  childRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   signedText: { color: ui.colors.success, fontWeight: '800', fontSize: 12 },
   actions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  secondaryButton: { flex: 1, minWidth: 100, minHeight: 44, borderRadius: ui.radius.md, borderWidth: 1, borderColor: ui.colors.border, backgroundColor: ui.colors.input, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 10 },
+  secondaryButton: { flex: 1, minWidth: 110, minHeight: 44, borderRadius: ui.radius.md, borderWidth: 1, borderColor: ui.colors.border, backgroundColor: ui.colors.input, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 10 },
   secondaryText: { color: ui.colors.primaryDark, fontWeight: '800' },
   declineButton: { flex: 1, minWidth: 100, minHeight: 44, borderRadius: ui.radius.md, backgroundColor: ui.colors.dangerSoft, alignItems: 'center', justifyContent: 'center' },
   declineText: { color: ui.colors.danger, fontWeight: '900' },
@@ -339,9 +481,18 @@ const styles = StyleSheet.create({
   disabledButton: { opacity: 0.45 },
   cancelButton: { flex: 1, minHeight: 46, borderRadius: ui.radius.md, backgroundColor: ui.colors.input, borderWidth: 1, borderColor: ui.colors.border, alignItems: 'center', justifyContent: 'center' },
   cancelText: { color: ui.colors.text, fontWeight: '800' },
+  paymentList: { gap: 8, paddingTop: 4, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: ui.colors.border },
+  paymentTitle: { color: ui.colors.primaryDark, fontWeight: '900', fontSize: 13 },
+  paymentRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: ui.colors.input, borderRadius: 12, padding: 10 },
+  paymentCopy: { flex: 1 },
+  paymentAmount: { color: ui.colors.text, fontWeight: '900', fontSize: 13 },
+  iconButton: { width: 38, height: 38, borderRadius: 12, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  confirmPaymentButton: { minHeight: 38, borderRadius: 11, paddingHorizontal: 11, backgroundColor: ui.colors.primary, alignItems: 'center', justifyContent: 'center' },
+  confirmPaymentText: { color: '#FFF', fontSize: 12, fontWeight: '900' },
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(10,50,103,.35)' },
-  formModal: { backgroundColor: ui.colors.card, padding: 20, paddingBottom: 30, borderTopLeftRadius: 28, borderTopRightRadius: 28, gap: 10 },
-  otpModal: { backgroundColor: ui.colors.card, padding: 22, paddingBottom: 28, borderTopLeftRadius: 28, borderTopRightRadius: 28, gap: 14, alignItems: 'center' },
+  formModal: { backgroundColor: ui.colors.card, padding: 20, paddingBottom: 30, borderTopLeftRadius: 28, borderTopRightRadius: 28, gap: 10, width: '100%', maxWidth: 720, alignSelf: 'center' },
+  paymentModal: { backgroundColor: ui.colors.card, padding: 20, paddingBottom: 30, borderTopLeftRadius: 28, borderTopRightRadius: 28, gap: 10, width: '100%', maxWidth: 650, alignSelf: 'center' },
+  otpModal: { backgroundColor: ui.colors.card, padding: 22, paddingBottom: 28, borderTopLeftRadius: 28, borderTopRightRadius: 28, gap: 14, alignItems: 'center', width: '100%', maxWidth: 620, alignSelf: 'center' },
   otpIcon: { width: 58, height: 58, borderRadius: 18, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
   modalHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   modalTitle: { color: ui.colors.primaryDark, fontSize: 23, fontWeight: '900' },
@@ -349,10 +500,14 @@ const styles = StyleSheet.create({
   input: { minHeight: 50, borderRadius: ui.radius.md, borderWidth: 1, borderColor: ui.colors.border, backgroundColor: ui.colors.input, paddingHorizontal: 13, color: ui.colors.text },
   notesInput: { minHeight: 86, paddingTop: 12, textAlignVertical: 'top' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { paddingHorizontal: 11, paddingVertical: 8, borderRadius: 999, backgroundColor: ui.colors.input, borderWidth: 1, borderColor: ui.colors.border },
+  chip: { paddingHorizontal: 11, paddingVertical: 8, borderRadius: 999, backgroundColor: ui.colors.input, borderWidth: 1, borderColor: ui.colors.border, flexDirection: 'row', alignItems: 'center', gap: 5 },
   chipSelected: { backgroundColor: ui.colors.primarySoft, borderColor: ui.colors.primary },
   chipText: { color: ui.colors.muted, fontWeight: '700' },
   chipTextSelected: { color: ui.colors.primary, fontWeight: '900' },
+  percentageRow: { flexDirection: 'row', gap: 10 },
+  percentageField: { flex: 1, gap: 5 },
+  percentageLabel: { color: ui.colors.muted, fontSize: 12, fontWeight: '800' },
+  percentageHint: { color: ui.colors.muted, fontSize: 12, textAlign: 'right' },
   extraordinaryToggle: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: ui.colors.input, borderWidth: 1, borderColor: ui.colors.border, borderRadius: ui.radius.md, padding: 13 },
   extraordinaryCopy: { flex: 1, gap: 3 },
   otpSubtitle: { color: ui.colors.text, textAlign: 'center', lineHeight: 21, fontWeight: '700' },
@@ -362,6 +517,7 @@ const styles = StyleSheet.create({
   otpInputFilled: { borderColor: ui.colors.primary, backgroundColor: ui.colors.primarySoft },
   otpActions: { width: '100%', flexDirection: 'row', gap: 9 },
   resendText: { color: ui.colors.primary, fontWeight: '900' },
-  preview: { backgroundColor: ui.colors.card, margin: 18, borderRadius: 20, padding: 14, gap: 12, maxHeight: '86%' },
+  preview: { backgroundColor: ui.colors.card, margin: 18, borderRadius: 20, padding: 14, gap: 12, maxHeight: '86%', width: '92%', maxWidth: 760, alignSelf: 'center' },
   image: { width: '100%', height: 500, backgroundColor: ui.colors.input, borderRadius: 12 },
+  filePreview: { minHeight: 250, alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: ui.colors.input, borderRadius: 14, padding: 24 },
 });
