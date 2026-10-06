@@ -11,6 +11,7 @@ import type {
   DocumentCategory,
   Expense,
   ExpenseCategory,
+  ExpensePayment,
   FamilyAgreement,
   FamilyBalance,
   FamilyActionResponse,
@@ -134,6 +135,20 @@ export const api = {
     approve: (id: string) => request<Expense>(`/expenses/${encodeURIComponent(id)}/approve`, { method: 'POST', body: JSON.stringify({}) }),
     decline: (id: string) => request<Expense>(`/expenses/${encodeURIComponent(id)}/decline`, { method: 'POST' }),
     receiptSource: (path: string) => ({ uri: `${API_URL}${path}`, headers: authHeaders() }),
+    payments: (id: string) => request<ExpensePayment[]>(`/expenses/${encodeURIComponent(id)}/payments`),
+    createPayment: (id: string, input: { amount: string; paidAt?: string; notes?: string; receipt?: { uri: string; name: string; type: string; file?: Blob } }) => {
+      const form = new FormData();
+      form.append('amount', input.amount);
+      if (input.paidAt) form.append('paidAt', input.paidAt);
+      if (input.notes?.trim()) form.append('notes', input.notes.trim());
+      if (input.receipt) {
+        if (input.receipt.file) form.append('receipt', input.receipt.file, input.receipt.name);
+        else form.append('receipt', { uri: input.receipt.uri, name: input.receipt.name, type: input.receipt.type } as unknown as Blob);
+      }
+      return request<ExpensePayment>(`/expenses/${encodeURIComponent(id)}/payments`, { method: 'POST', body: form });
+    },
+    confirmPayment: (expenseId: string, paymentId: string) => request<{ id: string; status: 'confirmed'; expenseStatus: Expense['status'] }>(`/expenses/${encodeURIComponent(expenseId)}/payments/${encodeURIComponent(paymentId)}/confirm`, { method: 'POST' }),
+    paymentReceiptSource: (path: string) => ({ uri: `${API_URL}${path}`, headers: authHeaders() }),
   },
   agreements: {
     list: (status?: AgreementStatus) => request<FamilyAgreement[]>(`/agreements${status ? `?status=${encodeURIComponent(status)}` : ''}`),
