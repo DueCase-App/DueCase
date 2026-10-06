@@ -27,21 +27,21 @@ const agreementSelect = `
   SELECT a.id,
          a.family_id AS "familyId",
          a.created_by AS "createdBy",
-         creator.display_name AS "createdByName",
-         creator.role AS "createdByRole",
+         COALESCE(creator.display_name, 'Account eliminato') AS "createdByName",
+         COALESCE(creator.role, a.created_by_role) AS "createdByRole",
          a.category,
          a.title,
          a.body,
          a.status,
          a.reviewed_by AS "reviewedBy",
          reviewer.display_name AS "reviewedByName",
-         reviewer.role AS "reviewedByRole",
+         COALESCE(reviewer.role, a.reviewed_by_role) AS "reviewedByRole",
          a.response_note AS "responseNote",
          a.reviewed_at AS "reviewedAt",
          a.created_at AS "createdAt",
          a.updated_at AS "updatedAt"
     FROM family_agreements a
-    JOIN users creator ON creator.id = a.created_by
+    LEFT JOIN users creator ON creator.id = a.created_by
     LEFT JOIN users reviewer ON reviewer.id = a.reviewed_by
 `;
 
@@ -93,26 +93,26 @@ router.post('/', asyncHandler(async (req, res) => {
   const body = createSchema.parse(req.body);
   const id = randomUUID();
   const { rows } = await pool.query(
-    `INSERT INTO family_agreements (id, family_id, created_by, category, title, body)
-     VALUES ($1,$2,$3,$4,$5,$6)
-     RETURNING id, family_id AS "familyId", created_by AS "createdBy", category, title, body,
-               status, reviewed_by AS "reviewedBy", response_note AS "responseNote",
+    `INSERT INTO family_agreements (id, family_id, created_by, created_by_role, category, title, body)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
+     RETURNING id, family_id AS "familyId", created_by AS "createdBy", created_by_role AS "createdByRole", category, title, body,
+               status, reviewed_by AS "reviewedBy", reviewed_by_role AS "reviewedByRole", response_note AS "responseNote",
                reviewed_at AS "reviewedAt", created_at AS "createdAt", updated_at AS "updatedAt"`,
-    [id, auth.familyId, auth.userId, body.category, body.title, body.body],
+    [id, auth.familyId, auth.userId, auth.role, body.category, body.title, body.body],
   );
   const agreement = rows[0];
   await appendHistory({ agreementId: id, familyId: auth.familyId, actorUserId: auth.userId, action: 'created', snapshot: agreement });
   await pool.query(
     `INSERT INTO family_activity_history (id, family_id, actor_user_id, entity_type, entity_id, action, details)
      VALUES ($1,$2,$3,'agreement',$4,'created',$5::jsonb)`,
-    [randomUUID(), auth.familyId, auth.userId, id, JSON.stringify({ title: body.title, category: body.category })],
+    [randomUUID(), auth.familyId, auth.userId, id, JSON.stringify({ title: body.title, category: body.category, role: auth.role })],
   );
   await sendPushToOtherParent(auth.familyId, auth.userId, {
     title: 'Nuovo accordo DueCase',
     body: `${parentRoleSubject(auth.role)} ha proposto un nuovo accordo: ${body.title}`,
     data: { type: 'agreement_created', screen: 'agreements', agreementId: id },
   });
-  res.status(201).json({ ...agreement, canRespond: false });
+  res.status(201).json({ ...agreement, createdByName: auth.displayName, canRespond: false });
 }));
 
 router.post('/:id/respond', asyncHandler(async (req, res) => {
@@ -130,21 +130,21 @@ router.post('/:id/respond', asyncHandler(async (req, res) => {
 
   const { rows } = await pool.query(
     `UPDATE family_agreements
-        SET status = $1, reviewed_by = $2, response_note = $3, reviewed_at = clock_timestamp(), updated_at = NOW()
-      WHERE id = $4 AND family_id = $5
-      RETURNING id, family_id AS "familyId", created_by AS "createdBy", category, title, body,
-                status, reviewed_by AS "reviewedBy", response_note AS "responseNote",
+        SET status = $1, reviewed_by = $2, reviewed_by_role = $3, response_note = $4, reviewed_at = clock_timestamp(), updated_at = NOW()
+      WHERE id = $5 AND family_id = $6
+      RETURNING id, family_id AS "familyId", created_by AS "createdBy", created_by_role AS "createdByRole", category, title, body,
+                status, reviewed_by AS "reviewedBy", reviewed_by_role AS "reviewedByRole", response_note AS "responseNote",
                 reviewed_at AS "reviewedAt", created_at AS "createdAt", updated_at AS "updatedAt"`,
-    [body.status, auth.userId, body.note ?? null, agreementId, auth.familyId],
+    [body.status, auth.userId, auth.role, body.note ?? null, agreementId, auth.familyId],
   );
   const agreement = rows[0];
   await appendHistory({ agreementId, familyId: auth.familyId, actorUserId: auth.userId, action: body.status, snapshot: agreement });
   await pool.query(
     `INSERT INTO family_activity_history (id, family_id, actor_user_id, entity_type, entity_id, action, details)
      VALUES ($1,$2,$3,'agreement',$4,$5,$6::jsonb)`,
-    [randomUUID(), auth.familyId, auth.userId, agreementId, body.status, JSON.stringify({ note: body.note ?? null })],
+    [randomUUID(), auth.familyId, auth.userId, agreementId, body.status, JSON.stringify({ note: body.note ?? null, role: auth.role })],
   );
-  res.json({ ...agreement, canRespond: false });
+  res.json({ ...agreement, reviewedByName: auth.displayName, canRespond: false });
 }));
 
 export default router;
