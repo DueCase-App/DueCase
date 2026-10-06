@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { requireAuth, requireFamily } from '../auth.js';
 import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
-import { parentRoleSubject, sendPushToOtherParent } from '../services/notificationService.js';
+import { parentRoleSubject, sendPushToOtherParent, sendPushToUser } from '../services/notificationService.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -24,9 +24,7 @@ const exceptionSchema = z.object({
   overnight: z.boolean().optional().default(true),
   notes: z.string().trim().max(2000).nullable().optional(),
 });
-const responseSchema = z.object({
-  status: z.enum(['approved','rejected']),
-});
+const responseSchema = z.object({ status: z.enum(['approved','rejected']) });
 
 function romeDateKey(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -73,6 +71,11 @@ router.put('/pattern/:childId/:weekday', asyncHandler(async (req, res) => {
      RETURNING id, child_id AS "childId", weekday, custodian_role AS "custodianRole",
                overnight, notes, created_at AS "createdAt", updated_at AS "updatedAt"`,
     [id, auth.familyId, childId, weekday, body.custodianRole, body.overnight, body.notes ?? null, auth.userId],
+  );
+  await pool.query(
+    `INSERT INTO family_activity_history (id, family_id, actor_user_id, entity_type, entity_id, action, details)
+     VALUES ($1,$2,$3,'custody_pattern',$4,'updated',$5::jsonb)`,
+    [randomUUID(), auth.familyId, auth.userId, childId, JSON.stringify({ weekday, custodianRole: body.custodianRole, overnight: body.overnight })],
   );
   res.json(rows[0]);
 }));
@@ -124,12 +127,15 @@ router.get('/exceptions', asyncHandler(async (req, res) => {
     `SELECT e.id, e.child_id AS "childId", c.display_name AS "childName",
             e.custody_date::text AS "custodyDate", e.custodian_role AS "custodianRole",
             e.overnight, e.notes, e.requested_by AS "requestedBy",
-            requester.display_name AS "requestedByName", requester.role AS "requestedByRole",
-            e.status, e.reviewed_by AS "reviewedBy", e.reviewed_at AS "reviewedAt",
-            e.created_at AS "createdAt", e.updated_at AS "updatedAt"
+            COALESCE(requester.display_name, 'Account eliminato') AS "requestedByName",
+            COALESCE(requester.role, e.requested_by_role) AS "requestedByRole",
+            e.status, e.reviewed_by AS "reviewedBy",
+            COALESCE(reviewer.role, e.reviewed_by_role) AS "reviewedByRole",
+            e.reviewed_at AS "reviewedAt", e.created_at AS "createdAt", e.updated_at AS "updatedAt"
        FROM custody_exceptions e
-       JOIN children c ON c.id = e.child_id
-       JOIN users requester ON requester.id = e.requested_by
+       JOIN children c ON c.id = e.child_id AND c.family_id = e.family_id
+       LEFT JOIN users requester ON requester.id = e.requested_by
+       LEFT JOIN users reviewer ON reviewer.id = e.reviewed_by
       WHERE e.family_id = $1
       ORDER BY e.custody_date DESC, e.created_at DESC`,
     [auth.familyId],
@@ -140,33 +146,42 @@ router.get('/exceptions', asyncHandler(async (req, res) => {
 router.post('/exceptions', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const body = exceptionSchema.parse(req.body);
-  const child = await pool.query(`SELECT id FROM children WHERE id = $1 AND family_id = $2`, [body.childId, auth.familyId]);
-  if (!child.rows[0]) throw new ApiError(404, 'Figlio non trovato', 'CHILD_NOT_FOUND');
+  const childResult = await pool.query<{ displayName: string }>(
+    `SELECT display_name AS "displayName" FROM children WHERE id = $1 AND family_id = $2`,
+    [body.childId, auth.familyId],
+  );
+  const child = childResult.rows[0];
+  if (!child) throw new ApiError(404, 'Figlio non trovato', 'CHILD_NOT_FOUND');
 
   const id = randomUUID();
   const { rows } = await pool.query(
     `INSERT INTO custody_exceptions
-      (id, family_id, child_id, custody_date, custodian_role, overnight, notes, requested_by)
-     VALUES ($1,$2,$3,$4::date,$5,$6,$7,$8)
+      (id, family_id, child_id, custody_date, custodian_role, overnight, notes, requested_by, requested_by_role)
+     VALUES ($1,$2,$3,$4::date,$5,$6,$7,$8,$9)
      RETURNING id, child_id AS "childId", custody_date::text AS "custodyDate",
                custodian_role AS "custodianRole", overnight, notes, requested_by AS "requestedBy",
-               status, created_at AS "createdAt", updated_at AS "updatedAt"`,
-    [id, auth.familyId, body.childId, body.custodyDate, body.custodianRole, body.overnight, body.notes ?? null, auth.userId],
+               requested_by_role AS "requestedByRole", status, created_at AS "createdAt", updated_at AS "updatedAt"`,
+    [id, auth.familyId, body.childId, body.custodyDate, body.custodianRole, body.overnight, body.notes ?? null, auth.userId, auth.role],
+  );
+  await pool.query(
+    `INSERT INTO family_activity_history (id, family_id, actor_user_id, entity_type, entity_id, action, details)
+     VALUES ($1,$2,$3,'custody_exception',$4,'created',$5::jsonb)`,
+    [randomUUID(), auth.familyId, auth.userId, id, JSON.stringify({ childId: body.childId, custodyDate: body.custodyDate, custodianRole: body.custodianRole })],
   );
   await sendPushToOtherParent(auth.familyId, auth.userId, {
     title: 'Richiesta cambio permanenza',
-    body: `${parentRoleSubject(auth.role)} ha richiesto una modifica per il ${body.custodyDate}.`,
+    body: `${parentRoleSubject(auth.role)} ha richiesto una modifica per ${child.displayName} il ${body.custodyDate}.`,
     data: { type: 'custody_exception', screen: 'calendar', exceptionId: id },
   });
-  res.status(201).json({ ...rows[0], canRespond: false });
+  res.status(201).json({ ...rows[0], childName: child.displayName, requestedByName: auth.displayName, canRespond: false });
 }));
 
 router.post('/exceptions/:id/respond', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const id = uuid.parse(req.params.id);
   const body = responseSchema.parse(req.body);
-  const existing = await pool.query(
-    `SELECT id, requested_by AS "requestedBy", status FROM custody_exceptions
+  const existing = await pool.query<{ requestedBy: string; status: string }>(
+    `SELECT requested_by AS "requestedBy", status FROM custody_exceptions
       WHERE id = $1 AND family_id = $2 FOR UPDATE`,
     [id, auth.familyId],
   );
@@ -177,14 +192,25 @@ router.post('/exceptions/:id/respond', asyncHandler(async (req, res) => {
 
   const updated = await pool.query(
     `UPDATE custody_exceptions
-        SET status = $1, reviewed_by = $2, reviewed_at = clock_timestamp(), updated_at = NOW()
-      WHERE id = $3 AND family_id = $4
+        SET status = $1, reviewed_by = $2, reviewed_by_role = $3, reviewed_at = clock_timestamp(), updated_at = NOW()
+      WHERE id = $4 AND family_id = $5
       RETURNING id, child_id AS "childId", custody_date::text AS "custodyDate",
                 custodian_role AS "custodianRole", overnight, notes, requested_by AS "requestedBy",
-                status, reviewed_by AS "reviewedBy", reviewed_at AS "reviewedAt",
+                requested_by_role AS "requestedByRole", status, reviewed_by AS "reviewedBy",
+                reviewed_by_role AS "reviewedByRole", reviewed_at AS "reviewedAt",
                 created_at AS "createdAt", updated_at AS "updatedAt"`,
-    [body.status, auth.userId, id, auth.familyId],
+    [body.status, auth.userId, auth.role, id, auth.familyId],
   );
+  await pool.query(
+    `INSERT INTO family_activity_history (id, family_id, actor_user_id, entity_type, entity_id, action, details)
+     VALUES ($1,$2,$3,'custody_exception',$4,$5,$6::jsonb)`,
+    [randomUUID(), auth.familyId, auth.userId, id, body.status, JSON.stringify({ role: auth.role })],
+  );
+  await sendPushToUser(row.requestedBy, {
+    title: body.status === 'approved' ? 'Cambio permanenza accettato' : 'Cambio permanenza rifiutato',
+    body: `${parentRoleSubject(auth.role)} ha ${body.status === 'approved' ? 'accettato' : 'rifiutato'} la richiesta di cambio permanenza.`,
+    data: { type: `custody_exception_${body.status}`, screen: 'calendar', exceptionId: id },
+  });
   res.json({ ...updated.rows[0], canRespond: false });
 }));
 
