@@ -22,6 +22,7 @@
           }
         }
       ],
+      "./plugins/withDueCaseSplashFallback",
       [
         "expo-notifications",
         {
