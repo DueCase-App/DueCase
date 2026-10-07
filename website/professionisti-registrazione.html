@@ -2,65 +2,135 @@
 <html lang="it">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="robots" content="noindex,nofollow">
   <title>DueCase · Anteprima registrazione professionista</title>
   <style>
-    :root{--blue:#1769E0;--dark:#0C2B63;--orange:#FF922E;--sky:#EAF4FF;--border:#D9E7F4;--muted:#6B7F9F}
+    :root{
+      --blue:#1769E0;--blue2:#2A7BE8;--dark:#0C2B63;--text:#15345F;
+      --orange:#FF922E;--sky:#EAF4FF;--cream:#FFF8ED;--border:#D9E7F4;
+      --muted:#6B7F9F;--white:#fff;--shadow:0 22px 64px rgba(12,43,99,.12)
+    }
     *{box-sizing:border-box}
-    body{margin:0;min-height:100vh;font-family:Arial,Helvetica,sans-serif;color:var(--dark);background:linear-gradient(135deg,#DCEFFF 0%,#FFF9F0 52%,#FFE4C3 100%)}
-    .top{height:54px;display:flex;justify-content:space-between;align-items:center;padding:0 22px;background:rgba(255,255,255,.92);border-bottom:1px solid var(--border);backdrop-filter:blur(12px)}
-    .brand{display:flex;align-items:center;gap:10px}.brand img{height:38px;width:auto;display:block}.brand span{font-size:13px;font-weight:800;color:var(--dark)}
-    .badge{padding:5px 9px;border-radius:999px;background:var(--sky);color:var(--blue);font-size:11px;font-weight:800}
-    .wrap{width:min(1180px,calc(100% - 28px));margin:14px auto;display:grid;grid-template-columns:330px minmax(0,1fr);gap:14px;align-items:stretch}
-    .hero,.card{background:rgba(255,255,255,.96);border:1px solid var(--border);border-radius:18px;box-shadow:0 10px 28px rgba(12,43,99,.08)}
-    .hero{padding:20px}.eyebrow{font-size:10px;font-weight:800;letter-spacing:.12em;color:var(--orange);margin:0 0 5px}.hero h1{font-size:26px;line-height:1.04;margin:0 0 9px}.hero>p{font-size:12px;line-height:1.38;color:#486589;margin:0}
-    .trust{display:grid;gap:6px;margin-top:12px}.trust div{padding:8px 9px;border-radius:10px;background:linear-gradient(135deg,#F1F8FF,#FFF8ED)}.trust strong{display:block;font-size:12px;margin-bottom:1px}.fine{font-size:10.5px;line-height:1.28;color:var(--muted)}
-    .card{padding:16px}.invite{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:#F1F8FF;border:1px solid #CFE5FA;margin-bottom:8px}.invite strong{font-size:12px;white-space:nowrap}.invite .fine{font-size:10px}
-    .form-head{display:flex;align-items:end;justify-content:space-between;gap:10px;margin-bottom:4px}.form-head h2{font-size:20px;line-height:1.08;margin:0}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-    label{display:block;font-weight:700;margin:6px 0 3px;font-size:12px}input{width:100%;height:36px;padding:7px 10px;border:1px solid var(--border);border-radius:10px;background:#F8FBFF;font-size:13px;outline:none}
-    button{width:100%;height:38px;margin-top:9px;border:0;border-radius:10px;background:linear-gradient(135deg,#2A7BE8,#1769E0,#0F5AC4);color:white;font-size:13px;font-weight:800;cursor:not-allowed;opacity:.92}.note{margin-top:7px;padding:7px 9px;border-radius:10px;background:#FFF0DD;color:#8B4B0C;font-size:10.5px}.optional{font-weight:400;color:var(--muted)}
-    @media(min-width:821px) and (min-height:650px){.wrap{min-height:calc(100vh - 82px)}}
-    @media(max-width:820px){.top{padding:0 14px}.brand img{height:34px}.brand span{display:none}.wrap{grid-template-columns:1fr;margin:10px auto;width:min(100% - 20px,640px)}.hero{padding:16px}.hero h1{font-size:23px}.card{padding:14px}.grid2{grid-template-columns:1fr}.invite{display:block}.invite strong{display:block;margin-bottom:2px}}
+    html,body{margin:0;min-height:100%;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text)}
+    body{min-height:100dvh;background:linear-gradient(135deg,#DCEFFF 0%,#FFF9F0 52%,#FFE4C3 100%);overflow:hidden}
+
+    .top{
+      height:72px;display:flex;align-items:center;justify-content:space-between;
+      padding:0 clamp(20px,3vw,48px);background:rgba(255,255,255,.88);
+      border-bottom:1px solid rgba(217,231,244,.9);backdrop-filter:blur(16px)
+    }
+    .brand{display:flex;align-items:center;gap:14px;min-width:0}
+    .brand img{height:48px;width:auto;display:block;object-fit:contain}
+    .brand-copy{display:flex;flex-direction:column;line-height:1.05}
+    .brand-copy strong{font-size:17px;color:var(--dark)}
+    .brand-copy span{margin-top:5px;font-size:12px;color:var(--muted)}
+    .badge{padding:8px 13px;border-radius:999px;background:var(--sky);color:var(--blue);font-size:12px;font-weight:900;letter-spacing:.04em}
+
+    .page{
+      height:calc(100dvh - 72px);padding:clamp(18px,2.2vw,32px);
+      display:grid;grid-template-columns:minmax(320px,.82fr) minmax(520px,1.55fr);gap:clamp(18px,2vw,28px)
+    }
+    .panel{border:1px solid rgba(217,231,244,.95);border-radius:30px;box-shadow:var(--shadow);overflow:hidden;min-height:0}
+
+    .intro{
+      position:relative;padding:clamp(30px,3.4vw,56px);display:flex;flex-direction:column;
+      justify-content:space-between;background:linear-gradient(155deg,rgba(255,255,255,.98),rgba(241,248,255,.95) 52%,rgba(255,248,237,.96));
+    }
+    .intro:after{content:"";position:absolute;width:290px;height:290px;border-radius:50%;right:-130px;bottom:-120px;background:radial-gradient(circle,rgba(255,146,46,.20),rgba(255,146,46,0) 70%);pointer-events:none}
+    .intro-top{position:relative;z-index:1}
+    .eyebrow{margin:0 0 12px;font-size:12px;font-weight:900;letter-spacing:.14em;color:var(--orange)}
+    .intro h1{margin:0;max-width:560px;font-size:clamp(36px,3.8vw,58px);line-height:.98;letter-spacing:-.04em;color:var(--dark)}
+    .intro-lead{max-width:590px;margin:22px 0 0;font-size:clamp(15px,1.2vw,18px);line-height:1.58;color:#486589}
+    .brand-watermark{display:block;width:min(210px,42%);max-height:140px;object-fit:contain;margin:22px 0 0;opacity:.96}
+    .benefits{position:relative;z-index:1;display:grid;gap:12px;margin-top:26px}
+    .benefit{display:grid;grid-template-columns:44px 1fr;gap:13px;align-items:center;padding:14px 16px;border-radius:18px;background:rgba(255,255,255,.78);border:1px solid rgba(217,231,244,.92)}
+    .benefit-icon{width:44px;height:44px;display:grid;place-items:center;border-radius:14px;background:linear-gradient(135deg,#EAF4FF,#FFF0DD);font-weight:900;color:var(--blue)}
+    .benefit strong{display:block;color:var(--dark);font-size:14px}.benefit span{display:block;margin-top:3px;font-size:12.5px;line-height:1.4;color:var(--muted)}
+
+    .registration{background:rgba(255,255,255,.97);display:flex;min-height:0}
+    .registration-inner{width:100%;padding:clamp(28px,3vw,48px);display:flex;flex-direction:column;justify-content:center;min-height:0}
+    .invite{display:flex;justify-content:space-between;gap:18px;align-items:center;padding:16px 18px;border-radius:18px;background:linear-gradient(135deg,#F1F8FF,#FBFDFF);border:1px solid #CFE5FA;margin-bottom:clamp(22px,2.2vh,30px)}
+    .invite strong{color:var(--dark);font-size:15px}.invite span{font-size:12.5px;line-height:1.45;color:var(--muted);text-align:right}
+    .form-head{margin-bottom:clamp(18px,2vh,26px)}
+    .form-head h2{margin:0;color:var(--dark);font-size:clamp(28px,2.35vw,40px);line-height:1.05;letter-spacing:-.025em}
+    .form-head p:not(.eyebrow){margin:10px 0 0;color:var(--muted);font-size:14px;line-height:1.45}
+    .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:clamp(14px,1.5vw,22px)}
+    .field{min-width:0}.field.full{grid-column:1/-1}
+    label{display:block;margin:0 0 7px;font-size:13.5px;font-weight:800;color:var(--dark)}
+    .optional{font-weight:500;color:var(--muted)}
+    input{width:100%;height:52px;padding:0 15px;border:1px solid var(--border);border-radius:14px;background:#F8FBFF;color:var(--text);font-size:15.5px;outline:none}
+    input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(23,105,224,.10)}
+    .submit{width:100%;height:54px;margin-top:clamp(18px,2.2vh,28px);border:0;border-radius:15px;background:linear-gradient(135deg,var(--blue2),var(--blue),#0F5AC4);color:#fff;font-size:16px;font-weight:900;box-shadow:0 11px 26px rgba(23,105,224,.22);cursor:not-allowed;opacity:.96}
+    .note{display:flex;gap:8px;align-items:flex-start;margin-top:14px;padding:12px 14px;border-radius:14px;background:#FFF0DD;color:#8B4B0C;font-size:12px;line-height:1.4}
+    .note strong{white-space:nowrap}
+
+    @media (max-height:760px) and (min-width:981px){
+      .page{padding:16px 20px;gap:18px}.intro{padding:28px 34px}.intro h1{font-size:36px}.intro-lead{margin-top:14px;font-size:14px}.brand-watermark{width:135px;max-height:80px;margin-top:12px}.benefits{gap:8px;margin-top:14px}.benefit{padding:9px 12px}.benefit-icon{width:36px;height:36px;border-radius:11px}.benefit span{font-size:11px}.registration-inner{padding:24px 32px}.invite{padding:11px 14px;margin-bottom:14px}.form-head{margin-bottom:13px}.form-head h2{font-size:28px}.form-grid{gap:11px 16px}input{height:43px}.submit{height:46px;margin-top:14px}.note{padding:8px 11px;margin-top:9px}
+    }
+
+    @media (max-width:980px){
+      body{overflow:auto}.top{height:68px}.brand img{height:43px}.page{height:auto;min-height:calc(100dvh - 68px);grid-template-columns:1fr;padding:18px;gap:18px}.intro{padding:28px}.intro h1{font-size:36px;max-width:none}.intro-lead{margin-top:14px}.brand-watermark{display:none}.benefits{grid-template-columns:repeat(3,1fr);gap:10px;margin-top:20px}.benefit{display:block;padding:12px}.benefit-icon{width:38px;height:38px;margin-bottom:8px}.registration-inner{padding:28px}.invite{margin-bottom:22px}.registration{min-height:0}
+    }
+
+    @media (max-width:680px){
+      .top{height:62px;padding:0 14px}.brand{gap:8px}.brand img{height:38px}.brand-copy span{display:none}.brand-copy strong{font-size:15px}.badge{padding:6px 9px;font-size:10px}
+      .page{padding:12px;gap:12px}.panel{border-radius:22px}.intro{padding:22px}.intro h1{font-size:30px}.intro-lead{font-size:14px}.benefits{grid-template-columns:1fr;gap:8px}.benefit{display:grid;grid-template-columns:38px 1fr;align-items:center;margin:0}.benefit-icon{margin:0}.registration-inner{padding:20px}.invite{display:block;padding:13px 14px;margin-bottom:18px}.invite span{display:block;margin-top:5px;text-align:left}.form-head h2{font-size:27px}.form-grid{grid-template-columns:1fr;gap:13px}.field.full{grid-column:auto}input{height:50px}.submit{height:52px;margin-top:18px}.note{display:block}.note strong{display:block;margin-bottom:2px}
+    }
+
+    @media (max-width:380px){.intro h1{font-size:27px}.registration-inner{padding:17px}.form-head h2{font-size:24px}}
   </style>
 </head>
 <body>
   <header class="top">
-    <div class="brand"><img src="https://raw.githubusercontent.com/tecnico-elios/DueCase/main/frontend/assets/duecase-logo-hd.png" alt="DueCase"><span>Accesso professionisti</span></div>
+    <div class="brand">
+      <img src="https://raw.githubusercontent.com/tecnico-elios/DueCase/main/frontend/assets/duecase-logo-hd.png" alt="DueCase">
+      <div class="brand-copy"><strong>DueCase</strong><span>Accesso professionisti</span></div>
+    </div>
     <div class="badge">ANTEPRIMA</div>
   </header>
-  <main class="wrap">
-    <section class="hero">
-      <p class="eyebrow">AREA RISERVATA</p>
-      <h1>Primo accesso del professionista</h1>
-      <p>Schermata mostrata a un avvocato o professionista quando apre per la prima volta un invito valido ricevuto da un genitore DueCase.</p>
-      <div class="trust">
-        <div><strong>Sola lettura</strong><span class="fine">Nessuna modifica ai dati della famiglia.</span></div>
-        <div><strong>Solo su invito</strong><span class="fine">Non esiste registrazione libera dal sito.</span></div>
-        <div><strong>Permessi scelti dal genitore</strong><span class="fine">Visualizza soltanto le sezioni autorizzate.</span></div>
+
+  <main class="page">
+    <section class="panel intro">
+      <div class="intro-top">
+        <p class="eyebrow">AREA RISERVATA</p>
+        <h1>Primo accesso del professionista</h1>
+        <p class="intro-lead">La schermata dedicata ad avvocati e professionisti invitati da un genitore DueCase. L’accesso resta separato da quello di Papà e Mamma.</p>
+        <img class="brand-watermark" src="https://raw.githubusercontent.com/tecnico-elios/DueCase/main/frontend/assets/duecase-logo-hd.png" alt="">
+      </div>
+
+      <div class="benefits">
+        <div class="benefit"><div class="benefit-icon">✓</div><div><strong>Sola lettura</strong><span>Nessuna modifica ai dati della famiglia.</span></div></div>
+        <div class="benefit"><div class="benefit-icon">↗</div><div><strong>Solo su invito</strong><span>Nessuna registrazione libera dal sito pubblico.</span></div></div>
+        <div class="benefit"><div class="benefit-icon">◉</div><div><strong>Permessi controllati</strong><span>Il genitore sceglie esattamente quali sezioni rendere visibili.</span></div></div>
       </div>
     </section>
 
-    <section class="card">
-      <div class="invite">
-        <strong>Invito di Mario Rossi</strong>
-        <div class="fine">Pratica Famiglia Rossi · Calendario, Spese, Accordi, Documenti, Dossier</div>
+    <section class="panel registration">
+      <div class="registration-inner">
+        <div class="invite">
+          <strong>Invito di Mario Rossi</strong>
+          <span>Pratica Famiglia Rossi · Calendario, Spese, Accordi, Documenti, Dossier</span>
+        </div>
+
+        <div class="form-head">
+          <p class="eyebrow">PRIMO ACCESSO</p>
+          <h2>Crea il tuo account professionista</h2>
+          <p>Inserisci i tuoi dati. L’email è quella a cui il genitore ha inviato l’invito.</p>
+        </div>
+
+        <div class="form-grid">
+          <div class="field"><label>Nome</label><input value="Luca" readonly></div>
+          <div class="field"><label>Cognome</label><input value="Bianchi" readonly></div>
+          <div class="field"><label>Studio / organizzazione <span class="optional">facoltativo</span></label><input value="Studio Legale Bianchi" readonly></div>
+          <div class="field"><label>Email</label><input value="avvocato@example.it" readonly></div>
+          <div class="field"><label>Password</label><input type="password" value="Anteprima123!" readonly></div>
+          <div class="field"><label>Ripeti password</label><input type="password" value="Anteprima123!" readonly></div>
+        </div>
+
+        <button class="submit" type="button" disabled>Crea account e accetta invito</button>
+        <div class="note"><strong>Solo anteprima.</strong><span>Questa pagina non crea account e non modifica alcun dato reale.</span></div>
       </div>
-      <div class="form-head"><div><p class="eyebrow">PRIMO ACCESSO</p><h2>Crea il tuo account professionista</h2></div></div>
-      <div class="grid2">
-        <div><label>Nome</label><input value="Luca" readonly></div>
-        <div><label>Cognome</label><input value="Bianchi" readonly></div>
-      </div>
-      <div class="grid2">
-        <div><label>Studio / organizzazione <span class="optional">facoltativo</span></label><input value="Studio Legale Bianchi" readonly></div>
-        <div><label>Email</label><input value="avvocato@example.it" readonly></div>
-      </div>
-      <div class="grid2">
-        <div><label>Password</label><input type="password" value="Anteprima123!" readonly></div>
-        <div><label>Ripeti password</label><input type="password" value="Anteprima123!" readonly></div>
-      </div>
-      <button type="button" disabled>Crea account e accetta invito</button>
-      <div class="note"><strong>Solo anteprima.</strong> Nessun account viene creato e nessun dato viene modificato.</div>
     </section>
   </main>
 </body>
