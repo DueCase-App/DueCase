@@ -148,7 +148,7 @@ const expenseSelect = `
          u.role AS "paidByRole",
          e.receipt_url AS "receiptUrl",
          e.status,
-         e.expense_date AS "expenseDate",
+         e.expense_date::text AS "expenseDate",
          e.notes,
          e.is_extraordinary AS "isExtraordinary",
          e.otp_signature_metadata AS "otpSignatureMetadata",
@@ -378,7 +378,7 @@ async function requestOtp(req: Request, res: Response): Promise<void> {
   );
   const expense = rows[0];
   if (!expense) throw new ApiError(404, 'Spesa non trovata', 'EXPENSE_NOT_FOUND');
-  if (!expense.isExtraordinary) throw new ApiError(409, 'La firma OTP è prevista solo per le spese straordinarie.', 'OTP_NOT_REQUIRED');
+  if (!expense.isExtraordinary) throw new ApiError(409, 'La conferma tramite codice email è prevista solo per le spese straordinarie.', 'OTP_NOT_REQUIRED');
   if (expense.paidByUserId === auth.userId) throw new ApiError(403, 'Non puoi approvare una spesa inserita da te', 'SELF_REVIEW_NOT_ALLOWED');
   if (expense.status !== 'pending_approval') throw new ApiError(409, 'Questa spesa è già stata valutata', 'EXPENSE_ALREADY_REVIEWED');
 
@@ -455,7 +455,7 @@ async function verifyExpenseOtp(req: Request, code: string): Promise<Record<stri
     );
     const expense = expenseResult.rows[0];
     if (!expense) throw new ApiError(404, 'Spesa non trovata', 'EXPENSE_NOT_FOUND');
-    if (!expense.isExtraordinary) throw new ApiError(409, 'Questa spesa non richiede firma OTP.', 'OTP_NOT_REQUIRED');
+    if (!expense.isExtraordinary) throw new ApiError(409, 'Questa spesa non richiede conferma tramite codice email.', 'OTP_NOT_REQUIRED');
     if (expense.paidByUserId === auth.userId) throw new ApiError(403, 'Non puoi approvare una spesa inserita da te', 'SELF_REVIEW_NOT_ALLOWED');
     if (expense.status !== 'pending_approval') throw new ApiError(409, 'Questa spesa è già stata valutata', 'EXPENSE_ALREADY_REVIEWED');
 
@@ -566,7 +566,7 @@ async function verifyExpenseOtp(req: Request, code: string): Promise<Record<stri
   if (paidByUserId) {
     await sendPushToUser(paidByUserId, {
       title: 'Spesa straordinaria approvata',
-      body: `La spesa “${String(updated.title)}” di ${formatEuroAmount(String(updated.amount))} è stata approvata con firma OTP da ${parentRoleLabel(auth.role)}.`,
+      body: `La spesa “${String(updated.title)}” di ${formatEuroAmount(String(updated.amount))} è stata approvata con conferma tramite codice email da ${parentRoleLabel(auth.role)}.`,
       data: { type: 'expense_approved', screen: 'expenses', expenseId },
     });
   }
@@ -592,7 +592,7 @@ async function approveOrdinaryExpense(req: Request): Promise<Record<string, unkn
       `SELECT is_extraordinary AS "isExtraordinary" FROM expenses WHERE id = $1 AND family_id = $2`,
       [expenseId, auth.familyId],
     );
-    if (check.rows[0]?.isExtraordinary) throw new ApiError(409, 'Questa spesa straordinaria richiede la firma OTP.', 'OTP_REQUIRED');
+    if (check.rows[0]?.isExtraordinary) throw new ApiError(409, 'Questa spesa straordinaria richiede la conferma tramite codice email.', 'OTP_REQUIRED');
     throw new ApiError(409, 'Spesa non disponibile per la revisione', 'EXPENSE_NOT_REVIEWABLE');
   }
 

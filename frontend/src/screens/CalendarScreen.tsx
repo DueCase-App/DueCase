@@ -70,7 +70,7 @@ const EVENT_TYPES: Array<{ key: FamilyEventType; label: string; icon: keyof type
   { key: 'other', label: 'Altro', icon: 'ellipse-outline' },
 ];
 
-export function CalendarScreen(): React.JSX.Element {
+export function CalendarScreen({onProposeChange}:{onProposeChange?:(date:string)=>void}): React.JSX.Element {
   const { user } = useAuth();
   const [month, setMonth] = useState(todayKey().slice(0, 7));
   const [days, setDays] = useState<DailyCustody[]>([]);
@@ -169,7 +169,7 @@ export function CalendarScreen(): React.JSX.Element {
     if (!user) return;
     const resolved=days.filter(d=>d.custodyDate===date);
     if(resolved.some(d=>d.source!=='calendar')) {
-      Alert.alert(prettyDate(date),resolved.map(d=>`${d.childName}: ${d.custodianRole==='father'?'Papà':'Mamma'}`).join('\n')+'\nPer una modifica specifica usa le eccezioni nella sezione Permanenze.');return;
+      Alert.alert(prettyDate(date),resolved.map(d=>`${d.childName}: ${d.custodianRole==='father'?'Papà':'Mamma'}`).join('\n') ,[{text:'Chiudi',style:'cancel'},{text:'Proponi cambio',onPress:()=>onProposeChange?.(date)}]);return;
     }
     const day = byDate.get(date);
     if (!day) {

@@ -1,3 +1,4 @@
+import { KeyboardViewport } from '../components/KeyboardViewport';
 import { openPrivateFile } from '../services/openFile';
 import { randomUUID } from 'expo-crypto';
 import { useLiveRefresh } from '../services/live';
@@ -46,6 +47,7 @@ export function MessagesScreen(): React.JSX.Element {
   const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
   const [previewAttachment, setPreviewAttachment] = useState<MessageAttachment | null>(null);
   const nearBottom=useRef(true);
+  const dragging=useRef(false);
   const [hasOlder,setHasOlder]=useState(false);
   const [loadingOlder,setLoadingOlder]=useState(false);
   const [loading, setLoading] = useState(true);
@@ -55,6 +57,9 @@ export function MessagesScreen(): React.JSX.Element {
   const pendingSend = useRef<{key:string;id:string} | null>(null);
   const [tone, setTone] = useState<ToneAnalysis | null>(null);
   const [toneOpen, setToneOpen] = useState(false);
+  const [reportMessage,setReportMessage]=useState<string|null>(null);const [reportReason,setReportReason]=useState('');
+  const [reportBusy,setReportBusy]=useState(false);
+  const [moderationActive,setModerationActive]=useState(false);useEffect(()=>{api.serviceInfo().then(v=>setModerationActive(v.moderationActive)).catch(()=>{});},[]);
 
   const scrollToComposer = useCallback((animated = true) => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated }), 80);
@@ -134,11 +139,7 @@ export function MessagesScreen(): React.JSX.Element {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={[]}>
-      <KeyboardAvoidingView
-        style={styles.screen}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}
-      >
+      <KeyboardViewport>
         <View style={[styles.shell, !compact && styles.shellWide, { paddingBottom: 8 }]}>
           <View style={styles.header}>
             <View style={styles.headerCopy}>
@@ -155,7 +156,11 @@ export function MessagesScreen(): React.JSX.Element {
                 ref={scrollRef}
                 onLayout={() => {if(nearBottom.current) scrollToComposer(false);}}
                 onContentSizeChange={() => {if(nearBottom.current) scrollToComposer(false);}}
-                onScroll={e=>{const {contentOffset,contentSize,layoutMeasurement}=e.nativeEvent;nearBottom.current=contentSize.height-contentOffset.y-layoutMeasurement.height<80;}}
+                onScrollBeginDrag={()=>{dragging.current=true;}}
+                onScrollEndDrag={()=>{dragging.current=false;}}
+                onMomentumScrollBegin={()=>{dragging.current=true;}}
+                onMomentumScrollEnd={()=>{dragging.current=false;}}
+                onScroll={e=>{if(!dragging.current)return;const {contentOffset,contentSize,layoutMeasurement}=e.nativeEvent;nearBottom.current=contentSize.height-contentOffset.y-layoutMeasurement.height<80;}}
                 scrollEventThrottle={100}
                 style={styles.messagesArea}
                 contentContainerStyle={styles.messagesContent}
@@ -177,7 +182,7 @@ export function MessagesScreen(): React.JSX.Element {
                             <View style={styles.attachmentCopy}><Text numberOfLines={1} style={[styles.attachmentName, mine && styles.messageTextMine]}>{item.filename}</Text><Text style={[styles.attachmentMeta, mine && styles.timeMine]}>Allegato · {(item.fileSizeBytes / 1024).toFixed(0)} KB</Text></View>
                           </Pressable>
                         ))}
-                        <View style={styles.messageMeta}><Text style={[styles.time, mine && styles.timeMine]}>{formatTimestamp(message.createdAt)}</Text>{mine ? <Ionicons name={message.readAt ? 'checkmark-done' : 'checkmark'} size={15} color={message.readAt ? '#D7F1FF' : '#C6D9EE'} /> : null}<Ionicons name="shield-checkmark" size={13} color={mine ? '#D7F1FF' : ui.colors.success} /></View>
+                        {!mine&&<Pressable accessibilityLabel="Segnala questo messaggio" onPress={()=>{setReportMessage(message.id);setReportReason('');}}><Text style={{color:ui.colors.primary,fontSize:12,marginTop:8}}>Segnala</Text></Pressable>}<View style={styles.messageMeta}><Text style={[styles.time, mine && styles.timeMine]}>{formatTimestamp(message.createdAt)}</Text>{mine ? <Ionicons name={message.readAt ? 'checkmark-done' : 'checkmark'} size={15} color={message.readAt ? '#D7F1FF' : '#C6D9EE'} /> : null}<Ionicons name="shield-checkmark" size={13} color={mine ? '#D7F1FF' : ui.colors.success} /></View>
                       </View>
                     </View>
                   );
@@ -204,6 +209,7 @@ export function MessagesScreen(): React.JSX.Element {
           </View>
         </View>
 
+        <Modal visible={reportMessage!==null} transparent onRequestClose={()=>setReportMessage(null)}><View style={styles.modalBackdrop}><View style={styles.toneCard}><Text style={styles.toneTitle}>Segnala un messaggio</Text><Text style={styles.toneDescription}>Descrivi il problema. La segnalazione resta riservata all’assistenza e non cancella lo storico. Non è un servizio di emergenza.</Text><TextInput accessibilityLabel="Motivo della segnalazione" value={reportReason} onChangeText={setReportReason} multiline maxLength={2000} style={[styles.input,{flex:0,minHeight:100}]}/><Pressable disabled={reportBusy||reportReason.trim().length<5} style={styles.useSuggestion} onPress={()=>{setReportBusy(true);void api.safety.reportMessage(reportMessage!,reportReason).then(r=>{setReportMessage(null);Alert.alert('Segnalazione registrata',`Riferimento: ${r.id}. ${moderationActive?'La segnalazione è disponibile per la presa in carico dell’assistenza.':'Durante il collaudo la presa in carico dell’assistenza non è ancora attiva.'} Puoi sospendere la chat da Impostazioni > Sicurezza.`);}).catch(e=>Alert.alert('Segnalazione',e.message)).finally(()=>setReportBusy(false));}}><Text style={styles.useSuggestionText}>{reportBusy?'Invio…':'Registra segnalazione'}</Text></Pressable><Pressable style={styles.cancel} onPress={()=>setReportMessage(null)}><Text>Annulla</Text></Pressable></View></View></Modal>
         <Modal visible={toneOpen} transparent animationType="fade" onRequestClose={() => setToneOpen(false)}>
           <SafeAreaView style={styles.modalSafeArea} edges={['top', 'right', 'bottom', 'left']}>
             <View style={styles.modalBackdrop}><View style={styles.toneCard}>
@@ -226,7 +232,7 @@ export function MessagesScreen(): React.JSX.Element {
             </View></View>
           </SafeAreaView>
         </Modal>
-      </KeyboardAvoidingView>
+      </KeyboardViewport>
     </SafeAreaView>
   );
 }
@@ -276,7 +282,7 @@ const styles = StyleSheet.create({
   input: { flex: 1, minHeight: 48, maxHeight: 130, borderRadius: 14, backgroundColor: ui.colors.input, color: '#202124', paddingHorizontal: 14, paddingVertical: 12, textAlignVertical: 'top' },
   sendButton: { width: 48, height: 48, borderRadius: 16, backgroundColor: ui.colors.primary, alignItems: 'center', justifyContent: 'center' },
   helper: { paddingHorizontal: 13, paddingBottom: 14, paddingTop: 3, fontSize: 10, color: ui.colors.muted, backgroundColor: '#FFF' },
-  empty: { flex: 1, minHeight: 260, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  empty: { flex: 1, minHeight: 100, alignItems: 'center', justifyContent: 'center', gap: 8 },
   emptyTitle: { fontSize: 18, fontWeight: '900', color: ui.colors.primaryDark },
   emptyText: { textAlign: 'center', color: ui.colors.muted, maxWidth: 360 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(10,50,103,0.30)', alignItems: 'center', justifyContent: 'center', padding: 20 },

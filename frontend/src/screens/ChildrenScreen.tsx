@@ -105,7 +105,7 @@ export function ChildrenScreen(): React.JSX.Element {
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <View>
+        <View style={{flex:1,minWidth:0}}>
           <Text style={styles.eyebrow}>FAMIGLIA</Text>
           <Text style={styles.title}>Figli</Text>
           <Text style={styles.subtitle}>Informazioni condivise, scuola, sport e note utili.</Text>
@@ -169,10 +169,11 @@ export function ChildrenScreen(): React.JSX.Element {
               <Field label="Informazioni utili" value={form.usefulInfo ?? ''} onChangeText={(usefulInfo) => setForm((v) => ({ ...v, usefulInfo }))} placeholder="Informazioni condivise" multiline />
               <Field label="Autorizzazioni" value={form.authorizations ?? ''} onChangeText={(authorizations) => setForm((v) => ({ ...v, authorizations }))} placeholder="Autorizzazioni e consensi" multiline />
               <Field label="Note condivise" value={form.sharedNotes ?? ''} onChangeText={(sharedNotes) => setForm((v) => ({ ...v, sharedNotes }))} placeholder="Note visibili a Mamma e Papà" multiline />
-              <Pressable disabled={saving} onPress={() => void save()} style={[styles.saveButton, saving && { opacity: 0.6 }]}>
-                {saving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveButtonText}>Salva scheda</Text>}
-              </Pressable>
+
             </ScrollView>
+            <View style={{padding:16}}>              <Pressable disabled={saving} onPress={() => void save()} style={[styles.saveButton, saving && { opacity: 0.6 }]}>
+                {saving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveButtonText}>Salva scheda</Text>}
+              </Pressable></View>
           </View>
         </KeyboardAvoidingView>
       </Modal>

@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import jwt, { type JwtPayload, type SignOptions } from 'jsonwebtoken';
 import { config } from './config.js';
@@ -8,6 +9,7 @@ export type ParentRole = 'father' | 'mother';
 
 export type AuthContext = {
   userId: string;
+  sessionId: string;
   tokenVersion: number;
   emailVerifiedAt: string | null;
   email: string;
@@ -36,6 +38,7 @@ const PREMIUM_MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 export function signAccessToken(userId: string, tokenVersion = 0): string {
   return jwt.sign({version: tokenVersion}, config.JWT_SECRET, {
     subject: userId,
+    jwtid: randomUUID(),
     expiresIn,
     issuer: 'separated-parents-api',
     audience: 'separated-parents-app',
@@ -97,6 +100,12 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
       throw new ApiError(401, 'User no longer exists', 'INVALID_TOKEN');
     }
 
+    const sessionId=createHash('sha256').update(token).digest('hex');
+    const ua=req.header('user-agent')??'';
+    const device=/android/i.test(ua)?'Android':/iphone|ipad|cfnetwork|darwin/i.test(ua)?'Apple':/mozilla/i.test(ua)?'Browser':'App DueCase';
+    const session=await pool.query(`INSERT INTO duecase_sessions(id,user_id,token_version,device_label,expires_at) VALUES($1,$2,$3,$4,to_timestamp($5)) ON CONFLICT(id) DO UPDATE SET last_seen_at=CASE WHEN duecase_sessions.last_seen_at<NOW()-INTERVAL '5 minutes' THEN NOW() ELSE duecase_sessions.last_seen_at END RETURNING revoked_at`,[sessionId,auth.userId,auth.tokenVersion,device,payload.exp]);
+    if(session.rows[0]?.revoked_at)throw new ApiError(401,'Accesso revocato. Accedi nuovamente.','INVALID_TOKEN');
+    auth.sessionId=sessionId;
     (req as AuthenticatedRequest).auth = auth;
     next();
   } catch (error) {

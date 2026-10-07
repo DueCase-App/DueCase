@@ -180,6 +180,8 @@ router.get('/:id/attachments/:attachmentId/file', asyncHandler(async (req, res) 
 
 router.post('/', uploadAttachment, asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
+  const blocked=await pool.query('SELECT 1 FROM duecase_message_blocks WHERE family_id=$1 LIMIT 1',[auth.familyId]);
+  if(blocked.rowCount)throw new ApiError(403,'La chat è sospesa da un genitore. Lo storico resta consultabile.','MESSAGING_BLOCKED');
   const body = createSchema.parse(req.body ?? {});
   const text = body.text.trim();
   if (!text && !req.file) throw new ApiError(400, 'Inserisci un messaggio o allega un file.', 'MESSAGE_CONTENT_REQUIRED');

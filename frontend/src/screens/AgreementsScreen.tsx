@@ -168,8 +168,9 @@ export function AgreementsScreen(): React.JSX.Element {
               <View style={styles.categoryGrid}>{categories.map((category) => <Pressable key={category.key} onPress={() => setSelectedCategory(category.key)} style={[styles.categoryChoice, selectedCategory === category.key && styles.categoryChoiceActive]}><Ionicons name={category.icon} size={18} color={selectedCategory === category.key ? ui.colors.primary : ui.colors.muted} /><Text style={[styles.categoryChoiceText, selectedCategory === category.key && { color: ui.colors.primary }]}>{category.label}</Text></Pressable>)}</View>
               <Text style={styles.label}>Titolo</Text><TextInput value={title} onChangeText={setTitle} placeholder="Es. Vacanze di Natale" placeholderTextColor={ui.colors.muted} style={styles.input} />
               <Text style={styles.label}>Proposta</Text><TextInput value={body} onChangeText={setBody} placeholder="Descrivi in modo chiaro cosa proponi…" placeholderTextColor={ui.colors.muted} multiline style={[styles.input, styles.textarea]} />
-              <Pressable disabled={saving} onPress={() => void createAgreement()} style={styles.saveButton}>{saving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveText}>Invia proposta</Text>}</Pressable>
+
             </ScrollView>
+            <View style={{padding:16}}>              <Pressable disabled={saving} onPress={() => void createAgreement()} style={styles.saveButton}>{saving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveText}>Invia proposta</Text>}</Pressable></View>
           </View>
         </KeyboardAvoidingView>
       </Modal>

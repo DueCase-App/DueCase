@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { getAuth, requireAuth } from '../auth.js';
+import { rateLimit } from '../services/rateLimit.js';
 import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
 
@@ -163,7 +164,7 @@ router.post('/create', asyncHandler(async (req, res) => {
   }
 }));
 
-router.post('/join', asyncHandler(async (req, res) => {
+router.post('/join', rateLimit(10, 15*60*1000), asyncHandler(async (req, res) => {
   const auth = getAuth(req);
   const body = joinSchema.parse(req.body);
   const client = await pool.connect();
@@ -189,7 +190,7 @@ router.post('/join', asyncHandler(async (req, res) => {
     if (user.familyId) throw new ApiError(409, 'You already belong to a family', 'ALREADY_IN_FAMILY');
 
     const familyResult = await client.query<{ id: string; name: string; inviteCode: string }>(
-      `SELECT id, name, invite_code AS "inviteCode" FROM families WHERE invite_code = $1 FOR UPDATE`,
+      `SELECT id, name, invite_code AS "inviteCode" FROM families WHERE invite_code = $1 AND invite_expires_at>NOW() FOR UPDATE`,
       [body.inviteCode],
     );
     const family = familyResult.rows[0];
@@ -229,4 +230,15 @@ router.post('/join', asyncHandler(async (req, res) => {
   }
 }));
 
+router.get('/invitation',asyncHandler(async(req,res)=>{
+ const a=getAuth(req);const {rows}=await pool.query('SELECT invite_code AS code,invite_expires_at AS "expiresAt" FROM families WHERE id=$1',[a.familyId]);
+ if(!rows[0])throw new ApiError(404,'Famiglia non trovata.');res.json(rows[0]);
+}));
+router.post('/invitation/rotate',rateLimit(5,3600000),asyncHandler(async(req,res)=>{
+ const a=getAuth(req);const {rows}=await pool.query("UPDATE families SET invite_code=$2,invite_expires_at=NOW()+INTERVAL '7 days' WHERE id=$1 RETURNING invite_code AS code,invite_expires_at AS \"expiresAt\"",[a.familyId,generateInviteCode(16)]);
+ if(!rows[0])throw new ApiError(404,'Famiglia non trovata.');res.json(rows[0]);
+}));
+router.delete('/invitation',asyncHandler(async(req,res)=>{
+ const a=getAuth(req);await pool.query('UPDATE families SET invite_expires_at=NOW() WHERE id=$1',[a.familyId]);res.json({revoked:true});
+}));
 export default router;

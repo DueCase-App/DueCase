@@ -1,3 +1,4 @@
+import { italianDate, italianCategory } from '../services/italian';
 import { openPrivateFile } from '../services/openFile';
 import { useLiveRefresh } from '../services/live';
 import { SafeModal as Modal } from '../components/SafeModal';
@@ -56,7 +57,7 @@ function historyActionLabel(action: string): string {
     approved: 'Spesa approvata',
     declined: 'Spesa rifiutata',
     disputed: 'Spesa contestata',
-    otp_verified: 'Firma OTP verificata',
+    otp_verified: 'Conferma email verificata',
     payment_declared: 'Pagamento dichiarato',
     payment_confirmed: 'Pagamento ricevuto',
     payment_rejected: 'Pagamento rifiutato',
@@ -182,7 +183,7 @@ export function ExpensesScreen(): React.JSX.Element {
       setOtpEmail(result.maskedEmail);
       setOtpExpense(expense);
     } catch (error) {
-      Alert.alert('Firma OTP', error instanceof Error ? error.message : 'Impossibile inviare il codice OTP.');
+      Alert.alert('Conferma tramite email', error instanceof Error ? error.message : 'Impossibile inviare il codice OTP.');
     } finally { setBusy(null); }
   }
 
@@ -194,9 +195,9 @@ export function ExpensesScreen(): React.JSX.Element {
       setOtpExpense(null);
       setOtpEmail(null);
       await load();
-      Alert.alert('Spesa approvata', 'La firma OTP è stata verificata e registrata.');
+      Alert.alert('Spesa approvata', 'La conferma tramite codice email è stata verificata e registrata.');
     } catch (error) {
-      Alert.alert('Firma OTP', error instanceof Error ? error.message : 'Codice OTP non valido.');
+      Alert.alert('Conferma tramite email', error instanceof Error ? error.message : 'Codice OTP non valido.');
       throw error;
     } finally { setBusy(null); }
   }
@@ -261,7 +262,7 @@ export function ExpensesScreen(): React.JSX.Element {
                       <View style={styles.expenseIcon}><Ionicons name="receipt-outline" size={22} color={ui.colors.primary} /></View>
                       <View style={styles.expenseCopy}>
                         <Text style={styles.cardTitle}>{expense.title}</Text>
-                        <Text style={styles.meta}>{expense.category} · {new Date(`${expense.expenseDate}T12:00:00`).toLocaleDateString('it-IT')} · anticipata da {expense.paidByName ?? roleLabel(expense.paidByRole)}</Text>
+                        <Text style={styles.meta}>{italianCategory(expense.category)} · {italianDate(expense.expenseDate)} · anticipata da {expense.paidByName ?? roleLabel(expense.paidByRole)}</Text>
                       </View>
                       <Text style={styles.amount}>{euro(expense.amount)}</Text>
                     </View>
@@ -281,7 +282,7 @@ export function ExpensesScreen(): React.JSX.Element {
 
                     {expense.children?.length ? <View style={styles.childRow}><Ionicons name="people-outline" size={16} color={ui.colors.muted} /><Text style={styles.meta}>{expense.children.map((child) => child.displayName).join(', ')}</Text></View> : null}
                     {expense.notes ? <Text style={styles.muted}>{expense.notes}</Text> : null}
-                    {expense.otpSignatureMetadata ? <Text style={styles.signedText}>Firma OTP verificata il {new Date(expense.otpSignatureMetadata.verifiedAt).toLocaleString('it-IT')}</Text> : null}
+                    {expense.otpSignatureMetadata ? <Text style={styles.signedText}>Conferma email verificata il {new Date(expense.otpSignatureMetadata.verifiedAt).toLocaleString('it-IT')}</Text> : null}
 
                     {expensePayments.length > 0 ? (
                       <View style={styles.paymentList}>
@@ -386,12 +387,12 @@ function OtpApprovalModal({ expense, maskedEmail, busy, onClose, onConfirm, onRe
     <Modal visible={expense !== null} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.backdrop}><View style={styles.otpModal}>
         <View style={styles.otpIcon}><Ionicons name="shield-checkmark-outline" size={30} color={ui.colors.primary} /></View>
-        <Text style={styles.modalTitle}>Firma OTP</Text>
+        <Text style={styles.modalTitle}>Conferma tramite email</Text>
         <Text style={styles.otpSubtitle}>Inserisci il codice di sicurezza a 6 cifre inviato per firmare l'approvazione di questa spesa straordinaria.</Text>
         <Text style={styles.otpDelivery}>Codice inviato via email{maskedEmail ? ` a ${maskedEmail}` : ''}. Scade dopo 5 minuti.</Text>
         <View style={styles.otpRow}>{digits.map((digit, index) => <TextInput key={index} ref={(ref) => { refs.current[index] = ref; }} value={digit} onChangeText={(value) => changeDigit(index, value)} onKeyPress={({ nativeEvent }) => { if (nativeEvent.key === 'Backspace' && !digit && index > 0) refs.current[index - 1]?.focus(); }} keyboardType="number-pad" inputMode="numeric" maxLength={1} textAlign="center" style={[styles.otpInput, digit && styles.otpInputFilled]} accessibilityLabel={`Cifra OTP ${index + 1}`} />)}</View>
         <View style={styles.otpActions}><Pressable style={styles.cancelButton} onPress={onClose}><Text style={styles.cancelText}>Annulla</Text></Pressable><Pressable disabled={busy || code.length !== 6} style={[styles.approveButton, (busy || code.length !== 6) && styles.disabledButton]} onPress={() => void onConfirm(code)}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.approveText}>Conferma e Firma</Text>}</Pressable></View>
-        <Pressable disabled={resending} onPress={() => void (async () => { try { setResending(true); await onResend(); Alert.alert('Firma OTP', 'Nuovo codice inviato via email.'); } catch (error) { Alert.alert('Firma OTP', error instanceof Error ? error.message : 'Invio non riuscito'); } finally { setResending(false); } })()}><Text style={styles.resendText}>{resending ? 'Invio…' : 'Invia un nuovo codice'}</Text></Pressable>
+        <Pressable disabled={resending} onPress={() => void (async () => { try { setResending(true); await onResend(); Alert.alert('Conferma tramite email', 'Nuovo codice inviato via email.'); } catch (error) { Alert.alert('Conferma tramite email', error instanceof Error ? error.message : 'Invio non riuscito'); } finally { setResending(false); } })()}><Text style={styles.resendText}>{resending ? 'Invio…' : 'Invia un nuovo codice'}</Text></Pressable>
       </View></View>
     </Modal>
   );
@@ -447,8 +448,8 @@ function ExpenseModal({ visible, childrenList, onClose, onDone }: { visible: boo
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.backdrop}><ScrollView contentContainerStyle={styles.formModal} keyboardShouldPersistTaps="handled">
-        <View style={styles.modalHead}><Text style={styles.modalTitle}>Aggiungi spesa</Text><Pressable onPress={onClose}><Ionicons name="close" size={26} color={ui.colors.text} /></Pressable></View>
+      <View style={styles.backdrop}><View style={[styles.formModal,{maxHeight:"100%",flexShrink:1,padding:0,overflow:"hidden"}]}><View style={{padding:16}}>
+        <View style={styles.modalHead}><Text style={styles.modalTitle}>Aggiungi spesa</Text><Pressable accessibilityLabel="Chiudi nuova spesa" onPress={onClose}><Ionicons name="close" size={26} color={ui.colors.text} /></Pressable></View></View><ScrollView style={{flexShrink:1}} contentContainerStyle={{padding:16,gap:12}} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>Descrizione</Text><TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="Es. Libri scolastici" placeholderTextColor={ui.colors.muted} />
         <Text style={styles.label}>Importo (€)</Text><TextInput style={styles.input} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={ui.colors.muted} />
         <Text style={styles.label}>Categoria</Text><View style={styles.chips}>{categories.map((item) => <Pressable key={item} onPress={() => setCategory(item)} style={[styles.chip, category === item && styles.chipSelected]}><Text style={[styles.chipText, category === item && styles.chipTextSelected]}>{item}</Text></Pressable>)}</View>
@@ -460,12 +461,12 @@ function ExpenseModal({ visible, childrenList, onClose, onDone }: { visible: boo
         <View style={styles.percentageRow}><View style={styles.percentageField}><Text style={styles.percentageLabel}>Papà %</Text><TextInput style={styles.input} value={fatherPercentage} onChangeText={setFatherPercentage} keyboardType="decimal-pad" /></View><View style={styles.percentageField}><Text style={styles.percentageLabel}>Mamma %</Text><TextInput style={styles.input} value={motherPercentage} onChangeText={setMotherPercentage} keyboardType="decimal-pad" /></View></View>
         <Text style={styles.percentageHint}>Totale: {(Number(fatherPercentage.replace(',', '.')) || 0) + (Number(motherPercentage.replace(',', '.')) || 0)}%</Text>
 
-        <View style={styles.extraordinaryToggle}><View style={styles.extraordinaryCopy}><Text style={styles.cardTitle}>Spesa straordinaria</Text><Text style={styles.meta}>Richiede firma OTP dell’altro genitore.</Text></View><Switch value={isExtraordinary} onValueChange={setIsExtraordinary} trackColor={{ false: '#D5DFEA', true: ui.colors.primary }} thumbColor="#FFF" /></View>
+        <View style={styles.extraordinaryToggle}><View style={styles.extraordinaryCopy}><Text style={styles.cardTitle}>Spesa straordinaria</Text><Text style={styles.meta}>Richiede conferma tramite codice email dell’altro genitore.</Text></View><Switch value={isExtraordinary} onValueChange={setIsExtraordinary} trackColor={{ false: '#D5DFEA', true: ui.colors.primary }} thumbColor="#FFF" /></View>
         <Text style={styles.label}>Note</Text><TextInput style={[styles.input, styles.notesInput]} multiline value={notes} onChangeText={setNotes} placeholder="Aggiungi una nota" placeholderTextColor={ui.colors.muted} />
         <Text style={styles.label}>Ricevuta</Text><View style={styles.actions}><Pressable style={styles.secondaryButton} onPress={() => void fromCamera()}><Ionicons name="camera-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Scatta foto</Text></Pressable><Pressable style={styles.secondaryButton} onPress={() => void fromLibrary()}><Ionicons name="images-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Galleria</Text></Pressable></View>
         {receipt ? <Text style={styles.muted}>Allegato: {receipt.name}</Text> : null}
-        <View style={styles.actions}><Pressable style={styles.cancelButton} onPress={onClose}><Text style={styles.cancelText}>Annulla</Text></Pressable><Pressable disabled={busy} style={styles.approveButton} onPress={() => void save()}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.approveText}>Invia spesa</Text>}</Pressable></View>
-      </ScrollView></View>
+        </ScrollView><View style={[styles.actions,{padding:16}]}><Pressable style={styles.cancelButton} onPress={onClose}><Text style={styles.cancelText}>Annulla</Text></Pressable><Pressable disabled={busy} style={styles.approveButton} onPress={() => void save()}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.approveText}>Invia spesa</Text>}</Pressable></View>
+      </View></View>
     </Modal>
   );
 }

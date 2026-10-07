@@ -10,8 +10,8 @@ import { ApiError, asyncHandler } from '../http.js';
 const router = Router();
 router.use(requireAuth);
 
-const preferencesSchema = z.object({messages:z.boolean(),agreements:z.boolean(),expenses:z.boolean(),calendar:z.boolean(),other:z.boolean()}).strict();
-const defaults={messages:true,agreements:true,expenses:true,calendar:true,other:true};
+const preferencesSchema = z.object({messages:z.boolean(),agreements:z.boolean(),expenses:z.boolean(),calendar:z.boolean(),other:z.boolean(),previewContent:z.boolean().default(false)}).strict();
+const defaults={messages:true,agreements:true,expenses:true,calendar:true,other:true,previewContent:false};
 router.get('/preferences',asyncHandler(async(req,res)=>{
  const {rows}=await pool.query('SELECT notification_preferences FROM users WHERE id=$1',[getAuth(req).userId]);
  res.json({...defaults,...rows[0].notification_preferences});
@@ -64,6 +64,8 @@ router.delete('/delete-account', asyncHandler(async(req,res)=>{
  await transaction(async client=>{
   const current=await client.query('SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[auth.userId]);
   if(!current.rowCount)throw new ApiError(404,'Account non trovato','ACCOUNT_NOT_FOUND');
+  await client.query('DELETE FROM duecase_message_blocks WHERE user_id=$1',[auth.userId]);
+  await client.query('DELETE FROM duecase_email_changes WHERE user_id=$1',[auth.userId]);
   await client.query('DELETE FROM email_challenges WHERE user_id=$1',[auth.userId]);
   await client.query('DELETE FROM otp_requests WHERE user_id=$1',[auth.userId]);
   await client.query('DELETE FROM in_app_notifications WHERE user_id=$1',[auth.userId]);
@@ -78,5 +80,16 @@ router.delete('/delete-account', asyncHandler(async(req,res)=>{
   if(auth.familyId) await client.query('UPDATE families SET invite_code=$2 WHERE id=$1',[auth.familyId,randomBytes(8).toString('hex').toUpperCase()]);
  });
  res.json({deleted:true,note:'Accesso revocato e profilo personale eliminato. I dati già condivisi nella famiglia restano nello storico, attribuiti ad “Account eliminato”.'});
+}));
+router.get('/sessions',asyncHandler(async(req,res)=>{
+ const a=getAuth(req);const {rows}=await pool.query('SELECT id,device_label AS device,created_at AS "createdAt",last_seen_at AS "lastSeenAt",(id=$3) AS current FROM duecase_sessions WHERE user_id=$1 AND token_version=$2 AND revoked_at IS NULL AND expires_at>NOW() ORDER BY last_seen_at DESC',[a.userId,a.tokenVersion,a.sessionId]);res.json(rows);
+}));
+router.delete('/sessions/:id',asyncHandler(async(req,res)=>{
+ const a=getAuth(req);const id=z.string().regex(/^[a-f0-9]{64}$/).parse(req.params.id);
+ if(id===a.sessionId)throw new ApiError(400,'Per questo dispositivo usa Esci dall’account.');
+ await pool.query('UPDATE duecase_sessions SET revoked_at=NOW() WHERE id=$1 AND user_id=$2',[id,a.userId]);res.json({revoked:true});
+}));
+router.post('/logout',asyncHandler(async(req,res)=>{
+ const a=getAuth(req);await pool.query('UPDATE duecase_sessions SET revoked_at=NOW() WHERE id=$1 AND user_id=$2',[a.sessionId,a.userId]);res.json({ok:true});
 }));
 export default router;

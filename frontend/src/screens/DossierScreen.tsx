@@ -1,7 +1,9 @@
+import { openPrivateFile } from '../services/openFile';
+import { italianDate } from '../services/italian';
 import { useLiveRefresh } from '../services/live';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { api } from '../services/api';
 import { cardShadow, ui } from '../theme/ui';
 import type { FamilyActivity, ParentingTimeReport, ParentRole } from '../types/models';
@@ -21,7 +23,7 @@ function actionLabel(action: string): string {
     submitted: 'Inviato',
     paid: 'Pagamento registrato',
     confirmed: 'Confermato',
-    otp_verified: 'Firma OTP verificata',
+    otp_verified: 'Conferma email verificata',
     payment_declared: 'Pagamento dichiarato',
     payment_confirmed: 'Pagamento ricevuto',
     uploaded: 'Caricato',
@@ -63,6 +65,18 @@ export function DossierScreen(): React.JSX.Element {
   const [report, setReport] = useState<ParentingTimeReport | null>(null);
   const [activities, setActivities] = useState<FamilyActivity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [from,setFrom]=useState('');const [to,setTo]=useState('');const [childId,setChildId]=useState('');
+  const [children,setChildren]=useState<Array<{id:string;displayName:string}>>([]);
+  const [exporting,setExporting]=useState(false);
+  const topicLabels:Record<string,string>={messages:'Messaggi',agreements:'Accordi',expenses:'Spese',calendar:'Calendario',documents:'Documenti',history:'Storico'};
+  const [topics,setTopics]=useState(Object.keys(topicLabels));
+  useEffect(()=>{api.family.children().then(setChildren).catch(()=>{});},[]);
+  async function exportDossier(format:'pdf'|'zip'|'csv'){
+   if(exporting)return;
+   const parse=(v:string)=>{if(!v.trim())return '';const m=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v);if(!m)throw Error('Inserisci le date nel formato gg/mm/aaaa.');return `${m[3]}-${m[2]}-${m[1]}`;};
+   try{setExporting(true);const query=new URLSearchParams({format,sections:format==='csv'?'expenses':topics.join(',')});if(!topics.length&&format!=='csv')throw Error('Seleziona almeno una sezione.');if(from)query.set('from',parse(from));if(to)query.set('to',parse(to));if(childId)query.set('childId',childId);await openPrivateFile(api.reports.exportSource(query.toString()),`DueCase-dossier.${format}`,format==='zip'?'application/zip':format==='csv'?'text/csv':'application/pdf');}
+   catch(e){Alert.alert('Esportazione',e instanceof Error?e.message:'Esportazione non riuscita.');}finally{setExporting(false);}
+  }
   const [filter, setFilter] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -95,9 +109,19 @@ export function DossierScreen(): React.JSX.Element {
         <Pressable onPress={() => void load()} style={styles.refresh}><Ionicons name="refresh" size={20} color={ui.colors.primary} /></Pressable>
       </View>
 
+      <View style={styles.chartCard}>
+        <Text style={styles.sectionTitle}>Esporta il dossier</Text>
+        <Text style={styles.sectionSubtitle}>PDF da leggere, ZIP con gli originali o CSV delle spese. Lascia vuote le date per includere tutto lo storico disponibile.</Text>
+        {([['Dal',from,setFrom],['Al',to,setTo]] as const).map(([label,value,setter])=><View key={label}><Text>{label}</Text><TextInput accessibilityLabel={label} value={value} onChangeText={v=>{const d=v.replace(/\D/g,'').slice(0,8);setter(d.slice(0,2)+(d.length>2?'/'+d.slice(2,4):'')+(d.length>4?'/'+d.slice(4):''));}} keyboardType="number-pad" placeholder="gg/mm/aaaa" style={{padding:12,borderWidth:1,borderColor:ui.colors.border,borderRadius:12}}/></View>)}
+        <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{[{id:'',displayName:'Tutti i figli'},...children].map(c=><Pressable key={c.id} onPress={()=>setChildId(c.id)} style={[styles.filterChip,childId===c.id&&styles.filterChipActive]}><Text style={[styles.filterText,childId===c.id&&styles.filterTextActive]}>{c.displayName}</Text></Pressable>)}</View>
+        <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{Object.entries(topicLabels).map(([key,label])=><Pressable key={key} accessibilityRole="checkbox" accessibilityState={{checked:topics.includes(key)}} onPress={()=>setTopics(v=>v.includes(key)?v.filter(x=>x!==key):[...v,key])} style={[styles.filterChip,topics.includes(key)&&styles.filterChipActive]}><Text style={[styles.filterText,topics.includes(key)&&styles.filterTextActive]}>{label}</Text></Pressable>)}</View>
+        <Text style={styles.noticeText}>Le conversazioni, gli accordi e lo storico generale restano condivisi anche filtrando per figlio. Il dossier indica i criteri applicati e distingue pianificazioni, dichiarazioni e conferme.</Text>
+        {exporting?<ActivityIndicator/>:<View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{(['pdf','zip','csv'] as const).map(format=><Pressable key={format} style={[styles.filterChip,styles.filterChipActive]} onPress={()=>void exportDossier(format)}><Text style={styles.filterTextActive}>{format==='zip'?'Dossier + originali ZIP':format==='csv'?'Spese CSV':'Dossier PDF'}</Text></Pressable>)}</View>}
+      </View>
+
       {loading ? <ActivityIndicator style={{ marginTop: 50 }} color={ui.colors.primary} /> : report ? (
         <>
-          <View style={styles.periodCard}><Ionicons name="calendar-outline" size={22} color={ui.colors.primary} /><View><Text style={styles.periodLabel}>Periodo permanenze analizzato</Text><Text style={styles.periodValue}>{report.period.from ?? '—'} → {report.period.to ?? '—'}</Text></View></View>
+          <View style={styles.periodCard}><Ionicons name="calendar-outline" size={22} color={ui.colors.primary} /><View><Text style={styles.periodLabel}>Periodo permanenze analizzato</Text><Text style={styles.periodValue}>{italianDate(report.period.from)} → {italianDate(report.period.to)}</Text></View></View>
           <View style={[styles.grid, !wide && styles.gridCompact]}>
             <ParentCard label="Papà" hours={report.father.hours} percentage={report.father.percentage} icon="man-outline" />
             <ParentCard label="Mamma" hours={report.mother.hours} percentage={report.mother.percentage} icon="woman-outline" />
@@ -138,7 +162,7 @@ export function DossierScreen(): React.JSX.Element {
             })}
           </View>
 
-          <View style={styles.notice}><Ionicons name="shield-checkmark-outline" size={22} color={ui.colors.primary} /><Text style={styles.noticeText}>Lo storico mostrato qui proviene dal registro append-only DueCase: le voci non vengono modificate in modo invisibile dopo la registrazione.</Text></View>
+          <View style={styles.notice}><Ionicons name="shield-checkmark-outline" size={22} color={ui.colors.primary} /><Text style={styles.noticeText}>Questa anteprima mostra le ultime 120 attività. Usa l’esportazione per consultare tutto lo storico disponibile. Il dossier non è un documento certificato.</Text></View>
         </>
       ) : null}
     </ScrollView>

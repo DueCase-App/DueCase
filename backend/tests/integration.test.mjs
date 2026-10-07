@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID,createHmac } from 'node:crypto';
+import { unzipSync } from 'fflate';
+import { createHash } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
 import { readdir, readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
@@ -90,6 +93,43 @@ await test('PDF export includes shared records and has a valid PDF payload',asyn
  assert.equal(r.status,200,await r.clone().text());assert.equal(r.headers.get('content-type'),'application/pdf');
  assert.equal(Buffer.from(await r.arrayBuffer()).subarray(0,5).toString(),'%PDF-');
 });
+await test('Complete dossier includes rejected records, originals, safe CSV, filters and family isolation',async()=>{
+ const expense=await api('/expenses',{token:father.token,body:{title:'=SOMMA(1;2)',amount:'25.50',category:'Scuola'},status:201});
+ await api(`/expenses/${expense.id}/decline`,{token:mother.token,body:{},status:200});
+ const doc=new FormData();doc.set('title','Ricevuta scolastica');doc.set('category','Scuola');doc.set('file',new Blob(['%PDF-1.4 originale documento'],{type:'application/pdf'}),'ricevuta.pdf');
+ await api('/documents',{token:father.token,body:doc,status:201});
+ const response=await fetch(base+'/reports/export?format=zip',{headers:{Authorization:`Bearer ${father.token}`}});
+ assert.equal(response.status,200,await response.clone().text());
+ const files=unzipSync(new Uint8Array(await response.arrayBuffer()));
+ const txt=Buffer.from(files['Dossier.txt']).toString();const csv=Buffer.from(files['Spese.csv']).toString();
+ assert.match(txt,/Rifiutato/);assert.match(txt,/Ricevuta scolastica/);assert.match(csv,/'=SOMMA/);
+ assert.ok(Object.keys(files).filter(k=>k.startsWith('allegati/')).length>=2);
+ const sums=Buffer.from(files['SHA256SUMS.txt']).toString().split('\n');
+ for(const line of sums){const [hash,path]=line.split('  ');assert.equal(createHash('sha256').update(files[path]).digest('hex'),hash);}
+ const dataset=Buffer.from(files['Dati-originali.json']).toString();assert.ok(!dataset.includes('password_hash'));assert.ok(!dataset.includes('code_hash'));
+ await writeFile('/tmp/duecase-dossier-preview.pdf',files['Dossier.pdf']);
+ const filtered=await fetch(base+'/reports/export?format=zip&sections=messages&from=1900-01-01&to=1900-01-02',{headers:{Authorization:`Bearer ${father.token}`}});
+ assert.equal(filtered.status,200);const selected=JSON.parse(Buffer.from(unzipSync(new Uint8Array(await filtered.arrayBuffer()))['Dati-originali.json']).toString());
+ assert.equal(selected.sections.find(s=>s.title==='Conversazioni condivise').rows.length,0);
+ await api(`/reports/export?childId=${childId}`,{token:outsider.token,status:404});
+ await api('/reports/export?from=2026-12-01&to=2026-01-01',{token:father.token,status:400});
+});
+await test('Message blocking is reversible and reports cannot access another family',async()=>{
+ const messages=await api('/messages',{token:father.token});const message=messages[0];
+ await api('/safety/report-message',{token:outsider.token,body:{messageId:message.id,reason:'Segnalazione test'},status:404});
+ await api('/safety/report-message',{token:mother.token,body:{messageId:message.id,reason:'Segnalazione test'},status:201});
+ await api('/safety/message-block',{token:mother.token,method:'PUT',body:{blocked:true}});
+ assert.equal((await api('/safety/message-block',{token:father.token})).messagingBlocked,true);
+ const f=new FormData();f.set('text','Invio bloccato');await api('/messages',{token:father.token,body:f,status:403});
+ assert.ok((await api('/messages',{token:mother.token})).length>0);
+ await api('/safety/message-block',{token:mother.token,method:'PUT',body:{blocked:false}});
+ assert.equal((await api('/safety/message-block',{token:father.token})).messagingBlocked,false);
+});
+await test('Invitations expire and can be rotated and revoked',async()=>{
+ const old=await api('/family/invitation',{token:father.token});
+ const fresh=await api('/family/invitation/rotate',{token:father.token,method:'POST'});assert.notEqual(fresh.code,old.code);assert.ok(new Date(fresh.expiresAt)>new Date());
+ await api('/family/invitation',{token:father.token,method:'DELETE'});assert.ok(new Date((await api('/family/invitation',{token:father.token})).expiresAt)<=new Date());
+});
 await test('Email code attempt limits, single use and reset revoke old JWT',async()=>{
  const id=randomUUID(),code='123456';
  const hash=createHmac('sha256',process.env.JWT_SECRET).update(`${id}|${code}`).digest('hex');
@@ -123,6 +163,24 @@ await test('Profile and preferences are scoped, exports exclude secrets, passwor
  const second=await api('/auth/login',{body:{email:'father@example.test',password:'ChangedPassword.3'}});
  const revoked=await api('/auth/logout-other-devices',{token:father.token,method:'POST'});father.token=revoked.token;
  await api('/auth/me',{token:second.token,status:401});await api('/auth/me',{token:father.token});
+});
+await test('Individual session revocation preserves this device and rejects the revoked token',async()=>{
+ const second=await api('/auth/login',{body:{email:'father@example.test',password:'ChangedPassword.3'}});
+ await api('/auth/me',{token:second.token});
+ const sessions=await api('/auth/sessions',{token:father.token});const other=sessions.find(x=>!x.current);assert.ok(other);
+ await api(`/auth/sessions/${other.id}`,{token:father.token,method:'DELETE'});
+ await api('/auth/me',{token:second.token,status:401});await api('/auth/me',{token:father.token});
+});
+await test('Email changes require a valid single-use code and revoke previous tokens',async()=>{
+ await api('/auth/change-email/request',{token:outsider.token,body:{email:'next@example.test',password:'Password.1'},status:503});
+ const code='654321',email='changed@example.test',user=outsider.user.id;
+ const hash=createHmac('sha256',process.env.JWT_SECRET).update(`email-change|${user}|${email}|${code}`).digest('hex');
+ await db.query("INSERT INTO duecase_email_changes(user_id,new_email,code_hash,expires_at) VALUES($1,$2,$3,NOW()+INTERVAL '10 minutes')",[user,email,hash]);
+ await api('/auth/change-email/confirm',{token:outsider.token,body:{code:'111111'},status:400});
+ assert.equal((await db.query('SELECT attempts FROM duecase_email_changes WHERE user_id=$1',[user])).rows[0].attempts,1);
+ const old=outsider.token;const result=await api('/auth/change-email/confirm',{token:old,body:{code}});outsider.token=result.token;
+ await api('/auth/me',{token:old,status:401});assert.equal((await api('/auth/me',{token:outsider.token})).email,email);
+ await api('/auth/change-email/confirm',{token:outsider.token,body:{code},status:400});
 });
 await test('Account deletion revokes access without deleting the other parent’s shared ledger',async()=>{
  const before=(await api('/expenses',{token:mother.token})).length;
