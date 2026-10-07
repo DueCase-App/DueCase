@@ -34,6 +34,7 @@ import turnsRouter from './routes/turns.js';
 import swapRequestsRouter from './routes/swapRequests.js';
 
 export const app = express();
+const publicFile=(name:string)=>fileURLToPath(new URL(`../public/${name}`,import.meta.url));
 
 app.disable('x-powered-by');
 app.use(helmet());
@@ -49,7 +50,8 @@ app.get('/api/health', asyncHandler(async (_req, res) => {
 
 app.use('/api', publicInfoRouter);
 app.use(express.static(fileURLToPath(new URL('../public',import.meta.url)),{index:false}));
-app.get('/account-deletion',(_req,res)=>res.sendFile(fileURLToPath(new URL('../public/account-deletion.html',import.meta.url))));
+app.get('/account-deletion',(_req,res)=>res.sendFile(publicFile('account-deletion.html')));
+app.get(['/professionisti','/professionisti/','/professionisti/accetta'],(_req,res)=>res.sendFile(publicFile('professional-portal.html')));
 
 app.use('/api/auth', rateLimit(60, 15*60*1000));
 app.use('/api/auth', emailAuthRouter);
