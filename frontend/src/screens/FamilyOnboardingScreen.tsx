@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -12,6 +13,11 @@ import { AuthInput } from '../components/AuthInput';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
+import {
+  clearPendingParentInvite,
+  getPendingParentInvite,
+  parseParentInviteUrl,
+} from '../services/parentInvitations';
 import type { FamilyInfo } from '../types/models';
 
 type Mode = 'create' | 'join' | null;
@@ -24,6 +30,48 @@ export function FamilyOnboardingScreen(): React.JSX.Element {
   const [createdFamily, setCreatedFamily] = useState<FamilyInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    let accepting = false;
+
+    async function acceptInviteUrl(url: string | null | undefined): Promise<void> {
+      if (!active || accepting || !user || getPendingParentInvite()) return;
+      const invite = parseParentInviteUrl(url);
+      if (!invite) return;
+
+      const accountEmail = user.email.trim().toLowerCase();
+      if (invite.email !== accountEmail) {
+        setError(`Questo invito è destinato a ${invite.email}. Accedi con quell’indirizzo email.`);
+        return;
+      }
+      if (invite.role !== user.role) {
+        setError(`L’invito è stato creato per il ruolo ${invite.role === 'mother' ? 'Mamma' : 'Papà'}.`);
+        return;
+      }
+
+      accepting = true;
+      try {
+        setLoading(true);
+        setError(null);
+        await api.family.join(invite.inviteCode);
+        clearPendingParentInvite();
+        await refreshUser();
+      } catch (err) {
+        if (active) setError(err instanceof Error ? err.message : 'Impossibile accettare l’invito.');
+      } finally {
+        accepting = false;
+        if (active) setLoading(false);
+      }
+    }
+
+    void Linking.getInitialURL().then((url) => acceptInviteUrl(url)).catch(() => undefined);
+    const subscription = Linking.addEventListener('url', ({ url }) => { void acceptInviteUrl(url); });
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, [user, refreshUser]);
 
   async function createFamily(): Promise<void> {
     try {
@@ -62,14 +110,9 @@ export function FamilyOnboardingScreen(): React.JSX.Element {
         <View style={styles.card}>
           <Text style={styles.badge}>FAMIGLIA CREATA</Text>
           <Text style={styles.title}>{createdFamily.name ?? 'La tua famiglia'}</Text>
-          <Text style={styles.subtitle}>Condividi questo Codice Famiglia con l'altro genitore. Potrà usarlo dopo essersi registrato.</Text>
+          <Text style={styles.subtitle}>La famiglia è pronta. Puoi invitare l’altro genitore tramite email da Impostazioni → Famiglia.</Text>
 
-          <View style={styles.codeBox}>
-            <Text style={styles.codeLabel}>CODICE FAMIGLIA</Text>
-            <Text selectable style={styles.code}>{createdFamily.inviteCode}</Text>
-          </View>
-
-          <Text style={styles.note}>Il codice identifica la famiglia. Solo un padre e una madre possono essere associati alla stessa famiglia.</Text>
+          <Text style={styles.note}>Il codice famiglia resta disponibile come metodo di compatibilità, ma l’invito email è il percorso consigliato.</Text>
           <PrimaryButton label="Continua nell'app" onPress={() => void refreshUser()} />
         </View>
       </ScrollView>
@@ -83,24 +126,27 @@ export function FamilyOnboardingScreen(): React.JSX.Element {
           <View style={styles.headerText}>
             <Text style={styles.eyebrow}>CONFIGURAZIONE FAMIGLIA</Text>
             <Text style={styles.title}>Ciao {user?.displayName}</Text>
-            <Text style={styles.subtitle}>Se sei il primo genitore crea la famiglia. Se l'altro genitore l'ha già creata, inserisci il suo codice invito.</Text>
+            <Text style={styles.subtitle}>Se sei il primo genitore crea la famiglia. Se hai ricevuto un invito email, apri il link ricevuto: DueCase ti collegherà automaticamente.</Text>
           </View>
           <Pressable onPress={() => void logout()} style={styles.logoutButton}>
             <Text style={styles.logoutText}>Esci</Text>
           </Pressable>
         </View>
 
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {loading ? <Text style={styles.note}>Collegamento alla famiglia in corso…</Text> : null}
+
         {mode === null ? (
           <View style={styles.choiceGrid}>
             <Pressable style={styles.choiceCard} onPress={() => { setMode('create'); setError(null); }}>
               <Text style={styles.choiceIcon}>＋</Text>
               <Text style={styles.choiceTitle}>Crea Famiglia</Text>
-              <Text style={styles.choiceText}>Sono il primo genitore. Genera un nuovo Codice Famiglia da condividere.</Text>
+              <Text style={styles.choiceText}>Sono il primo genitore e voglio creare una nuova famiglia DueCase.</Text>
             </Pressable>
             <Pressable style={styles.choiceCard} onPress={() => { setMode('join'); setError(null); }}>
               <Text style={styles.choiceIcon}>⌁</Text>
               <Text style={styles.choiceTitle}>Inserisci codice</Text>
-              <Text style={styles.choiceText}>L'altro genitore ha già creato la famiglia e mi ha inviato il codice.</Text>
+              <Text style={styles.choiceText}>Metodo alternativo se hai ricevuto manualmente un Codice Famiglia.</Text>
             </Pressable>
           </View>
         ) : null}
@@ -109,7 +155,7 @@ export function FamilyOnboardingScreen(): React.JSX.Element {
           <View style={styles.card}>
             <Pressable onPress={() => setMode(null)}><Text style={styles.back}>← Indietro</Text></Pressable>
             <Text style={styles.sectionTitle}>Crea Famiglia</Text>
-            <Text style={styles.sectionText}>Il codice invito verrà generato automaticamente dal server.</Text>
+            <Text style={styles.sectionText}>Dopo la creazione potrai invitare l’altro genitore tramite email.</Text>
             <AuthInput
               label="Nome famiglia (facoltativo)"
               value={familyName}
@@ -118,7 +164,7 @@ export function FamilyOnboardingScreen(): React.JSX.Element {
               placeholder="Es. Famiglia Rossi"
             />
             {error ? <Text style={styles.error}>{error}</Text> : null}
-            <PrimaryButton label="Crea e genera codice" onPress={() => void createFamily()} loading={loading} />
+            <PrimaryButton label="Crea famiglia" onPress={() => void createFamily()} loading={loading} />
           </View>
         ) : null}
 
@@ -126,7 +172,7 @@ export function FamilyOnboardingScreen(): React.JSX.Element {
           <View style={styles.card}>
             <Pressable onPress={() => setMode(null)}><Text style={styles.back}>← Indietro</Text></Pressable>
             <Text style={styles.sectionTitle}>Unisciti alla famiglia</Text>
-            <Text style={styles.sectionText}>Inserisci esattamente il codice ricevuto dall'altro genitore.</Text>
+            <Text style={styles.sectionText}>Inserisci il codice ricevuto dall’altro genitore. Se hai ricevuto l’email DueCase, usa invece il pulsante nel messaggio.</Text>
             <AuthInput
               label="Codice Famiglia"
               value={inviteCode}
@@ -161,9 +207,6 @@ const styles = StyleSheet.create({
   choiceText: { color: '#64748B', lineHeight: 21 },
   card: { width: '100%', maxWidth: 620, alignSelf: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 22, padding: 20, gap: 16 },
   badge: { alignSelf: 'flex-start', color: '#047857', backgroundColor: '#ECFDF5', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, fontSize: 12, fontWeight: '900' },
-  codeBox: { alignItems: 'center', gap: 8, padding: 22, borderRadius: 18, backgroundColor: '#EAF4FF', borderWidth: 1, borderColor: '#D9E7F4' },
-  codeLabel: { color: '#6366F1', fontSize: 12, fontWeight: '900', letterSpacing: 1.4 },
-  code: { color: '#312E81', fontSize: 30, fontWeight: '900', letterSpacing: 3 },
   note: { color: '#64748B', lineHeight: 20, textAlign: 'center' },
   back: { color: '#4F46E5', fontWeight: '800' },
   sectionTitle: { fontSize: 24, fontWeight: '900', color: '#0F172A' },
