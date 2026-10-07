@@ -1,42 +1,140 @@
 # DueCase — verifica prima della pubblicazione
 
-Questa release è una build di collaudo. Il codice non certifica la conformità giuridica né la consegna delle notifiche sui dispositivi.
+Stato aggiornato al 7 ottobre 2026.
 
-## Servizi esterni da attivare
+## Già predisposto
 
-- Dominio e servizio email: SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, EMAIL_FROM; impostare SPF/DKIM/DMARC e verificare consegna/rimbalzi. Attivare EMAIL_VERIFICATION_REQUIRED solo dopo prove reali di registrazione, recupero, cambio email e conferma spese. L’accesso account previsto è tramite email verificata e password.
-- Android: GOOGLE_SERVICES_JSON_BASE64 in GitHub e credenziali FCM del progetto Expo. iOS: credenziali APNs. Collaudare due account su due dispositivi, app aperta/chiusa, telefono bloccato, permesso negato, apertura dalla notifica, duplicati e badge. Il badge numerico dipende anche dal launcher Android.
-- Pagamenti: account store, prodotti e verifica server delle transazioni; rinnovi, revoche, scadenze e ripristino. La famiglia ha un unico diritto Premium, 4,99 €/mese senza prova gratuita. Non attivare il blocco Premium prima di integrare e provare il billing. Nessuna integrazione di pagamento reale è stata simulata.
-- Fornitore di pubblicazione e titolare del trattamento da identificare; verificare con commercialista la posizione fiscale per l'attività a pagamento.
+- Sito ufficiale: https://www.duecaseununicasquadra.com
+- Privacy: https://www.duecaseununicasquadra.com/privacy.html
+- Termini: https://www.duecaseununicasquadra.com/termini.html
+- Cookie: https://www.duecaseununicasquadra.com/cookie.html
+- Cancellazione account: https://www.duecaseununicasquadra.com/cancellazione-account.html
+- Note legali e assistenza pubbliche.
+- Registrazione con presa visione Privacy e accettazione Termini separate e obbligatorie.
+- Versione dei documenti legali e timestamp di accettazione salvati lato backend.
+- Eliminazione account raggiungibile da `Impostazioni > Privacy e dati`, con doppia conferma.
+- Link web esterno di cancellazione disponibile per Google Play.
+- Accesso professionisti separato dagli account dei genitori, in sola lettura, con scope revocabili.
+- Dominio ufficiale configurato nel backend per URL privacy/termini/sito.
 
-## Privacy, termini e assistenza
+## Blocchi da chiudere prima della submission pubblica
 
-- Finalizzare con consulente informativa, basi giuridiche (incluse categorie particolari), tempi di conservazione, dati minori, fornitori/responsabili e trasferimenti. Valutare necessità DPIA, misure e rischi; predisporre gestione violazioni.
-- La cancellazione attuale anonimizza il profilo, revoca l'accesso e conserva lo storico condiviso. I contenuti possono continuare a identificare persone: non descriverla come anonimizzazione completa o cancellazione di tutti i dati. Occorre definire e implementare durata, eccezioni e cancellazione dei contenuti/backup in base alla policy validata. Questo è un blocco alla pubblicazione, non risolto dalla sola pagina web.
-- Configurare PRIVACY_POLICY_URL, TERMS_URL e SUPPORT_EMAIL; le URL devono essere HTTPS pubbliche. Percorso esterno eliminazione: /account-deletion sul backend. Non pubblicare segnaposto legali come informative definitive.
-- Le segnalazioni sono registrate in PostgreSQL. La CLI `node dist/scripts/moderation.js list|review ID|status ID reviewing|resolved` è utilizzabile soltanto nell'ambiente protetto dell'operatore. Definire addetti, tempi, escalation, filtraggio, trattamento dei contenuti illeciti e retention; poi impostare MODERATION_ACTIVE=true. Un controllo del tono e la sospensione chat non bastano da soli a completare una policy di moderazione.
-- Valutare accettazione versionata dei termini e acquisizione dei consensi strettamente necessari dopo aver definito i testi; mai usare un consenso generico per tutti i trattamenti.
+### 1. Email reali
+Render Free non consente l'uscita SMTP sulle porte standard usate da Aruba. Finché non viene scelto un provider/API compatibile non attivare `EMAIL_VERIFICATION_REQUIRED=true`.
 
-## Dossier
+Da collaudare realmente:
+- verifica email;
+- recupero password;
+- cambio email;
+- invito altro genitore;
+- invito professionista;
+- codici OTP inviati via email dove previsti.
 
-PDF con indice e pagine; ZIP con originali, PDF, testo Unicode, dati strutturati, Spese.csv, Rimborsi.csv e impronte SHA256SUMS. Filtri per periodo civile Europe/Rome, figlio e sezioni. Messaggi/accordi/storico generale e voci familiari non associate a figli restano inclusi: dichiarato in UI e report. Il riepilogo usa schede/regole attuali, non ricostruisce presenze passate non registrate. Versioni degli accordi e rimborsi collegati sono inclusi anche fuori periodo per non perdere esiti.
+### 2. Push
+Android richiede configurazione Firebase/FCM e iOS credenziali APNs. Verificare su almeno due telefoni reali:
+- app aperta, background, terminata;
+- telefono bloccato;
+- permesso notifiche negato e poi concesso;
+- badge;
+- apertura dalla notifica;
+- assenza di duplicati.
 
-I PDF non sono firme digitali o documenti certificati. Non attribuire valore probatorio garantito o identità verificata tramite email. Segnalare eventuali anomalie di hash e originali mancanti, senza occultarle. Limite esplicito: 5.000 record per sezione e 100 MB di allegati per pacchetto; restringere i filtri se superato. L'accesso professionista è rimosso dalla registrazione finché non è pronto; il dossier si consegna manualmente al professionista.
+### 3. Billing store
+Il Premium famiglia previsto è 4,99 €/mese, un solo diritto per entrambi i genitori, senza prova gratuita.
 
-## Continuità operativa
+Prima di attivare `PREMIUM_ENFORCEMENT_ENABLED` servono:
+- prodotti App Store e Play;
+- acquisto;
+- ripristino;
+- rinnovo;
+- scadenza/revoca;
+- sincronizzazione entitlement famiglia;
+- verifica server della transazione.
 
-- Scegliere destinazione protetta, retention e pianificazione backup. `scripts/backup-database.sh` prepara un dump completo cifrato con age, ma non attiva alcun servizio esterno o pianificazione. Credenziali tramite PGSERVICE/PGPASSFILE. Conservare la chiave privata separatamente.
-- Prima del lancio eseguire un ripristino in database isolato e verificare utenti fittizi, allegati, migrazioni, conteggi e ripartenza. Non ripristinare sopra produzione.
-- Monitoraggio disponibilità/errori, spazio database (allegati inclusi), scadenza piano DB e procedure incidenti. Configurare alert operativi; evitare contenuti chat e segreti nei log.
-- I token/sessioni scaduti vanno rimossi con manutenzione periodica secondo retention; verificare la durata del JWT. Rotazione segreti e accessi operatori.
+### 4. Cancellazione dati condivisi
+L'account deletion attuale elimina credenziali e dati anagrafici dell'utente e revoca l'accesso, ma mantiene alcuni record condivisi della famiglia attribuiti a `Account eliminato`.
 
-## Store e collaudo finale
+Messaggi e relativi allegati sono attualmente progettati come append-only/immutabili. Prima della pubblicazione occorre scegliere e validare la regola definitiva di conservazione: quali dati condivisi restano per un motivo legittimo e quali contenuti personali/allegati vengono rimossi su richiesta.
 
-- Account sviluppatore, firmatari, classificazione età, dichiarazioni Data safety/App privacy coerenti con SDK e servizi, contatti, screenshot reali, descrizioni senza promesse di certificazione.
-- Account demo separati con dati fittizi per revisione e backend disponibile. Disattivare la modalità test pubblica soltanto a servizi pronti.
-- Build Android AAB per Play e archivio iOS/TestFlight. APK attuale: collaudo privato, non pubblicazione store.
-- Provare chat con tastiera reale, font ingranditi, piccoli schermi, tablet, VoiceOver/TalkBack, orientamento supportato; pulsanti e chiusure sempre raggiungibili.
-- L'apertura delle notifiche porta ancora alla sezione: selezione automatica di una specifica voce storica non completata. Notifiche in background e ricevute Expo richiedono collaudo/configurazione reali.
-- Le modifiche allo schema settimanale sono condivise e tracciate ma non soggette a proposta/approvazione come i cambi giornalieri. Valutare questo flusso prima del lancio.
+Questa scelta deve essere coerente tra:
+- comportamento backend;
+- Privacy Policy;
+- pagina cancellazione account;
+- dichiarazioni Apple App Privacy;
+- Google Play Data safety.
 
-Il completamento di questa lista e l'esito della revisione degli store vanno verificati sul prodotto effettivo: nessuna garanzia automatica di approvazione.
+Non dichiarare “tutti i dati vengono cancellati” finché il comportamento non lo garantisce.
+
+### 5. Titolare e testi legali finali
+Le pagine legali sono complete come struttura ma restano da validare con il legale e da completare con dati reali del titolare/contitolari. La parte fiscale resta separata e non blocca lo sviluppo tecnico, ma va definita prima della monetizzazione abituale.
+
+## Apple App Store
+
+Requisiti già coperti tecnicamente:
+- percorso di eliminazione account dentro l'app;
+- Privacy Policy pubblica HTTPS;
+- support URL disponibile;
+- permessi fotocamera/libreria descritti;
+- nessun microfono richiesto.
+
+Da completare:
+- App Privacy in App Store Connect coerente con il build finale;
+- classificazione età;
+- screenshot reali;
+- descrizione e parole chiave;
+- account demo per review;
+- TestFlight su dispositivi reali;
+- verifica privacy manifest delle dipendenze native;
+- billing se Premium attivo.
+
+## Google Play
+
+Requisiti già coperti tecnicamente:
+- percorso in-app di cancellazione;
+- pagina web esterna di cancellazione;
+- Privacy Policy pubblica;
+- permessi Android minimizzati a fotocamera e notifiche; microfono bloccato.
+
+Da completare:
+- modulo Data safety;
+- URL cancellazione account nella sezione dedicata Play Console;
+- classificazione contenuti;
+- screenshot/feature graphic;
+- AAB firmato;
+- test interno/chiuso su dispositivi reali;
+- FCM;
+- billing se Premium attivo.
+
+Vedi anche `docs/STORE_PRIVACY_DECLARATIONS.md`.
+
+## Backup e continuità
+
+`scripts/backup-database.sh` prepara un dump cifrato, ma il backup non è ancora una garanzia finché non viene:
+- schedulato;
+- salvato in destinazione separata;
+- monitorato;
+- provato con un ripristino reale in ambiente isolato.
+
+Prima del lancio eseguire almeno un restore test completo e verificare conteggi, utenti fittizi, allegati, migrazioni e avvio backend.
+
+## Collaudo finale app
+
+Provare su Android e iPhone reali:
+- registrazione completa;
+- login/logout/sessioni;
+- invito altro genitore;
+- famiglia e figli;
+- calendario e permanenze;
+- scambi;
+- spese, approvazioni, OTP e rimborsi;
+- upload documenti/ricevute;
+- chat e allegati;
+- dossier/esportazione;
+- invito professionista e revoca scope;
+- cancellazione account;
+- tastiera, piccoli schermi, tablet, font grandi, TalkBack/VoiceOver;
+- rete lenta/offline/riconnessione.
+
+## Stato pubblicazione
+
+DueCase è in fase avanzata di collaudo, ma non va dichiarata pronta agli store finché non sono chiusi i blocchi: email, push, billing (se attivo), cancellazione dati condivisi, revisione legale e test reali su dispositivi.
