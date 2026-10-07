@@ -14,7 +14,6 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   type TextInputProps,
@@ -23,6 +22,13 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
+import {
+  clearPendingParentInvite,
+  getPendingParentInvite,
+  parentInvitations,
+  type ParentInviteLink,
+} from '../services/parentInvitations';
 import type { ParentRole, RegisterInput } from '../types/models';
 
 const COLORS = {
@@ -43,7 +49,6 @@ const COLORS = {
 const MIN_DATE = new Date(1900, 0, 1);
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
-type AccountType = 'parent' | 'professional';
 type DateTarget = 'parent' | 'child';
 
 type ChildDraft = {
@@ -77,13 +82,12 @@ function normalizePhone(value: string): string {
 }
 
 export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): React.JSX.Element {
-  const { register } = useAuth();
+  const { register, refreshUser } = useAuth();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const compact = width < 360;
   const heroHeight = Math.max(185, Math.min(360, width * 0.44));
 
-  const [accountType, setAccountType] = useState<AccountType>('parent');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [birthDate, setBirthDate] = useState<Date | null>(null);
@@ -98,6 +102,8 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
   const [familyName, setFamilyName] = useState('');
   const [children, setChildren] = useState<ChildDraft[]>([]);
   const [inviteOtherParent, setInviteOtherParent] = useState(true);
+  const [otherParentEmail, setOtherParentEmail] = useState('');
+  const [inviteFromLink, setInviteFromLink] = useState<ParentInviteLink | null>(null);
 
   const [childModalVisible, setChildModalVisible] = useState(false);
   const [childName, setChildName] = useState('');
@@ -108,20 +114,21 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const invite = getPendingParentInvite();
+    if (!invite) return;
+    setInviteFromLink(invite);
+    setJoinExisting(true);
+    setInviteOtherParent(false);
+    setEmail(invite.email);
+    setRole(invite.role);
+  }, []);
+
   const childrenLabel = useMemo(() => {
     if (!joinExisting && children.length === 0) return 'Aggiungi i tuoi figli';
     if (children.length === 1) return '1 figlio aggiunto';
     return `${children.length} figli aggiunti`;
   }, [children.length, joinExisting]);
-
-  function chooseProfessional(): void {
-    setAccountType('professional');
-    Alert.alert(
-      'Profilo professionista',
-      'Il profilo professionista sarà disponibile in una fase dedicata. Per questa registrazione continua come genitore.',
-      [{ text: 'OK', onPress: () => setAccountType('parent') }],
-    );
-  }
 
   function applySelectedDate(target: DateTarget, selectedDate: Date): void {
     if (target === 'parent') {
@@ -191,28 +198,29 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
   }
 
   async function submit(): Promise<void> {
-    if (accountType !== 'parent') {
-      setError('Al momento la registrazione è disponibile per i genitori.');
-      return;
-    }
-
     const trimmedFirstName = firstName.trim();
     const trimmedLastName = lastName.trim();
     const normalizedTaxCode = normalizeTaxCode(taxCode);
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedPhone = normalizePhone(phone);
     const trimmedFamilyName = familyName.trim();
+    const normalizedOtherParentEmail = otherParentEmail.trim().toLowerCase();
 
     if (trimmedFirstName.length < 2) return setError('Inserisci il tuo nome.');
     if (trimmedLastName.length < 2) return setError('Inserisci il tuo cognome.');
     if (!birthDate) return setError('Seleziona la tua data di nascita.');
     if (!/^[A-Z0-9]{16}$/.test(normalizedTaxCode)) return setError('Inserisci un codice fiscale valido di 16 caratteri.');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return setError('Inserisci un indirizzo email valido.');
+    if (inviteFromLink && normalizedEmail !== inviteFromLink.email) return setError(`Questo invito è destinato a ${inviteFromLink.email}.`);
     if (normalizedPhone && normalizedPhone.replace(/\D/g, '').length < 6) return setError('Inserisci un numero di telefono valido.');
     if (password.length < 8 || !/[A-Z]/.test(password) || !/[^a-zA-Z0-9\s]/.test(password)) return setError('Usa almeno 8 caratteri, una maiuscola e un carattere speciale.');
     if(password !== confirmPassword) return setError('Le password non coincidono.');
     if (!joinExisting && trimmedFamilyName.length < 2) return setError('Inserisci il nome della famiglia.');
     if (!joinExisting && children.length === 0) return setError('Aggiungi almeno un figlio per completare la famiglia.');
+    if (!joinExisting && inviteOtherParent) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedOtherParentEmail)) return setError('Inserisci l’email valida dell’altro genitore oppure scegli “Invita più tardi”.');
+      if (normalizedOtherParentEmail === normalizedEmail) return setError('L’email dell’altro genitore deve essere diversa dalla tua.');
+    }
 
     const registerInput: RegisterInput = {
       displayName: `${trimmedFirstName} ${trimmedLastName}`.trim(),
@@ -230,13 +238,33 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
         displayName: child.displayName,
         birthDate: child.birthDate ? toIsoDate(child.birthDate) : null,
       })),
-      inviteOtherParent,
+      inviteOtherParent: !joinExisting && inviteOtherParent,
     };
 
     try {
       setLoading(true);
       setError(null);
       await register(registerInput);
+
+      if (inviteFromLink) {
+        await api.family.join(inviteFromLink.inviteCode);
+        await refreshUser();
+        clearPendingParentInvite();
+        return;
+      }
+
+      if (!joinExisting && inviteOtherParent) {
+        try {
+          await parentInvitations.send(normalizedOtherParentEmail);
+        } catch (inviteError) {
+          Alert.alert(
+            'Account creato',
+            inviteError instanceof Error
+              ? `L’account è stato creato, ma l’invito non è partito: ${inviteError.message}. Potrai reinviarlo da Impostazioni > Famiglia.`
+              : 'L’account è stato creato, ma l’invito non è partito. Potrai reinviarlo da Impostazioni > Famiglia.',
+          );
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registrazione non riuscita. Riprova.');
     } finally {
@@ -273,12 +301,7 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
               <View style={[styles.progressSegment, styles.progressOrange]} />
             </View>
 
-            <Text style={styles.subtitle}>Scegli come iniziare con DueCase.</Text>
-
-            <View style={styles.accountSelector}>
-              <SelectorButton icon="people" label="Sono un genitore" selected={accountType === 'parent'} onPress={() => setAccountType('parent')} />
-
-            </View>
+            <Text style={styles.subtitle}>{inviteFromLink ? 'Completa la registrazione per entrare nella famiglia condivisa.' : 'Crea il tuo profilo DueCase.'}</Text>
 
             <View style={[styles.fieldRow, compact && styles.fieldRowStack]}>
               <FormField label="Nome" required icon="person-outline" value={firstName} onChangeText={setFirstName} placeholder="Inserisci il tuo nome" autoCapitalize="words" autoComplete="given-name" textContentType="givenName" />
@@ -298,7 +321,7 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
             </View>
 
             <View style={[styles.fieldRow, compact && styles.fieldRowStack]}>
-              <FormField label="Email" required icon="mail-outline" value={email} onChangeText={setEmail} placeholder="La tua email" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} autoComplete="email" textContentType="emailAddress" />
+              <FormField label="Email" required icon="mail-outline" value={email} onChangeText={setEmail} placeholder="La tua email" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} autoComplete="email" textContentType="emailAddress" editable={!inviteFromLink} />
               <FormField label="Telefono (facoltativo)" icon="call-outline" value={phone} onChangeText={setPhone} placeholder="Inserisci il tuo numero" keyboardType="phone-pad" autoComplete="tel" textContentType="telephoneNumber" />
             </View>
 
@@ -323,61 +346,90 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
             <View style={styles.fieldBlock}>
               <RequiredLabel label="Ruolo" />
               <View style={styles.roleRow}>
-                <RoleButton label="Papà" icon="person-outline" selected={role === 'father'} onPress={() => setRole('father')} />
-                <RoleButton label="Mamma" icon="person-outline" selected={role === 'mother'} onPress={() => setRole('mother')} />
+                <RoleButton label="Papà" icon="person-outline" selected={role === 'father'} onPress={() => { if (!inviteFromLink) setRole('father'); }} />
+                <RoleButton label="Mamma" icon="person-outline" selected={role === 'mother'} onPress={() => { if (!inviteFromLink) setRole('mother'); }} />
               </View>
+              {inviteFromLink ? <Text style={styles.inviteDescription}>Il ruolo è già definito dall’invito ricevuto.</Text> : null}
             </View>
 
-            <View style={styles.accountSelector}>
-              <SelectorButton icon="home-outline" label="Crea famiglia" selected={!joinExisting} onPress={() => setJoinExisting(false)} />
-              <SelectorButton icon="people-outline" label="Ho un codice invito" selected={joinExisting} onPress={() => setJoinExisting(true)} />
-            </View>
-            {joinExisting ? <Text style={styles.inviteDescription}>Dopo la registrazione inserisci il codice dell’altro genitore. Non sarà creata una seconda famiglia.</Text> : <>
-            <FormField
-              label="Famiglia"
-              required
-              icon="people-outline"
-              rightIcon="information-circle-outline"
-              onRightPress={() => Alert.alert('Nome della famiglia', 'Usa un nome semplice che permetta a Mamma e Papà di riconoscere subito la famiglia condivisa.')}
-              value={familyName}
-              onChangeText={setFamilyName}
-              placeholder="Inserisci il nome della tua famiglia"
-              autoCapitalize="words"
-            />
-
-            <View style={styles.fieldBlock}>
-              <RequiredLabel label="Figli" />
-              <Pressable accessibilityRole="button" accessibilityLabel="Aggiungi un figlio" onPress={openChildModal} style={({ pressed }) => [styles.childrenRow, pressed && styles.pressed]}>
-                <Ionicons name="people-outline" size={24} color={COLORS.muted} />
-                <Text style={styles.childrenText}>{childrenLabel}</Text>
-                <Ionicons name="chevron-forward" size={22} color={COLORS.muted} />
-                <View style={styles.plusBadge}><Ionicons name="add" size={28} color={COLORS.white} /></View>
-              </Pressable>
-
-              {children.length > 0 ? (
-                <View style={styles.childChips}>
-                  {children.map((child) => (
-                    <View key={child.id} style={styles.childChip}>
-                      <Text style={styles.childChipText} numberOfLines={1}>{child.displayName}</Text>
-                      <Pressable accessibilityRole="button" accessibilityLabel={`Rimuovi ${child.displayName}`} onPress={() => removeChild(child.id)} hitSlop={8}>
-                        <Ionicons name="close-circle" size={19} color={COLORS.muted} />
-                      </Pressable>
-                    </View>
-                  ))}
+            {inviteFromLink ? (
+              <View style={styles.inviteNotice}>
+                <Ionicons name="mail-open-outline" size={25} color={COLORS.blue} />
+                <View style={styles.inviteTextArea}>
+                  <Text style={styles.inviteTitle}>Invito dell’altro genitore</Text>
+                  <Text style={styles.inviteDescription}>Dopo la registrazione entrerai automaticamente nella stessa famiglia. Non dovrai reinserire i figli.</Text>
                 </View>
-              ) : null}
-            </View>
-
-            <View style={styles.inviteRow}>
-              <View style={styles.inviteIcon}><Ionicons name="people-outline" size={28} color={COLORS.blue} /></View>
-              <View style={styles.inviteTextArea}>
-                <Text style={styles.inviteTitle}>Invito altro genitore</Text>
-                <Text style={styles.inviteDescription}>Invia un invito all’altro genitore per unirsi alla famiglia su DueCase.</Text>
               </View>
-              <Switch value={inviteOtherParent} onValueChange={setInviteOtherParent} trackColor={{ false: '#D5DFEA', true: COLORS.blue }} thumbColor={COLORS.white} ios_backgroundColor="#D5DFEA" />
-            </View>
+            ) : (
+              <>
+                <View style={styles.accountSelector}>
+                  <SelectorButton icon="home-outline" label="Crea famiglia" selected={!joinExisting} onPress={() => setJoinExisting(false)} />
+                  <SelectorButton icon="key-outline" label="Ho un codice invito" selected={joinExisting} onPress={() => setJoinExisting(true)} />
+                </View>
+                {joinExisting ? <Text style={styles.inviteDescription}>Dopo la registrazione potrai inserire il codice ricevuto dall’altro genitore. Non sarà creata una seconda famiglia.</Text> : <>
+                  <FormField
+                    label="Famiglia"
+                    required
+                    icon="people-outline"
+                    rightIcon="information-circle-outline"
+                    onRightPress={() => Alert.alert('Nome della famiglia', 'Usa un nome semplice che permetta a Mamma e Papà di riconoscere subito la famiglia condivisa.')}
+                    value={familyName}
+                    onChangeText={setFamilyName}
+                    placeholder="Inserisci il nome della tua famiglia"
+                    autoCapitalize="words"
+                  />
 
-            </>}
+                  <View style={styles.fieldBlock}>
+                    <RequiredLabel label="Figli" />
+                    <Pressable accessibilityRole="button" accessibilityLabel="Aggiungi un figlio" onPress={openChildModal} style={({ pressed }) => [styles.childrenRow, pressed && styles.pressed]}>
+                      <Ionicons name="people-outline" size={24} color={COLORS.muted} />
+                      <Text style={styles.childrenText}>{childrenLabel}</Text>
+                      <Ionicons name="chevron-forward" size={22} color={COLORS.muted} />
+                      <View style={styles.plusBadge}><Ionicons name="add" size={28} color={COLORS.white} /></View>
+                    </Pressable>
+
+                    {children.length > 0 ? (
+                      <View style={styles.childChips}>
+                        {children.map((child) => (
+                          <View key={child.id} style={styles.childChip}>
+                            <Text style={styles.childChipText} numberOfLines={1}>{child.displayName}</Text>
+                            <Pressable accessibilityRole="button" accessibilityLabel={`Rimuovi ${child.displayName}`} onPress={() => removeChild(child.id)} hitSlop={8}>
+                              <Ionicons name="close-circle" size={19} color={COLORS.muted} />
+                            </Pressable>
+                          </View>
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.fieldBlock}>
+                    <Text style={styles.inviteTitle}>Collega l’altro genitore</Text>
+                    <View style={styles.accountSelector}>
+                      <SelectorButton icon="mail-outline" label="Invita l’altro genitore" selected={inviteOtherParent} onPress={() => setInviteOtherParent(true)} />
+                      <SelectorButton icon="time-outline" label="Invita più tardi" selected={!inviteOtherParent} onPress={() => setInviteOtherParent(false)} />
+                    </View>
+                    {inviteOtherParent ? (
+                      <>
+                        <FormField
+                          label="Email dell’altro genitore"
+                          required
+                          icon="mail-outline"
+                          value={otherParentEmail}
+                          onChangeText={setOtherParentEmail}
+                          placeholder="email@esempio.it"
+                          keyboardType="email-address"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          autoComplete="email"
+                        />
+                        <Text style={styles.inviteDescription}>Riceverà un link per registrarsi o accedere ed entrare direttamente in questa famiglia.</Text>
+                      </>
+                    ) : <Text style={styles.inviteDescription}>Potrai invitarlo in qualsiasi momento da Impostazioni → Famiglia.</Text>}
+                  </View>
+                </>}
+              </>
+            )}
+
             {error ? (
               <View style={styles.errorBox}>
                 <Ionicons name="alert-circle-outline" size={20} color={COLORS.danger} />
@@ -587,6 +639,7 @@ const styles = StyleSheet.create({
   childChip: { maxWidth: '100%', borderRadius: 99, paddingLeft: 12, paddingRight: 8, paddingVertical: 7, backgroundColor: '#EAF3FC', flexDirection: 'row', alignItems: 'center', gap: 7 },
   childChipText: { color: COLORS.text, fontSize: 13, fontWeight: '700', maxWidth: 180 },
   inviteRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 },
+  inviteNotice: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 15, backgroundColor: '#F1F7FD', borderWidth: 1, borderColor: COLORS.border },
   inviteIcon: { width: 36, alignItems: 'center' },
   inviteTextArea: { flex: 1, gap: 2 },
   inviteTitle: { color: COLORS.text, fontSize: 15, fontWeight: '900' },
