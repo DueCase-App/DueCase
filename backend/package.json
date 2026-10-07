@@ -14,7 +14,8 @@
     "start": "node dist/scripts/migrate.js && node dist/server.js",
     "seed": "tsx src/scripts/seed.ts",
     "migrate:prod": "node dist/scripts/migrate.js",
-    "test": "npm run build && node --test tests/*.test.mjs"
+    "check:public": "node --check public/professional-portal.js && node --check public/account-deletion.js",
+    "test": "npm run check:public && npm run build && node --test tests/*.test.mjs"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
