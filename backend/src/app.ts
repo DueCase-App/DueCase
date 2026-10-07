@@ -25,6 +25,9 @@ import historyRouter from './routes/history.js';
 import messagesRouter from './routes/messages.js';
 import notificationsRouter from './routes/notifications.js';
 import permanenceRouter from './routes/permanence.js';
+import professionalAuthRouter from './routes/professionalAuth.js';
+import professionalPortalRouter from './routes/professionalPortal.js';
+import professionalsRouter from './routes/professionals.js';
 import safetyRouter from './routes/safety.js';
 import reportsRouter from './routes/reports.js';
 import turnsRouter from './routes/turns.js';
@@ -54,12 +57,17 @@ app.use('/api/auth', authRouter);
 app.use('/api/auth', accountRouter);
 app.use('/api/auth', emailChangeRouter);
 
+// Accesso professionisti completamente separato dagli account Padre/Madre.
+app.use('/api/professional-auth', professionalAuthRouter);
+app.use('/api/professional', professionalPortalRouter);
+
 // Famiglia, notifiche e storico sono consultabili anche senza Premium.
 app.use('/api/sync', syncRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/history', historyRouter);
 app.use('/api/family/children', requireAuth, checkPremiumStatus, familyChildrenRouter);
 app.use('/api/family', familyRouter);
+app.use('/api/professionals', professionalsRouter);
 
 // Consultazione GET disponibile; mutazioni operative protette dal Premium famiglia.
 app.use('/api/events', requireAuth, checkPremiumStatus, eventsRouter);
