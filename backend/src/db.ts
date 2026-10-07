@@ -6,6 +6,7 @@ const { Pool } = pg;
 export const pool = new Pool({
   connectionString: config.DATABASE_URL,
   ssl: config.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+  options: `-c search_path=${config.DB_SCHEMA},public`,
   max: 10,
 });
 
