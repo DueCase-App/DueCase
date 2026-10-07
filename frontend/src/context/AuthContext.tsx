@@ -75,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
 
   const logout = useCallback(async () => {
     await unregisterPushNotificationsAsync();
+    await api.auth.logoutSession().catch(()=>{});
     setApiToken(null);
     setUser(null);
     await clearStoredToken();

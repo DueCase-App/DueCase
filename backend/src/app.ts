@@ -1,6 +1,8 @@
 import { rateLimit } from './services/rateLimit.js';
 import cors from 'cors';
 import express from 'express';
+import { fileURLToPath } from 'node:url';
+import publicInfoRouter from './routes/publicInfo.js';
 import helmet from 'helmet';
 import { checkPremiumStatus, requireAuth } from './auth.js';
 import { config } from './config.js';
@@ -8,6 +10,7 @@ import { checkDatabase } from './db.js';
 import { asyncHandler, errorHandler } from './http.js';
 import emailAuthRouter from './routes/emailAuth.js';
 import syncRouter from './routes/sync.js';
+import emailChangeRouter from './routes/emailChange.js';
 import accountRouter from './routes/account.js';
 import agreementsRouter from './routes/agreements.js';
 import authRouter from './routes/auth.js';
@@ -22,6 +25,7 @@ import historyRouter from './routes/history.js';
 import messagesRouter from './routes/messages.js';
 import notificationsRouter from './routes/notifications.js';
 import permanenceRouter from './routes/permanence.js';
+import safetyRouter from './routes/safety.js';
 import reportsRouter from './routes/reports.js';
 import turnsRouter from './routes/turns.js';
 import swapRequestsRouter from './routes/swapRequests.js';
@@ -40,10 +44,15 @@ app.get('/api/health', asyncHandler(async (_req, res) => {
   res.json({ ok: true, service: 'duecase-api' });
 }));
 
+app.use('/api', publicInfoRouter);
+app.use(express.static(fileURLToPath(new URL('../public',import.meta.url)),{index:false}));
+app.get('/account-deletion',(_req,res)=>res.sendFile(fileURLToPath(new URL('../public/account-deletion.html',import.meta.url))));
+
 app.use('/api/auth', rateLimit(60, 15*60*1000));
 app.use('/api/auth', emailAuthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/auth', accountRouter);
+app.use('/api/auth', emailChangeRouter);
 
 // Famiglia, notifiche e storico sono consultabili anche senza Premium.
 app.use('/api/sync', syncRouter);
@@ -64,6 +73,7 @@ app.use('/api/agreements', requireAuth, checkPremiumStatus, agreementsRouter);
 app.use('/api/documents', requireAuth, checkPremiumStatus, documentsRouter);
 app.use('/api/messages', requireAuth, checkPremiumStatus, messagesRouter);
 app.use('/api/reports', reportsRouter);
+app.use('/api/safety', safetyRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' });

@@ -92,11 +92,16 @@ export const api = {
     preferences:()=>request<Record<string,boolean>>('/auth/preferences'),
     savePreferences:(value:Record<string,boolean>)=>request<Record<string,boolean>>('/auth/preferences',{method:'PUT',body:JSON.stringify(value)}),
     changePassword:(currentPassword:string,password:string,confirmPassword:string)=>request<{token:string}>('/auth/change-password',{method:'POST',body:JSON.stringify({currentPassword,password,confirmPassword})}),
+    sessions:()=>request<Array<{id:string;device:string;lastSeenAt:string;current:boolean}>>('/auth/sessions'),
+    revokeSession:(id:string)=>request(`/auth/sessions/${id}`,{method:'DELETE'}),
+    logoutSession:()=>request('/auth/logout',{method:'POST'}),
     logoutOthers:()=>request<{token:string}>('/auth/logout-other-devices',{method:'POST'}),
     familyMembers:()=>request<Array<{id:string;displayName:string;role:string}>>('/auth/family-members'),
     exportProfile:()=>request<unknown>('/auth/export-profile'),
     pushStatus: () => request<{registered:boolean}>('/auth/push-status'),
     emailStatus: () => request<{configured:boolean;verified:boolean;required:boolean}>('/auth/email-status'),
+    requestEmailChange:(email:string,password:string)=>request('/auth/change-email/request',{method:'POST',body:JSON.stringify({email,password})}),
+    confirmEmailChange:(code:string)=>request<{token:string}>('/auth/change-email/confirm',{method:'POST',body:JSON.stringify({code})}),
     requestEmail: () => request('/auth/verify-email/request',{method:'POST'}),
     confirmEmail: (code:string) => request('/auth/verify-email/confirm',{method:'POST',body:JSON.stringify({code})}),
     requestReset: (email:string) => request<{message:string}>('/auth/password-reset/request',{method:'POST',body:JSON.stringify({email})}),
@@ -107,7 +112,16 @@ export const api = {
     setPushToken: (expoPushToken: string | null) => request<{ ok: true }>('/auth/push-token', { method: 'PUT', body: JSON.stringify({ expoPushToken }) }),
     deleteAccount: () => request<{ deleted: true }>('/auth/delete-account', { method: 'DELETE' }),
   },
+  serviceInfo:()=>request<{privacyUrl:string|null;termsUrl:string|null;supportEmail:string|null;moderationActive:boolean;deletionUrl:string}>('/service-info'),
+  safety: {
+    blockStatus:()=>request<{blockedByMe:boolean;messagingBlocked:boolean}>('/safety/message-block'),
+    setBlocked:(blocked:boolean)=>request('/safety/message-block',{method:'PUT',body:JSON.stringify({blocked})}),
+    reportMessage:(messageId:string,reason:string)=>request<{id:string}>('/safety/report-message',{method:'POST',body:JSON.stringify({messageId,reason})}),
+  },
   family: {
+    invitation:()=>request<{code:string;expiresAt:string}>('/family/invitation'),
+    rotateInvitation:()=>request<{code:string;expiresAt:string}>('/family/invitation/rotate',{method:'POST'}),
+    revokeInvitation:()=>request('/family/invitation',{method:'DELETE'}),
     create: (name?: string) => request<FamilyActionResponse>('/family/create', { method: 'POST', body: JSON.stringify(name?.trim() ? { name: name.trim() } : {}) }),
     join: (inviteCode: string) => request<FamilyActionResponse>('/family/join', { method: 'POST', body: JSON.stringify({ inviteCode }) }),
     children: () => request<FamilyChild[]>('/family/children'),
@@ -227,6 +241,7 @@ export const api = {
     fileSource: (path: string) => ({ uri: `${API_URL}${path}`, headers: authHeaders() }),
   },
   reports: {
+    exportSource: (query:string) => ({uri:`${API_URL}/reports/export?${query}`,headers:authHeaders()}),
     parentingTime: (from?: string, to?: string) => {
       const query = new URLSearchParams();
       if (from) query.set('from', from);

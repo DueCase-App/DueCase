@@ -277,7 +277,7 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
 
             <View style={styles.accountSelector}>
               <SelectorButton icon="people" label="Sono un genitore" selected={accountType === 'parent'} onPress={() => setAccountType('parent')} />
-              <SelectorButton icon="briefcase-outline" label="Sono un professionista" selected={accountType === 'professional'} onPress={chooseProfessional} />
+
             </View>
 
             <View style={[styles.fieldRow, compact && styles.fieldRowStack]}>

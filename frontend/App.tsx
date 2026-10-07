@@ -183,6 +183,7 @@ function AuthenticatedApp({ requestedRoute, onRequestedRouteHandled }: { request
   const desktop = width >= 900;
   const [routeHistory, setRouteHistory] = useState<MainRoute[]>(['home']);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [permanenceDate,setPermanenceDate]=useState<string|undefined>();
   const [keyboardOpen,setKeyboardOpen]=useState(false);
   useEffect(()=>{const a=Keyboard.addListener('keyboardDidShow',()=>setKeyboardOpen(true));const b=Keyboard.addListener('keyboardDidHide',()=>setKeyboardOpen(false));return()=>{a.remove();b.remove();};},[]);
   const route = routeHistory[routeHistory.length - 1] ?? 'home';
@@ -207,7 +208,7 @@ function AuthenticatedApp({ requestedRoute, onRequestedRouteHandled }: { request
   const navigate = (next: MainRoute): void => { setRouteHistory((current) => current[current.length - 1] === next ? current : [...current, next]); setMoreOpen(false); };
   const page = <LinearGradient colors={ui.gradients.page} style={styles.page}>
     {route === 'home' ? <HomeScreen onNavigate={(target: HomeDestination) => navigate(target as MainRoute)} /> : null}
-    {route === 'calendar' ? <CalendarScreen /> : null}{route === 'permanence' ? <PermanenceScreen /> : null}{route === 'children' ? <ChildrenScreen /> : null}{route === 'expenses' ? <ExpensesScreen /> : null}{route === 'agreements' ? <AgreementsScreen /> : null}{route === 'messages' ? <MessagesScreen /> : null}{route === 'documents' ? <DocumentsScreen /> : null}{route === 'dossier' ? <DossierScreen /> : null}{route === 'notifications' ? <NotificationsScreen onNavigate={(target)=>navigate(target as MainRoute)} /> : null}{route === 'settings' ? <SettingsScreen onNavigate={(target)=>navigate(target as MainRoute)} /> : null}{route === 'family' ? <FamilyCard /> : null}
+    {route === 'calendar' ? <CalendarScreen onProposeChange={date=>{setPermanenceDate(date);navigate('permanence');}} /> : null}{route === 'permanence' ? <PermanenceScreen initialDate={permanenceDate} /> : null}{route === 'children' ? <ChildrenScreen /> : null}{route === 'expenses' ? <ExpensesScreen /> : null}{route === 'agreements' ? <AgreementsScreen /> : null}{route === 'messages' ? <MessagesScreen /> : null}{route === 'documents' ? <DocumentsScreen /> : null}{route === 'dossier' ? <DossierScreen /> : null}{route === 'notifications' ? <NotificationsScreen onNavigate={(target)=>navigate(target as MainRoute)} /> : null}{route === 'settings' ? <SettingsScreen onNavigate={(target)=>navigate(target as MainRoute)} /> : null}{route === 'family' ? <FamilyCard /> : null}
   </LinearGradient>;
 
   return <View style={styles.authenticatedRoot}>

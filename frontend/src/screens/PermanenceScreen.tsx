@@ -33,7 +33,9 @@ function prettyDate(value: string): string {
   return new Date(year, month - 1, day, 12).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-export function PermanenceScreen(): React.JSX.Element {
+export function PermanenceScreen({initialDate}:{initialDate?:string}): React.JSX.Element {
+  const [selectedChild,setSelectedChild]=useState('');
+  const [initialHandled,setInitialHandled]=useState(false);
   const [children, setChildren] = useState<FamilyChild[]>([]);
   const [patterns, setPatterns] = useState<CustodyPattern[]>([]);
   const [alternating, setAlternating] = useState<AlternatingWeekendPattern[]>([]);
@@ -100,6 +102,7 @@ export function PermanenceScreen(): React.JSX.Element {
     finally { setBusy(null); }
   };
 
+  useEffect(()=>{if(initialDate&&!initialHandled&&children.length){setExceptionDate(initialDate);setExceptionChild(children[0]!);setInitialHandled(true);}},[initialDate,initialHandled,children]);
   async function proposeException(){
     if(!exceptionChild||busy)return;setBusy('exception');
     try{await api.permanence.createException({childId:exceptionChild.id,custodyDate:exceptionDate,custodianRole:exceptionRole,notes:exceptionNotes});setExceptionChild(null);await load();}
@@ -115,7 +118,8 @@ export function PermanenceScreen(): React.JSX.Element {
             <View style={{ flex: 1 }}><Text style={styles.todayLabel}>OGGI</Text><Text style={styles.todayTitle}>{current?.children.length ? current.children.map((child) => `${child.childName}: ${roleLabel(child.custodianRole)}`).join(' · ') : 'Permanenza da definire'}</Text><Text style={styles.todayMeta}>Calcolato da eccezioni, calendario, weekend alternati e schema settimanale.</Text></View>
           </View>
 
-          {children.map((child) => {
+          <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{children.map(child=><Pressable key={child.id} style={[styles.weekendChoice,(selectedChild||children[0]?.id)===child.id&&styles.weekendChoiceActive]} onPress={()=>setSelectedChild(child.id)}><Text style={[styles.weekendChoiceText,(selectedChild||children[0]?.id)===child.id&&styles.weekendChoiceTextActive]}>{child.displayName}</Text></Pressable>)}</View>
+          {children.filter(child=>child.id===(selectedChild||children[0]?.id)).map((child) => {
             const alternatingRule = alternatingByChild.get(child.id);
             return <View key={child.id} style={styles.childCard}>
               <View style={styles.childHeader}><View style={styles.childAvatar}><Ionicons name="happy-outline" size={23} color={ui.colors.primary} /></View><View><Text style={styles.childName}>{child.displayName}</Text><Text style={styles.childMeta}>Schema ordinario</Text></View></View>
@@ -157,6 +161,7 @@ export function PermanenceScreen(): React.JSX.Element {
       <View style={{flex:1,justifyContent:'flex-end',backgroundColor:'rgba(12,43,99,.22)'}}><View style={{maxHeight:'95%',backgroundColor:'white',borderRadius:24,padding:18}}>
        <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}><Text style={styles.sectionTitle}>Cambio · {exceptionChild?.displayName}</Text><Pressable accessibilityLabel="Chiudi" onPress={()=>setExceptionChild(null)} style={{padding:12}}><Ionicons name="close" size={26}/></Pressable></View>
        <ScrollView keyboardShouldPersistTaps="handled"><Text style={styles.subtitle}>L’altro genitore dovrà approvare la proposta.</Text>
+        <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{children.map(child=><Pressable key={child.id} style={[styles.weekendChoice,exceptionChild?.id===child.id&&styles.weekendChoiceActive]} onPress={()=>setExceptionChild(child)}><Text style={[styles.weekendChoiceText,exceptionChild?.id===child.id&&styles.weekendChoiceTextActive]}>{child.displayName}</Text></Pressable>)}</View>
         <Calendar current={exceptionDate} onDayPress={d=>setExceptionDate(d.dateString)} markedDates={{[exceptionDate]:{selected:true,selectedColor:ui.colors.primary}}}/>
         <View style={styles.weekendActions}>{(['father','mother'] as const).map(r=><Pressable key={r} onPress={()=>setExceptionRole(r)} style={[styles.weekendChoice,exceptionRole===r&&styles.weekendChoiceActive]}><Text style={[styles.weekendChoiceText,exceptionRole===r&&styles.weekendChoiceTextActive]}>{roleLabel(r)}</Text></Pressable>)}</View>
         <TextInput placeholder="Motivo del cambio" value={exceptionNotes} onChangeText={setExceptionNotes} multiline maxLength={2000} style={{padding:14,marginVertical:14,backgroundColor:ui.colors.input,borderRadius:12,minHeight:70}}/>
