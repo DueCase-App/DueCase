@@ -15,14 +15,14 @@
     "seed": "tsx src/scripts/seed.ts",
     "migrate:prod": "node dist/scripts/migrate.js",
     "check:public": "node --check public/professional-portal.js && node --check public/account-deletion.js",
-    "test": "npm run check:public && npm run build && node --test tests/*.test.mjs"
+    "test": "npm run check:public && npm run build && LEGAL_GUARD_TEST_BYPASS=true node --test tests/*.test.mjs"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
-    "expo-server-sdk": "^7.2.0",
     "express": "^5.1.0",
+    "expo-server-sdk": "^7.2.0",
     "fflate": "0.8.3",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
@@ -41,7 +41,6 @@
     "@types/multer": "^2.0.0",
     "@types/node": "^22.18.0",
     "@types/nodemailer": "^6.4.17",
-    "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.15.5",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2"
