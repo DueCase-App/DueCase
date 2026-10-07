@@ -1,10 +1,14 @@
 import { stopLiveListener } from './services/liveService.js';
+import { verifyEmailTransport } from './services/emailService.js';
 import { app } from './app.js';
 import { config } from './config.js';
 import { pool } from './db.js';
 
 const server = app.listen(config.PORT, '0.0.0.0', () => {
   console.log(`API listening on 0.0.0.0:${config.PORT}`);
+  void verifyEmailTransport()
+    .then((ok) => console.log(ok ? 'SMTP transport verified' : 'SMTP transport not configured'))
+    .catch((error) => console.error('SMTP transport verification failed', error instanceof Error ? error.message : String(error)));
 });
 
 async function shutdown(signal: string): Promise<void> {
