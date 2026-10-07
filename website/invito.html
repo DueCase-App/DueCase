@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#1769E0" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>Invito famiglia · DueCase</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="legal-page">
+  <header class="site-header">
+    <a class="brand" href="/"><img src="https://raw.githubusercontent.com/tecnico-elios/DueCase/main/frontend/assets/duecase-logo-hd.png" alt="DueCase"><span>DueCase</span></a>
+    <a class="btn secondary" href="/">Torna al sito</a>
+  </header>
+  <main class="legal-shell" style="text-align:center;max-width:720px">
+    <span class="eyebrow">INVITO ALLA FAMIGLIA</span>
+    <h1>Entra nella vostra famiglia DueCase</h1>
+    <p id="message">Apri DueCase per registrarti o accedere e collegarti alla famiglia condivisa.</p>
+    <p style="margin:28px 0"><a id="openApp" class="btn primary" href="/" hidden>Apri DueCase</a></p>
+    <div class="notice" id="notice">Il collegamento alla famiglia viene completato solo dopo l’accesso o la registrazione nell’app. Se non riconosci questo invito, puoi chiudere questa pagina.</div>
+    <p><a href="/assistenza.html">Serve aiuto?</a> · <a href="/privacy.html">Privacy</a></p>
+  </main>
+  <script>
+    (() => {
+      const raw = location.hash.startsWith('#') ? location.hash.slice(1) : '';
+      const params = new URLSearchParams(raw);
+      const inviteCode = (params.get('inviteCode') || '').trim().toUpperCase();
+      const email = (params.get('email') || '').trim().toLowerCase();
+      const role = params.get('role');
+      const valid = inviteCode.length >= 6 && email.includes('@') && (role === 'father' || role === 'mother');
+      const button = document.getElementById('openApp');
+      const message = document.getElementById('message');
+      const notice = document.getElementById('notice');
+      if (!valid) {
+        message.textContent = 'Questo link di invito non è completo o non è più utilizzabile.';
+        notice.textContent = 'Chiedi all’altro genitore di reinviare l’invito direttamente da DueCase.';
+        return;
+      }
+      const appParams = new URLSearchParams({ inviteCode, email, role });
+      button.href = `duecase://register?${appParams.toString()}`;
+      button.hidden = false;
+      button.textContent = 'Apri la registrazione DueCase';
+    })();
+  </script>
+</body>
+</html>
