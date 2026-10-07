@@ -89,3 +89,43 @@ export async function sendAccountCode(to: string, code: string, purpose: 'verify
     subject: purpose === 'verify' ? 'DueCase · Verifica email' : 'DueCase · Recupero password',
     text: `Il tuo codice DueCase è ${code}. Scade tra 10 minuti ed è utilizzabile una sola volta. Se non lo hai richiesto, ignora questa email.` });
 }
+
+export async function sendParentInvitationEmail(input: {
+  to: string;
+  inviterName: string;
+  familyName: string;
+  invitedRole: 'father' | 'mother';
+  inviteLink: string;
+  expiresAt: Date;
+}): Promise<void> {
+  const smtp = getTransporter();
+  if (!smtp || !config.EMAIL_FROM) throw new Error('SMTP_NOT_CONFIGURED');
+
+  const roleLabel = input.invitedRole === 'mother' ? 'Mamma' : 'Papà';
+  const expiresLabel = input.expiresAt.toLocaleString('it-IT', { timeZone: 'Europe/Rome' });
+  const subject = `${input.inviterName} ti ha invitato su DueCase`;
+  const text = [
+    `Ciao,`,
+    '',
+    `${input.inviterName} ti ha invitato a entrare nella famiglia “${input.familyName}” su DueCase come ${roleLabel}.`,
+    'Apri il link qui sotto per registrarti o accedere e collegarti automaticamente alla stessa famiglia:',
+    '',
+    input.inviteLink,
+    '',
+    `L'invito scade il ${expiresLabel}.`,
+    'Se non riconosci questo invito, puoi ignorare questa email.',
+    '',
+    'DueCase',
+  ].join('\n');
+
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:580px;margin:0 auto;color:#0A3267;line-height:1.5">
+      <h2 style="margin-bottom:8px">DueCase</h2>
+      <p><strong>${escapeHtml(input.inviterName)}</strong> ti ha invitato a entrare nella famiglia <strong>“${escapeHtml(input.familyName)}”</strong> come ${roleLabel}.</p>
+      <p>Registrati o accedi: il collegamento alla famiglia sarà già predisposto.</p>
+      <p style="margin:26px 0"><a href="${escapeHtml(input.inviteLink)}" style="display:inline-block;background:#1769E0;color:#fff;text-decoration:none;padding:14px 22px;border-radius:12px;font-weight:700">Accetta invito</a></p>
+      <p style="font-size:13px;color:#5D7CA7">L'invito scade il ${escapeHtml(expiresLabel)}. Se non riconosci questo invito, puoi ignorare questa email.</p>
+    </div>`;
+
+  await smtp.sendMail({ from: config.EMAIL_FROM, to: input.to, subject, text, html });
+}
