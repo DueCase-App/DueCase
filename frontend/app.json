@@ -2,9 +2,8 @@
   "expo": {
     "name": "DueCase",
     "slug": "duecase",
-    "owner": "tecnicoelioss-team",
     "scheme": "duecase",
-    "version": "0.4.2",
+    "version": "0.4.3",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "backgroundColor": "#FFF9F0",
@@ -46,7 +45,7 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.tecnicoelios.duecase",
+      "bundleIdentifier": "com.duecaseununicasquadra.duecase",
       "backgroundColor": "#FFF9F0",
       "icon": "./assets/duecase-logo-hd.png",
       "infoPlist": {
@@ -56,10 +55,10 @@
       "config": {
         "usesNonExemptEncryption": false
       },
-      "buildNumber": "42"
+      "buildNumber": "43"
     },
     "android": {
-      "package": "com.tecnicoelios.duecase",
+      "package": "com.duecaseununicasquadra.duecase",
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/duecase-logo-hd.png",
@@ -72,7 +71,7 @@
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
       ],
-      "versionCode": 42
+      "versionCode": 43
     },
     "extra": {
       "eas": {
