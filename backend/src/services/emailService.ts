@@ -32,8 +32,9 @@ function getTransporter(): Transporter | null {
 
 function parseSender(value: string): { name: string; email: string } {
   const match = value.match(/^\s*(?:"?([^"<]*)"?\s*)?<([^>]+)>\s*$/);
-  if (match) {
-    return { name: match[1]?.trim() || 'DueCase', email: match[2].trim() };
+  const matchedEmail = match?.[2]?.trim();
+  if (matchedEmail) {
+    return { name: match?.[1]?.trim() || 'DueCase', email: matchedEmail };
   }
   return { name: 'DueCase', email: value.trim() };
 }
