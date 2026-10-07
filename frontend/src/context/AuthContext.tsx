@@ -17,6 +17,7 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const LEGAL_DOCUMENT_VERSION = '2026-10-07';
 
 export function AuthProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -61,7 +62,14 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   }, []);
 
   const register = useCallback(async (input: RegisterInput) => {
-    const result = await api.auth.register(input);
+    const payload = {
+      ...input,
+      privacyAcknowledged: true,
+      privacyPolicyVersion: LEGAL_DOCUMENT_VERSION,
+      termsAccepted: true,
+      termsVersion: LEGAL_DOCUMENT_VERSION,
+    };
+    const result = await api.auth.register(payload);
     setApiToken(result.token);
     await storeToken(result.token);
     setUser(result.user);
