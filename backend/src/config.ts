@@ -11,6 +11,8 @@ const schema = z.object({
   JWT_EXPIRES_IN: z.string().default('7d'),
   OTP_SECRET: z.string().min(32).optional(),
   EMAIL_VERIFICATION_REQUIRED: z.enum(['true','false']).default('false').transform(v => v === 'true'),
+  BREVO_API_KEY: z.string().trim().min(1).optional(),
+  BREVO_API_URL: z.string().url().default('https://api.brevo.com/v3'),
   SMTP_HOST: z.string().trim().min(1).optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(465),
   SMTP_SECURE: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
