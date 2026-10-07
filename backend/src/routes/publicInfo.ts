@@ -17,7 +17,7 @@ router.get('/service-info', (_req, res) => res.json({
   privacyEmail: config.PRIVACY_EMAIL,
   legalEmail: config.LEGAL_EMAIL,
   moderationActive: process.env.MODERATION_ACTIVE === 'true',
-  deletionUrl: '/account-deletion',
+  deletionUrl: `${config.SITE_URL.replace(/\/$/, '')}/cancellazione-account.html`,
 }));
 
 export default router;
