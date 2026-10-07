@@ -1,10 +1,11 @@
 import { PasswordReset } from '../components/PasswordReset';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -15,12 +16,19 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
+import {
+  clearPendingParentInvite,
+  getPendingParentInvite,
+  parseParentInviteUrl,
+  rememberParentInvite,
+} from '../services/parentInvitations';
 import { cardShadow, ui } from '../theme/ui';
 
 type LoginScreenProps = { onShowRegister: () => void };
 
 export function LoginScreen({ onShowRegister }: LoginScreenProps): React.JSX.Element {
-  const { login } = useAuth();
+  const { login, refreshUser } = useAuth();
   const insets = useSafeAreaInsets();
   const [resetOpen,setResetOpen] = useState(false);
   const [email, setEmail] = useState('');
@@ -28,6 +36,21 @@ export function LoginScreen({ onShowRegister }: LoginScreenProps): React.JSX.Ele
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const handleUrl = (url: string | null | undefined): void => {
+      if (!active) return;
+      const invite = parseParentInviteUrl(url);
+      if (!invite) return;
+      rememberParentInvite(invite);
+      setEmail(invite.email);
+      onShowRegister();
+    };
+    void Linking.getInitialURL().then(handleUrl).catch(() => undefined);
+    const subscription = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+    return () => { active = false; subscription.remove(); };
+  }, [onShowRegister]);
 
   async function submit(): Promise<void> {
     if (loading) return;
@@ -40,10 +63,20 @@ export function LoginScreen({ onShowRegister }: LoginScreenProps): React.JSX.Ele
       setError('Inserisci la password.');
       return;
     }
+    const pendingInvite = getPendingParentInvite();
+    if (pendingInvite && pendingInvite.email !== normalizedEmail) {
+      setError(`Questo invito è destinato a ${pendingInvite.email}. Accedi con quell’indirizzo email.`);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
       await login(normalizedEmail, password);
+      if (pendingInvite) {
+        await api.family.join(pendingInvite.inviteCode);
+        await refreshUser();
+        clearPendingParentInvite();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Accesso non riuscito. Riprova.');
     } finally {
