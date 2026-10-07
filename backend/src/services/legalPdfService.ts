@@ -5,7 +5,7 @@ export type LegalPdfInput={reportId:string;generatedAt:string;familyName:string;
 function printable(s:string){return [...s].map(c=>{const n=c.codePointAt(0)!;return n<=0x52f||(n>=0x1e00&&n<=0x1eff)||(n>=0x2000&&n<=0x206f)||(n>=0x20a0&&n<=0x20cf)||(n>=0x2190&&n<=0x21ff)||(n>=0x2600&&n<=0x26ff)?c:`[U+${n.toString(16).toUpperCase()}]`;}).join('');}
 export async function createLegalReportPdf(input:LegalPdfInput):Promise<Buffer>{
  const doc=new PDFDocument({size:'A4',margin:48,bufferPages:true,info:{Title:'DueCase - Dossier della famiglia',Author:'DueCase',CreationDate:new Date(input.generatedAt)}});
- const chunks:Buffer[]=[];const complete=new Promise<Buffer>((resolve,reject)=>{doc.on('data',c=>chunks.push(c));doc.on('end',()=>resolve(Buffer.concat(chunks)));doc.on('error',reject);});
+ const chunks:Buffer[]=[];const complete=new Promise<Buffer>((resolve,reject)=>{doc.on('data',(c:Buffer)=>chunks.push(c));doc.on('end',()=>resolve(Buffer.concat(chunks)));doc.on('error',reject);});
  doc.registerFont('DueCase',fileURLToPath(new URL('../../assets/DueCaseSans.ttf',import.meta.url)));doc.font('DueCase');
  const text=(s:string,size=10)=>doc.fontSize(size).fillColor('#18334F').text(printable(s),{lineGap:3});
  text('DUECASE',12);doc.moveDown(.4);text('Dossier della famiglia',23);doc.moveDown(.6);
