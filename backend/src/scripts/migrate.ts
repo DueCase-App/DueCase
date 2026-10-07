@@ -7,6 +7,13 @@ import { config } from '../config.js';
 const here = dirname(fileURLToPath(import.meta.url));
 const sqlDir = resolve(here, '../../sql');
 
+function schemaAwareSql(rawSql: string): string {
+  if (config.DB_SCHEMA === 'public') return rawSql;
+  return rawSql
+    .replace(/table_schema\s*=\s*'public'/gi, `table_schema = '${config.DB_SCHEMA}'`)
+    .replace(/'public\./g, `'${config.DB_SCHEMA}.`);
+}
+
 const client = await pool.connect();
 try {
   await client.query('SELECT pg_advisory_lock(72603107)');
@@ -26,7 +33,8 @@ try {
   for (const file of migrationFiles) {
     const applied = await client.query('SELECT 1 FROM duecase_schema_migrations WHERE name = $1', [file]);
     if (applied.rowCount) continue;
-    const sql = await readFile(resolve(sqlDir, file), 'utf8');
+    const rawSql = await readFile(resolve(sqlDir, file), 'utf8');
+    const sql = schemaAwareSql(rawSql);
     await client.query('BEGIN');
     try {
       await client.query(sql);
