@@ -21,6 +21,7 @@ const schema = z.object({
   PRIVACY_EMAIL: z.string().email().default('privacy@duecaseununicasquadra.com'),
   LEGAL_EMAIL: z.string().email().default('legal@duecaseununicasquadra.com'),
   SITE_URL: z.string().url().default('https://www.duecaseununicasquadra.com'),
+  PROFESSIONAL_PORTAL_URL: z.string().url().optional(),
   PRIVACY_POLICY_URL: z.string().url().optional(),
   TERMS_URL: z.string().url().optional(),
   PREMIUM_ENFORCEMENT_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
