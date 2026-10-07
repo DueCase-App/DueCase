@@ -2,9 +2,8 @@ import { italianDate, italianCategory } from '../services/italian';
 import { openPrivateFile } from '../services/openFile';
 import { useLiveRefresh } from '../services/live';
 import { SafeModal as Modal } from '../components/SafeModal';
+import { AttachmentSourceSheet, type PickedAttachment } from '../components/AttachmentSourceSheet';
 import { Ionicons } from '@expo/vector-icons';
-import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -26,7 +25,7 @@ import { cardShadow, ui } from '../theme/ui';
 import type { Expense, ExpenseCategory, ExpensePayment, FamilyActivity, FamilyBalance, FamilyChild, ParentRole } from '../types/models';
 
 const categories: ExpenseCategory[] = ['Scuola', 'Salute', 'Sport', 'Svago'];
-type Receipt = { uri: string; name: string; type: string; file?: Blob };
+type Receipt = PickedAttachment;
 const euro = (value: string | number) => `${Number(value || 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 const roleLabel = (role: ParentRole | null | undefined) => role === 'father' ? 'Papà' : role === 'mother' ? 'Mamma' : 'Account non disponibile';
 
@@ -408,27 +407,10 @@ function ExpenseModal({ visible, childrenList, onClose, onDone }: { visible: boo
   const [motherPercentage, setMotherPercentage] = useState('50');
   const [childIds, setChildIds] = useState<string[]>([]);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const toggleChild = (id: string): void => setChildIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
-
-  async function fromLibrary(): Promise<void> {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) { Alert.alert('Permesso richiesto', 'Consenti l’accesso alle foto.'); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    if (asset) setReceipt({ uri: asset.uri, name: asset.fileName ?? `ricevuta-${Date.now()}.jpg`, type: asset.mimeType ?? 'image/jpeg', file: asset.file });
-  }
-
-  async function fromCamera(): Promise<void> {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) { Alert.alert('Permesso richiesto', 'Consenti l’uso della fotocamera.'); return; }
-    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    if (asset) setReceipt({ uri: asset.uri, name: asset.fileName ?? `ricevuta-${Date.now()}.jpg`, type: asset.mimeType ?? 'image/jpeg', file: asset.file });
-  }
 
   async function save(): Promise<void> {
     const normalized = amount.trim().replace(',', '.');
@@ -447,6 +429,7 @@ function ExpenseModal({ visible, childrenList, onClose, onDone }: { visible: boo
   }
 
   return (
+    <>
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.backdrop}><View style={[styles.formModal,{maxHeight:"100%",flexShrink:1,padding:0,overflow:"hidden"}]}><View style={{padding:16}}>
         <View style={styles.modalHead}><Text style={styles.modalTitle}>Aggiungi spesa</Text><Pressable accessibilityLabel="Chiudi nuova spesa" onPress={onClose}><Ionicons name="close" size={26} color={ui.colors.text} /></Pressable></View></View><ScrollView style={{flexShrink:1}} contentContainerStyle={{padding:16,gap:12}} keyboardShouldPersistTaps="handled">
@@ -463,11 +446,12 @@ function ExpenseModal({ visible, childrenList, onClose, onDone }: { visible: boo
 
         <View style={styles.extraordinaryToggle}><View style={styles.extraordinaryCopy}><Text style={styles.cardTitle}>Spesa straordinaria</Text><Text style={styles.meta}>Richiede conferma tramite codice email dell’altro genitore.</Text></View><Switch value={isExtraordinary} onValueChange={setIsExtraordinary} trackColor={{ false: '#D5DFEA', true: ui.colors.primary }} thumbColor="#FFF" /></View>
         <Text style={styles.label}>Note</Text><TextInput style={[styles.input, styles.notesInput]} multiline value={notes} onChangeText={setNotes} placeholder="Aggiungi una nota" placeholderTextColor={ui.colors.muted} />
-        <Text style={styles.label}>Ricevuta</Text><View style={styles.actions}><Pressable style={styles.secondaryButton} onPress={() => void fromCamera()}><Ionicons name="camera-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Scatta foto</Text></Pressable><Pressable style={styles.secondaryButton} onPress={() => void fromLibrary()}><Ionicons name="images-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Galleria</Text></Pressable></View>
-        {receipt ? <Text style={styles.muted}>Allegato: {receipt.name}</Text> : null}
+        <Text style={styles.label}>Ricevuta</Text><Pressable style={styles.attachmentChoice} onPress={() => setPickerOpen(true)}><View style={styles.attachmentChoiceIcon}><Ionicons name={receipt?.type.startsWith('image/') ? 'image-outline' : 'attach-outline'} size={20} color={ui.colors.primary} /></View><View style={{flex:1}}><Text style={styles.secondaryText}>{receipt ? receipt.name : 'Aggiungi ricevuta'}</Text><Text style={styles.meta}>{receipt ? 'Tocca per sostituire' : 'Fotocamera, foto o file'}</Text></View><Ionicons name="chevron-forward" size={19} color={ui.colors.muted} /></Pressable>
         </ScrollView><View style={[styles.actions,{padding:16}]}><Pressable style={styles.cancelButton} onPress={onClose}><Text style={styles.cancelText}>Annulla</Text></Pressable><Pressable disabled={busy} style={styles.approveButton} onPress={() => void save()}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.approveText}>Invia spesa</Text>}</Pressable></View>
       </View></View>
     </Modal>
+    <AttachmentSourceSheet visible={pickerOpen} onClose={() => setPickerOpen(false)} onPicked={(value) => setReceipt(value)} title="Aggiungi ricevuta" />
+    </>
   );
 }
 
@@ -480,25 +464,10 @@ function PaymentModal({ expense, reserved, currentRole, onClose, onDone }: { res
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => { if (expense) { setAmount(suggested); setNotes(''); setReceipt(null); } }, [expense, suggested]);
-
-  async function pickFile(): Promise<void> {
-    const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true, multiple: false });
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    if (asset) setReceipt({ uri: asset.uri, name: asset.name, type: asset.mimeType ?? 'application/octet-stream', file: asset.file ?? undefined });
-  }
-
-  async function camera(): Promise<void> {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) { Alert.alert('Permesso richiesto', 'Consenti l’uso della fotocamera.'); return; }
-    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    if (asset) setReceipt({ uri: asset.uri, name: asset.fileName ?? `pagamento-${Date.now()}.jpg`, type: asset.mimeType ?? 'image/jpeg', file: asset.file });
-  }
 
   async function save(): Promise<void> {
     if (!expense) return;
@@ -514,14 +483,13 @@ function PaymentModal({ expense, reserved, currentRole, onClose, onDone }: { res
     } finally { setBusy(false); }
   }
 
-  return <Modal visible={expense !== null} transparent animationType="slide" onRequestClose={onClose}><View style={styles.backdrop}><ScrollView keyboardShouldPersistTaps="handled" style={{maxHeight:"95%"}} contentContainerStyle={styles.paymentModal}>
+  return <><Modal visible={expense !== null} transparent animationType="slide" onRequestClose={onClose}><View style={styles.backdrop}><ScrollView keyboardShouldPersistTaps="handled" style={{maxHeight:"95%"}} contentContainerStyle={styles.paymentModal}>
     <View style={styles.modalHead}><View><Text style={styles.modalTitle}>Registra pagamento</Text><Text style={styles.meta}>{expense?.title}</Text></View><Pressable onPress={onClose}><Ionicons name="close" size={26} color={ui.colors.text} /></Pressable></View>
     <Text style={styles.label}>Importo rimborsato (€)</Text><TextInput style={styles.input} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={ui.colors.muted} />
-    <Text style={styles.label}>Prova di pagamento</Text><View style={styles.actions}><Pressable style={styles.secondaryButton} onPress={() => void camera()}><Ionicons name="camera-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>Foto</Text></Pressable><Pressable style={styles.secondaryButton} onPress={() => void pickFile()}><Ionicons name="document-attach-outline" size={18} color={ui.colors.primary} /><Text style={styles.secondaryText}>PDF / file</Text></Pressable></View>
-    {receipt ? <Text style={styles.muted}>Allegato: {receipt.name}</Text> : null}
+    <Text style={styles.label}>Prova di pagamento</Text><Pressable style={styles.attachmentChoice} onPress={() => setPickerOpen(true)}><View style={styles.attachmentChoiceIcon}><Ionicons name={receipt?.type.startsWith('image/') ? 'image-outline' : 'attach-outline'} size={20} color={ui.colors.primary} /></View><View style={{flex:1}}><Text style={styles.secondaryText}>{receipt ? receipt.name : 'Aggiungi prova di pagamento'}</Text><Text style={styles.meta}>{receipt ? 'Tocca per sostituire' : 'Fotocamera, foto o file'}</Text></View><Ionicons name="chevron-forward" size={19} color={ui.colors.muted} /></Pressable>
     <Text style={styles.label}>Note</Text><TextInput style={[styles.input, styles.notesInput]} multiline value={notes} onChangeText={setNotes} placeholder="Es. Bonifico effettuato" placeholderTextColor={ui.colors.muted} />
     <View style={styles.actions}><Pressable style={styles.cancelButton} onPress={onClose}><Text style={styles.cancelText}>Annulla</Text></Pressable><Pressable disabled={busy} style={styles.approveButton} onPress={() => void save()}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.approveText}>Conferma pagamento</Text>}</Pressable></View>
-  </ScrollView></View></Modal>;
+  </ScrollView></View></Modal><AttachmentSourceSheet visible={pickerOpen} onClose={() => setPickerOpen(false)} onPicked={(value) => setReceipt(value)} title="Aggiungi prova di pagamento" /></>;
 }
 
 const styles = StyleSheet.create({
@@ -617,6 +585,8 @@ const styles = StyleSheet.create({
   label: { color: ui.colors.text, fontWeight: '800', fontSize: 13 },
   input: { minHeight: 50, borderRadius: ui.radius.md, borderWidth: 1, borderColor: ui.colors.border, backgroundColor: ui.colors.input, paddingHorizontal: 13, color: ui.colors.text },
   notesInput: { minHeight: 86, paddingTop: 12, textAlignVertical: 'top' },
+  attachmentChoice: { minHeight: 62, borderRadius: 14, borderWidth: 1, borderColor: ui.colors.border, backgroundColor: '#FFF', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  attachmentChoiceIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { paddingHorizontal: 11, paddingVertical: 8, borderRadius: 999, backgroundColor: ui.colors.input, borderWidth: 1, borderColor: ui.colors.border, flexDirection: 'row', alignItems: 'center', gap: 5 },
   chipSelected: { backgroundColor: ui.colors.primarySoft, borderColor: ui.colors.primary },
