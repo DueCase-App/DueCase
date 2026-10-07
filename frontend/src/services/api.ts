@@ -88,6 +88,13 @@ export const api = {
     counts: () => request<{notifications:number;messages:number;agreements:number;expenses:number;calendar:number;permanence:number}>('/sync/counts'),
   },
   auth: {
+    updateProfile:(value:{firstName:string;lastName:string;phone:string})=>request('/auth/profile',{method:'PUT',body:JSON.stringify(value)}),
+    preferences:()=>request<Record<string,boolean>>('/auth/preferences'),
+    savePreferences:(value:Record<string,boolean>)=>request<Record<string,boolean>>('/auth/preferences',{method:'PUT',body:JSON.stringify(value)}),
+    changePassword:(currentPassword:string,password:string,confirmPassword:string)=>request<{token:string}>('/auth/change-password',{method:'POST',body:JSON.stringify({currentPassword,password,confirmPassword})}),
+    logoutOthers:()=>request<{token:string}>('/auth/logout-other-devices',{method:'POST'}),
+    familyMembers:()=>request<Array<{id:string;displayName:string;role:string}>>('/auth/family-members'),
+    exportProfile:()=>request<unknown>('/auth/export-profile'),
     pushStatus: () => request<{registered:boolean}>('/auth/push-status'),
     emailStatus: () => request<{configured:boolean;verified:boolean;required:boolean}>('/auth/email-status'),
     requestEmail: () => request('/auth/verify-email/request',{method:'POST'}),

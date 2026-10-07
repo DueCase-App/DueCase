@@ -1,3 +1,4 @@
+import { NotificationPreview } from '../components/NotificationPreview';
 import { useLiveRefresh } from '../services/live';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -39,6 +40,7 @@ export function HomeScreen({ onNavigate }: { onNavigate: (target: HomeDestinatio
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [swaps, setSwaps] = useState<SwapRequest[]>([]);
   const [agreements, setAgreements] = useState<FamilyAgreement[]>([]);
+  const [previewOpen,setPreviewOpen]=useState(false);
   const [notifications, setNotifications] = useState<InAppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -73,14 +75,14 @@ export function HomeScreen({ onNavigate }: { onNavigate: (target: HomeDestinatio
     return 'Situazione distinta per figlio';
   }, [custody]);
 
-  if (loading) return <SafeAreaView style={styles.safeArea} edges={['bottom', 'left', 'right']}><View style={styles.center}><ActivityIndicator size="large" color={ui.colors.primary} /><Text style={styles.muted}>Caricamento Home…</Text></View></SafeAreaView>;
+  if (loading) return <SafeAreaView style={styles.safeArea} edges={[]}><View style={styles.center}><ActivityIndicator size="large" color={ui.colors.primary} /><Text style={styles.muted}>Caricamento Home…</Text></View></SafeAreaView>;
 
-  return <SafeAreaView style={styles.safeArea} edges={['bottom', 'left', 'right']}>
-    <ScrollView style={styles.screen} contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(58, insets.bottom + 42) }]} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} tintColor={ui.colors.primary} onRefresh={() => { setRefreshing(true); void load(); }} />}>
+  return <SafeAreaView style={styles.safeArea} edges={[]}>
+    <ScrollView style={styles.screen} contentContainerStyle={[styles.scrollContent, { paddingBottom: 24 }]} showsVerticalScrollIndicator={true} refreshControl={<RefreshControl refreshing={refreshing} tintColor={ui.colors.primary} onRefresh={() => { setRefreshing(true); void load(); }} />}>
       <View style={styles.content}>
         <View style={styles.topBar}>
           <View style={styles.brandRow}><Image source={require('../../assets/duecase-logo.png')} resizeMode="contain" style={styles.logo} /><View><Text style={styles.brandName}>DueCase</Text><Text style={styles.brandPayoff}>Due case, un’unica squadra.</Text></View></View>
-          <Pressable accessibilityRole="button" onPress={() => onNavigate('notifications')} style={styles.bellButton}><Ionicons name="notifications-outline" size={25} color={ui.colors.primaryDark} />{notifications.length ? <View style={styles.badge}><Text style={styles.badgeText}>{Math.min(99, notifications.length)}</Text></View> : null}</Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Anteprima notifiche" onPress={() => setPreviewOpen(true)} style={styles.bellButton}><Ionicons name="notifications-outline" size={25} color={ui.colors.primaryDark} />{notifications.length ? <View style={styles.badge}><Text style={styles.badgeText}>{Math.min(99, notifications.length)}</Text></View> : null}</Pressable>
         </View>
 
         <View style={styles.greeting}><Text style={styles.greetingTitle}>Buongiorno, {user?.firstName ?? user?.displayName.split(' ')[0] ?? ''}</Text><Text style={styles.greetingText}>Organizziamo insieme la quotidianità dei tuoi figli.</Text></View>
@@ -111,6 +113,7 @@ export function HomeScreen({ onNavigate }: { onNavigate: (target: HomeDestinatio
         </View>
       </View>
     </ScrollView>
+    <NotificationPreview visible={previewOpen} onClose={()=>setPreviewOpen(false)} onNavigate={target=>onNavigate(target as HomeDestination)}/>
   </SafeAreaView>;
 }
 

@@ -14,6 +14,8 @@ Notifications.setNotificationHandler({
   }),
 });
 
+export function pushConfigurationMissing():boolean {return Platform.OS==='android' && Constants.expoConfig?.extra?.androidPushConfigured!==true;}
+
 let permissionRequestInFlight: Promise<boolean> | null = null;
 
 function getProjectId(): string | null {
@@ -70,7 +72,7 @@ async function requestPermission(): Promise<boolean> {
  * never receive duplicate permission prompts during session restoration.
  */
 export async function initializePushNotificationsAsync(): Promise<boolean> {
-  if (Platform.OS === 'web') return false;
+  if (Platform.OS === 'web' || pushConfigurationMissing()) return false;
 
   if (!permissionRequestInFlight) {
     permissionRequestInFlight = requestPermission().finally(() => {
@@ -85,7 +87,7 @@ export async function initializePushNotificationsAsync(): Promise<boolean> {
  * Gets the Expo device token and associates it with the currently authenticated user.
  */
 export async function registerPushNotificationsAsync(): Promise<string | null> {
-  if (Platform.OS === 'web') return null;
+  if (Platform.OS === 'web' || pushConfigurationMissing()) return null;
 
   try {
     const granted = await initializePushNotificationsAsync();
