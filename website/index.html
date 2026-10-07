@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#1769E0" />
   <meta name="description" content="DueCase aiuta genitori separati a gestire calendario, permanenze, spese, accordi, documenti e comunicazioni in un unico spazio condiviso." />
-  <title>DueCase · Un'unica squadra, anche in due case</title>
+  <title>DueCase · Due case, un'unica squadra</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
@@ -17,96 +17,150 @@
     <button class="menu-toggle" aria-label="Apri menu" aria-expanded="false">☰</button>
     <nav class="nav" aria-label="Navigazione principale">
       <a href="#come-funziona">Come funziona</a>
-      <a href="#funzioni">Funzioni</a>
+      <a href="#calendario">Calendario</a>
+      <a href="#spese">Spese</a>
+      <a href="#dossier">Dossier</a>
       <a href="#prezzo">Prezzo</a>
       <a href="/professionisti.html">Professionisti</a>
-      <a href="/assistenza.html">Assistenza</a>
-      <a class="nav-cta" href="#download">Scarica l'app</a>
+      <a class="nav-cta" href="#download">Scopri l'app</a>
     </nav>
   </header>
 
   <main>
-    <section class="hero" id="home">
+    <section class="hero landing-hero" id="home">
       <div class="hero-copy">
         <span class="eyebrow">PER GENITORI SEPARATI</span>
         <h1>Due case.<br><span>Un'unica squadra.</span></h1>
-        <p class="hero-lead">Calendario, permanenze, spese, accordi, documenti e comunicazioni in un unico spazio condiviso, pensato per rendere più semplice la gestione quotidiana dei figli.</p>
+        <p class="hero-lead">Un solo spazio per organizzare la vita dei figli tra due case: calendario, permanenze, spese, accordi, documenti, messaggi e storico condiviso.</p>
         <div class="hero-actions">
-          <a class="btn primary" href="#download">Scopri l'app</a>
-          <a class="btn secondary" href="#come-funziona">Come funziona</a>
+          <a class="btn primary" href="#come-funziona">Scopri come funziona</a>
+          <a class="btn secondary" href="/professionisti.html">Area professionisti</a>
         </div>
-        <div class="hero-badges"><span>Android</span><span>iPhone</span><span>Tablet</span><span>PC</span></div>
+        <div class="hero-points">
+          <span>✓ Padre e Madre nello stesso spazio</span>
+          <span>✓ Un solo abbonamento per la famiglia</span>
+          <span>✓ Accesso professionisti separato</span>
+        </div>
       </div>
-      <div class="hero-visual" aria-hidden="true">
-        <div class="phone-card">
-          <div class="phone-top">DueCase</div>
-          <div class="mini-status"><b>Oggi</b><span>Con Papà</span></div>
-          <div class="mini-calendar"><i></i><i></i><i class="active"></i><i></i><i></i><i></i><i></i></div>
-          <div class="mini-row"><strong>Prossimo evento</strong><small>Allenamento · 18:30</small></div>
-          <div class="mini-row"><strong>Spesa in attesa</strong><small>Visita medica · € 65,00</small></div>
+
+      <div class="hero-stage" aria-label="Anteprima dell'app DueCase">
+        <div class="app-device">
+          <div class="device-bar"><img src="https://raw.githubusercontent.com/tecnico-elios/DueCase/main/frontend/assets/duecase-logo-hd.png" alt=""><b>DueCase</b><span>●</span></div>
+          <div class="device-welcome"><small>BUONGIORNO</small><strong>La vostra settimana</strong></div>
+          <div class="today-card"><div><small>OGGI</small><b>Con Papà</b></div><span>Mer 7</span></div>
+          <div class="week-row"><i>L</i><i>M</i><i class="active">M</i><i>G</i><i>V</i><i>S</i><i>D</i></div>
+          <div class="device-grid">
+            <div class="device-tile"><small>PROSSIMO EVENTO</small><b>Pallavolo</b><span>18:30 · Rebecca</span></div>
+            <div class="device-tile warm"><small>SPESA</small><b>Visita medica</b><span>65,00 € · In attesa</span></div>
+          </div>
+          <div class="device-message"><span>Messaggi</span><b>Nuovo aggiornamento della famiglia</b></div>
         </div>
+        <div class="floating-chip chip-one">Calendario condiviso</div>
+        <div class="floating-chip chip-two">Spese e rimborsi</div>
       </div>
     </section>
 
     <section class="trust-strip">
-      <div><b>Un solo calendario</b><span>Condiviso tra entrambi i genitori</span></div>
-      <div><b>Storico chiaro</b><span>Richieste, risposte e documenti</span></div>
-      <div><b>Accesso controllato</b><span>Ogni famiglia resta separata</span></div>
+      <div><b>Un solo calendario</b><span>Eventi, turni e permanenze sempre visibili.</span></div>
+      <div><b>Richieste tracciate</b><span>Accetta, rifiuta e consulta lo storico.</span></div>
+      <div><b>Famiglia separata</b><span>Dati e accessi isolati dalle altre famiglie.</span></div>
     </section>
 
-    <section class="section" id="come-funziona">
-      <div class="section-heading"><span>SEMPLICE DA INIZIARE</span><h2>Come funziona</h2><p>Un genitore crea la famiglia, invita l'altro e da quel momento entrambi lavorano sullo stesso spazio condiviso.</p></div>
-      <div class="steps">
-        <article><em>1</em><h3>Crea il tuo account</h3><p>Scegli se sei Papà o Mamma e configura la tua famiglia.</p></article>
-        <article><em>2</em><h3>Invita l'altro genitore</h3><p>L'invito arriva via email e collega entrambi alla stessa famiglia.</p></article>
-        <article><em>3</em><h3>Gestite tutto insieme</h3><p>Calendario, richieste, spese, documenti e storico restano nello stesso posto.</p></article>
+    <section class="section intro-section" id="come-funziona">
+      <div class="section-heading"><span>SEMPLICE DA INIZIARE</span><h2>Si parte in tre passaggi.</h2><p>Il primo genitore crea la famiglia, invita l'altro e da quel momento entrambi lavorano sullo stesso spazio condiviso.</p></div>
+      <div class="steps premium-steps">
+        <article><em>1</em><h3>Crea la famiglia</h3><p>Registrati come Papà o Mamma e inserisci i dati essenziali dei figli.</p></article>
+        <article><em>2</em><h3>Invita l'altro genitore</h3><p>Inserisci la sua email. Il secondo genitore entra nella stessa famiglia, senza duplicazioni.</p></article>
+        <article><em>3</em><h3>Gestite tutto insieme</h3><p>Calendario, permanenze, spese, accordi, documenti e comunicazioni restano ordinati nello stesso posto.</p></article>
       </div>
     </section>
 
-    <section class="section alt" id="funzioni">
-      <div class="section-heading"><span>TUTTO IN UN POSTO</span><h2>Le funzioni principali</h2></div>
-      <div class="feature-grid">
-        <article><div class="icon">▦</div><h3>Calendario condiviso</h3><p>Eventi, note, conferme, rifiuti e richieste di modifica con stati chiari.</p></article>
-        <article><div class="icon">⌂</div><h3>Permanenze</h3><p>Visualizza con chi sono i figli, turni ricorrenti, weekend alternati ed eccezioni.</p></article>
-        <article><div class="icon">€</div><h3>Spese</h3><p>Inserimento, approvazione, OTP e ricevute di pagamento collegate alla spesa.</p></article>
-        <article><div class="icon">✓</div><h3>Accordi</h3><p>Proposte e conferme tra i genitori con storico consultabile.</p></article>
-        <article><div class="icon">▤</div><h3>Documenti</h3><p>Conserva i documenti utili della famiglia in modo ordinato e condiviso.</p></article>
-        <article><div class="icon">✉</div><h3>Messaggi</h3><p>Comunicazioni organizzate e separate dalle normali chat personali.</p></article>
-        <article><div class="icon">◉</div><h3>Notifiche</h3><p>Avvisi per richieste, approvazioni, eventi e attività che richiedono attenzione.</p></article>
-        <article><div class="icon">⇩</div><h3>Dossier</h3><p>Esportazione ordinata delle informazioni autorizzate e dello storico utile.</p></article>
+    <section class="feature-showcase" id="calendario">
+      <div class="showcase-copy">
+        <span class="eyebrow">CALENDARIO E PERMANENZE</span>
+        <h2>Sapere sempre cosa succede e con chi sono i figli.</h2>
+        <p>Eventi, attività, note e turni di permanenza vivono nello stesso calendario. Le richieste di modifica hanno uno stato chiaro: in attesa, confermate o rifiutate.</p>
+        <div class="check-list"><span>Calendario unico per entrambi i genitori</span><span>Weekend alternati e turni ricorrenti</span><span>Eccezioni e richieste di scambio</span><span>Note collegate agli eventi</span></div>
+      </div>
+      <div class="showcase-visual calendar-demo" aria-hidden="true">
+        <div class="demo-head"><div><small>OTTOBRE 2026</small><b>Calendario famiglia</b></div><span>Oggi</span></div>
+        <div class="calendar-board">
+          <div class="calendar-days"><span>Lun</span><span>Mar</span><span>Mer</span><span>Gio</span><span>Ven</span><span>Sab</span><span>Dom</span></div>
+          <div class="calendar-cells"><i></i><i></i><i class="father">5</i><i>6</i><i class="selected">7</i><i>8</i><i class="mother">9</i><i>10</i><i>11</i><i>12</i><i class="father">13</i><i>14</i><i>15</i><i class="mother">16</i></div>
+        </div>
+        <div class="demo-event"><span class="dot blue"></span><div><b>Pallavolo · 18:30</b><small>Confermata · Rebecca</small></div></div>
+        <div class="demo-event"><span class="dot orange"></span><div><b>Richiesta scambio turno</b><small>In attesa di risposta</small></div></div>
       </div>
     </section>
 
-    <section class="section professional-callout">
-      <div><span class="eyebrow">ACCESSO PROFESSIONISTI</span><h2>Il tuo avvocato può consultare solo ciò che autorizzi.</h2><p>Il genitore può invitare il proprio professionista, scegliere le sezioni visibili e revocare l'accesso in qualsiasi momento. L'accesso è in sola lettura.</p><a class="btn secondary" href="/professionisti.html">Scopri l'area professionisti</a></div>
-      <div class="permission-card"><b>Permessi selezionabili</b><span>Calendario e permanenze</span><span>Spese e rimborsi</span><span>Accordi</span><span>Documenti</span><span>Dossier</span><span>Messaggi · opzionale</span></div>
+    <section class="feature-showcase reverse" id="spese">
+      <div class="showcase-copy">
+        <span class="eyebrow">SPESE E ACCORDI</span>
+        <h2>Ogni richiesta ha una risposta e uno storico.</h2>
+        <p>Le spese vengono inserite con importo, categoria, ricevuta e quota. L'altro genitore può approvare o rifiutare; dopo il rimborso la contabile resta collegata alla spesa.</p>
+        <div class="check-list"><span>Ricevute e documenti collegati</span><span>Conferme con codice OTP dove previsto</span><span>Contabile del bonifico conservata nello storico</span><span>Accordi separati dalle normali chat</span></div>
+      </div>
+      <div class="showcase-visual finance-demo" aria-hidden="true">
+        <div class="demo-head"><div><small>SPESE</small><b>Riepilogo famiglia</b></div><span>Ottobre</span></div>
+        <div class="amount-card"><small>DA RIMBORSARE</small><b>92,50 €</b><span>2 spese in attesa</span></div>
+        <div class="expense-row"><div class="expense-icon">€</div><div><b>Visita medica</b><small>65,00 € · Salute</small></div><span class="status pending">In attesa</span></div>
+        <div class="expense-row"><div class="expense-icon warm">€</div><div><b>Materiale scolastico</b><small>120,00 € · Scuola</small></div><span class="status accepted">Confermata</span></div>
+        <div class="agreement-card"><small>ACCORDO</small><b>Vacanze natalizie</b><span>Confermato da entrambi</span></div>
+      </div>
+    </section>
+
+    <section class="feature-showcase" id="dossier">
+      <div class="showcase-copy">
+        <span class="eyebrow">DOCUMENTI, DOSSIER E PROFESSIONISTI</span>
+        <h2>Quando serve, tutto è già ordinato.</h2>
+        <p>Documenti, accordi, spese e storico possono essere raccolti nel Dossier. Il genitore può inoltre invitare il proprio avvocato o professionista scegliendo esattamente cosa rendere visibile.</p>
+        <div class="check-list"><span>Dossier esportabile</span><span>Documenti collegati alla famiglia</span><span>Accesso professionista in sola lettura</span><span>Permessi modificabili o revocabili in ogni momento</span></div>
+        <a class="btn secondary" href="/professionisti.html">Scopri l'area professionisti</a>
+      </div>
+      <div class="showcase-visual dossier-demo" aria-hidden="true">
+        <div class="folder-tabs"><span class="active">Dossier</span><span>Documenti</span><span>Accessi</span></div>
+        <div class="dossier-cover"><img src="https://raw.githubusercontent.com/tecnico-elios/DueCase/main/frontend/assets/duecase-logo-hd.png" alt=""><small>DOSSIER FAMIGLIA</small><b>Famiglia Rossi</b><span>Aggiornato al 7 ottobre 2026</span></div>
+        <div class="dossier-lines"><i></i><i></i><i></i><i class="short"></i></div>
+        <div class="professional-access"><div class="avatar">LB</div><div><b>Avv. Luca Bianchi</b><small>Calendario · Spese · Accordi · Dossier</small></div><span>Sola lettura</span></div>
+      </div>
+    </section>
+
+    <section class="section compact-features">
+      <div class="section-heading"><span>ANCHE TUTTO IL RESTO</span><h2>Un unico posto per la gestione quotidiana.</h2></div>
+      <div class="feature-grid compact-grid">
+        <article><div class="icon">✉</div><h3>Messaggi</h3><p>Comunicazioni familiari ordinate e consultabili nello storico.</p></article>
+        <article><div class="icon">▤</div><h3>Documenti</h3><p>File utili e ricevute collegati alla famiglia e alle relative attività.</p></article>
+        <article><div class="icon">◉</div><h3>Notifiche</h3><p>Avvisi per richieste, approvazioni, eventi e attività importanti.</p></article>
+        <article><div class="icon">⇩</div><h3>Esportazioni</h3><p>Informazioni ordinate da consultare o condividere quando necessario.</p></article>
+      </div>
     </section>
 
     <section class="section pricing" id="prezzo">
-      <div class="section-heading"><span>UN SOLO ABBONAMENTO PER LA FAMIGLIA</span><h2>Semplice anche nel prezzo</h2></div>
-      <div class="price-card">
-        <div><strong>DueCase Premium</strong><p>L'abbonamento è associato alla famiglia e copre entrambi i genitori.</p></div>
+      <div class="section-heading"><span>UN SOLO ABBONAMENTO PER LA FAMIGLIA</span><h2>4,99 € al mese. Per entrambi.</h2><p>Nessun doppio abbonamento tra Padre e Madre: il Premium è associato alla famiglia.</p></div>
+      <div class="price-card new-price-card">
+        <div><small>DUECASE PREMIUM</small><strong>Tutto ciò che serve alla famiglia.</strong><p>Prima dell'attivazione puoi vedere l'anteprima dell'app; le azioni operative richiedono l'abbonamento attivo.</p></div>
         <div class="price"><b>4,99 €</b><span>/ mese</span></div>
-        <ul><li>Tutte le funzioni operative</li><li>Nessun periodo di prova gratuito</li><li>Un solo abbonamento per la famiglia</li><li>Anteprima dell'app prima dell'attivazione</li></ul>
-        <a class="btn primary" href="#download">In arrivo</a>
+        <ul><li>Calendario e permanenze</li><li>Spese e rimborsi</li><li>Accordi e messaggi</li><li>Documenti e Dossier</li><li>Accesso professionisti</li><li>Copre entrambi i genitori</li></ul>
+        <a class="btn primary price-cta" href="#download">Prossimamente sugli store</a>
       </div>
     </section>
 
     <section class="section safety">
-      <div class="section-heading"><span>PRIVACY E CONTROLLO</span><h2>I dati della famiglia restano al centro.</h2><p>DueCase è progettata con separazione delle famiglie, accessi autenticati, permessi dedicati e funzioni di esportazione e cancellazione. Le informative definitive saranno pubblicate prima del lancio sugli store.</p></div>
-      <div class="security-grid"><div><b>Famiglie separate</b><span>I dati di una famiglia non sono visibili alle altre.</span></div><div><b>Ruoli chiari</b><span>Papà, Mamma e professionista hanno permessi differenti.</span></div><div><b>Revoca accessi</b><span>L'accesso professionale può essere revocato dal genitore.</span></div></div>
+      <div class="section-heading"><span>PRIVACY E CONTROLLO</span><h2>Ogni ruolo vede solo ciò che deve vedere.</h2><p>DueCase separa le famiglie e distingue chiaramente gli accessi di Padre, Madre e professionisti.</p></div>
+      <div class="security-grid"><div><b>Famiglie separate</b><span>I dati di una famiglia non vengono condivisi con altre famiglie.</span></div><div><b>Ruoli distinti</b><span>Il professionista non entra nell'account di un genitore.</span></div><div><b>Accessi revocabili</b><span>I permessi professionali possono essere cambiati o revocati.</span></div></div>
     </section>
 
     <section class="section faq">
-      <div class="section-heading"><span>DOMANDE FREQUENTI</span><h2>FAQ</h2></div>
+      <div class="section-heading"><span>DOMANDE FREQUENTI</span><h2>Le risposte più importanti.</h2></div>
       <details><summary>DueCase sostituisce gli accordi legali tra i genitori?</summary><p>No. DueCase è uno strumento organizzativo e documentale. Non sostituisce provvedimenti, accordi, consulenza legale o decisioni dell'autorità giudiziaria.</p></details>
-      <details><summary>Un genitore può modificare da solo una richiesta dell'altro?</summary><p>Le funzioni che richiedono accordo mantengono uno stato separato tra proposta, accettazione e rifiuto.</p></details>
-      <details><summary>L'avvocato può scrivere o approvare al posto del genitore?</summary><p>No. L'area professionisti è progettata in sola lettura.</p></details>
-      <details><summary>Posso usare DueCase anche da PC?</summary><p>L'app è progettata per smartphone e tablet; alcune funzioni, come l'area professionisti, sono previste anche da browser su PC.</p></details>
+      <details><summary>Come entra l'altro genitore nella famiglia?</summary><p>Il primo genitore inserisce la sua email e invia un invito. Il secondo genitore si registra o accede e viene collegato alla stessa famiglia.</p></details>
+      <details><summary>L'avvocato può modificare dati o approvare richieste?</summary><p>No. L'area professionisti è separata ed esclusivamente in sola lettura.</p></details>
+      <details><summary>L'abbonamento va pagato da entrambi i genitori?</summary><p>No. Il piano Premium da 4,99 € al mese è associato alla famiglia e copre entrambi i genitori.</p></details>
+      <details><summary>DueCase funziona anche su tablet e PC?</summary><p>L'app è progettata per smartphone e tablet. Il sito e l'area professionisti sono responsive e utilizzabili anche da PC.</p></details>
     </section>
 
     <section class="download" id="download">
-      <div><span class="eyebrow">PROSSIMAMENTE</span><h2>DueCase sta arrivando su Android e iPhone.</h2><p>Stiamo completando test, notifiche, pagamenti e documentazione per la pubblicazione sugli store.</p></div>
+      <div><span class="eyebrow">PROSSIMAMENTE</span><h2>DueCase sta arrivando su Android e iPhone.</h2><p>Stiamo completando collaudi, notifiche, pagamenti e documentazione necessaria alla pubblicazione.</p></div>
       <div class="store-buttons"><button disabled>Google Play · prossimamente</button><button disabled>App Store · prossimamente</button></div>
     </section>
   </main>
