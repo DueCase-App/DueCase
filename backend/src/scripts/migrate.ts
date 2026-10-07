@@ -2,6 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { pool } from '../db.js';
+import { config } from '../config.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sqlDir = resolve(here, '../../sql');
@@ -9,6 +10,10 @@ const sqlDir = resolve(here, '../../sql');
 const client = await pool.connect();
 try {
   await client.query('SELECT pg_advisory_lock(72603107)');
+  if (config.DB_SCHEMA !== 'public') {
+    await client.query(`CREATE SCHEMA IF NOT EXISTS "${config.DB_SCHEMA}"`);
+    await client.query(`SET search_path TO "${config.DB_SCHEMA}", public`);
+  }
   await client.query('CREATE TABLE IF NOT EXISTS duecase_schema_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())');
   const migrationFiles = (await readdir(sqlDir))
     .filter((file) => /^\d+.*\.sql$/i.test(file))
@@ -28,7 +33,7 @@ try {
       await client.query('INSERT INTO duecase_schema_migrations(name) VALUES ($1)', [file]);
       await client.query('COMMIT');
     } catch (error) { await client.query('ROLLBACK'); throw error; }
-    console.log(`Database migration completed: ${file}`);
+    console.log(`Database migration completed in ${config.DB_SCHEMA}: ${file}`);
   }
 } finally {
   await client.query('SELECT pg_advisory_unlock(72603107)');
