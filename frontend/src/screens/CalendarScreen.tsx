@@ -80,6 +80,7 @@ export function CalendarScreen({onProposeChange}:{onProposeChange?:(date:string)
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [dayModalDate, setDayModalDate] = useState<string | null>(null);
 
   const [swapModal, setSwapModal] = useState(false);
   const [target, setTarget] = useState('');
@@ -166,22 +167,23 @@ export function CalendarScreen({onProposeChange}:{onProposeChange?:(date:string)
   const incoming = requests.filter((request) => request.canRespond).length + events.filter((event) => event.canRespond).length;
 
   function openSwap(date: string): void {
-    if (!user) return;
-    const resolved=days.filter(d=>d.custodyDate===date);
-    if(resolved.some(d=>d.source!=='calendar')) {
-      Alert.alert(prettyDate(date),resolved.map(d=>`${d.childName}: ${d.custodianRole==='father'?'Papà':'Mamma'}`).join('\n') ,[{text:'Chiudi',style:'cancel'},{text:'Proponi cambio',onPress:()=>onProposeChange?.(date)}]);return;
+    setDayModalDate(date);
+  }
+
+  function openEventForDate(date: string): void {
+    setDayModalDate(null);
+    resetEventForm(date);
+    setEventModal(true);
+  }
+
+  function proposeChangeForDate(date: string): void {
+    setDayModalDate(null);
+    if (onProposeChange) {
+      onProposeChange(date);
+      return;
     }
     const day = byDate.get(date);
-    if (!day) {
-      setEventDate(date);
-      setEventModal(true);
-      return;
-    }
-    if (day.custodianRole === user.role) {
-      setEventDate(date);
-      setEventModal(true);
-      return;
-    }
+    if (!day || !user) return;
     setTarget(date);
     setProposed(ownDays.find((value) => value > date) ?? ownDays[0] ?? '');
     setSwapNotes('');
@@ -327,10 +329,10 @@ export function CalendarScreen({onProposeChange}:{onProposeChange?:(date:string)
           }}
         />
       </View>
-      <Text style={styles.helper}>Tocca un giorno con l’altro genitore per proporre un cambio; tocca un tuo giorno o un giorno libero per aggiungere un evento.</Text>
+      <Text style={styles.helper}>Tocca qualsiasi giorno per vedere con chi sono i figli, creare un evento o proporre un cambio.</Text>
 
       <Text style={styles.section}>Eventi del mese</Text>
-      {events.length === 0 ? <EmptyCard icon="calendar-outline" text="Nessun evento in questo mese." /> : events.map((event) => {
+      {events.length === 0 ? <EmptyCard icon="calendar-outline" text="Nessun evento in questo mese." actionLabel="Crea nuovo evento" onAction={() => { resetEventForm(); setEventModal(true); }} /> : events.map((event) => {
         const expanded = expandedEvent === event.id;
         const typeInfo = EVENT_TYPES.find((item) => item.key === event.eventType) ?? EVENT_TYPES[EVENT_TYPES.length - 1]!;
         return <Pressable key={event.id} style={[styles.eventCard, cardShadow]} onPress={() => setExpandedEvent(expanded ? null : event.id)}>
@@ -354,7 +356,7 @@ export function CalendarScreen({onProposeChange}:{onProposeChange?:(date:string)
       })}
 
       <Text style={styles.section}>Cambi turno in sospeso</Text>
-      {requests.length === 0 ? <EmptyCard icon="swap-horizontal-outline" text="Nessuna richiesta di cambio aperta." /> : requests.map((request) => <View key={request.id} style={[styles.requestCard, cardShadow]}>
+      {requests.length === 0 ? <EmptyCard icon="swap-horizontal-outline" text="Nessuna richiesta di cambio aperta." actionLabel="Proponi un cambio" onAction={() => Alert.alert('Proponi un cambio', 'Tocca sul calendario il giorno che vuoi cambiare.')} /> : requests.map((request) => <View key={request.id} style={[styles.requestCard, cardShadow]}>
         <View style={styles.rowBetween}>
           <View><Text style={styles.bold}>{request.requestedBy === user?.id ? 'Richiesta inviata' : `Richiesta da ${request.requestedByName}`}</Text><Text style={styles.muted}>{roleLabel(request.requestedByRole)}</Text></View>
           <View style={styles.pendingPill}><Text style={styles.pendingText}>In attesa</Text></View>
@@ -365,6 +367,18 @@ export function CalendarScreen({onProposeChange}:{onProposeChange?:(date:string)
         {request.canRespond ? <Pressable disabled={busy} style={styles.reviewEventButton} onPress={() => { setResponseSwap(request); setSwapResponseNote(''); }}><Text style={styles.reviewEventText}>Rispondi al cambio turno</Text><Ionicons name="chevron-forward" size={18} color="#FFF" /></Pressable> : <Text style={styles.muted}>In attesa dell’altro genitore.</Text>}
       </View>)}
     </ScrollView>
+
+    <Modal visible={dayModalDate !== null} transparent animationType="fade" onRequestClose={() => setDayModalDate(null)}><View style={styles.centerBackdrop}><View style={styles.dayModal}>
+      <ModalHeader title={dayModalDate ? prettyDate(dayModalDate) : 'Giorno'} onClose={() => setDayModalDate(null)} />
+      <Text style={styles.dayModalSubtitle}>Situazione prevista per questa data</Text>
+      <View style={styles.dayChildrenList}>{dayModalDate ? (() => {
+        const resolved = days.filter((day) => day.custodyDate === dayModalDate);
+        const rows = resolved.length ? resolved : children.map((child) => ({ childId: child.id, childName: child.displayName, custodianRole: null as ParentRole | null }));
+        return rows.map((day, index) => <View key={`${day.childId ?? day.childName ?? index}-${index}`} style={styles.dayChildRow}><View style={[styles.dayRoleDot, { backgroundColor: day.custodianRole ? ROLE_COLORS[day.custodianRole] : ui.colors.border }]} /><Text style={styles.dayChildName}>{day.childName ?? 'Figlio/a'}</Text><Text style={[styles.dayChildRole, day.custodianRole === 'father' ? styles.fatherText : day.custodianRole === 'mother' ? styles.motherText : undefined]}>{day.custodianRole ? roleLabel(day.custodianRole) : 'Da definire'}</Text></View>);
+      })() : null}</View>
+      <Pressable style={styles.dayPrimaryAction} onPress={() => dayModalDate && openEventForDate(dayModalDate)}><Ionicons name="add-circle-outline" size={21} color="#FFF" /><Text style={styles.dayPrimaryText}>Crea evento</Text></Pressable>
+      <Pressable style={styles.daySecondaryAction} onPress={() => dayModalDate && proposeChangeForDate(dayModalDate)}><Ionicons name="swap-horizontal-outline" size={21} color={ui.colors.primary} /><Text style={styles.daySecondaryText}>Proponi cambio</Text></Pressable>
+    </View></View></Modal>
 
     <Modal visible={swapModal} transparent animationType="slide" onRequestClose={() => setSwapModal(false)}><View style={styles.backdrop}><View style={styles.modal}>
       <ModalHeader title="Richiedi cambio turno" onClose={() => setSwapModal(false)} />
@@ -419,8 +433,8 @@ function StatusPill({ status }: { status: FamilyEvent['status'] }): React.JSX.El
   return <View style={[styles.statusPill, status === 'confirmed' ? styles.statusConfirmed : status === 'rejected' ? styles.statusRejected : styles.statusPending]}><Text style={[styles.statusText, status === 'confirmed' ? styles.statusConfirmedText : status === 'rejected' ? styles.statusRejectedText : styles.statusPendingText]}>{label}</Text></View>;
 }
 
-function EmptyCard({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: string }): React.JSX.Element {
-  return <View style={[styles.emptyCard, cardShadow]}><View style={styles.emptyIcon}><Ionicons name={icon} size={24} color={ui.colors.primary} /></View><Text style={styles.muted}>{text}</Text></View>;
+function EmptyCard({ icon, text, actionLabel, onAction }: { icon: keyof typeof Ionicons.glyphMap; text: string; actionLabel?: string; onAction?: () => void }): React.JSX.Element {
+  return <View style={[styles.emptyCard, cardShadow]}><View style={styles.emptyIcon}><Ionicons name={icon} size={24} color={ui.colors.primary} /></View><View style={{flex:1}}><Text style={styles.muted}>{text}</Text>{actionLabel && onAction ? <Pressable style={styles.emptyAction} onPress={onAction}><Ionicons name="add" size={17} color={ui.colors.primary} /><Text style={styles.emptyActionText}>{actionLabel}</Text></Pressable> : null}</View></View>;
 }
 
 const styles = StyleSheet.create({
@@ -447,6 +461,8 @@ const styles = StyleSheet.create({
   section: { fontSize: 20, fontWeight: '900', color: ui.colors.primaryDark, marginTop: 4 },
   emptyCard: { backgroundColor: '#FFF', borderRadius: 16, borderWidth: 1, borderColor: ui.colors.border, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
   emptyIcon: { width: 44, height: 44, borderRadius: 13, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  emptyAction: { alignSelf: 'flex-start', marginTop: 8, minHeight: 38, borderRadius: 11, backgroundColor: ui.colors.primarySoft, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  emptyActionText: { color: ui.colors.primary, fontWeight: '900', fontSize: 12 },
   eventCard: { backgroundColor: '#FFF', borderRadius: 17, borderWidth: 1, borderColor: ui.colors.border, padding: 14, gap: 10 },
   eventMain: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   eventIcon: { width: 44, height: 44, borderRadius: 13, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
@@ -482,6 +498,19 @@ const styles = StyleSheet.create({
   centerBackdrop: { flex: 1, justifyContent: 'center', padding: 18, backgroundColor: 'rgba(10,50,103,.35)' },
   modal: { maxHeight: '92%', backgroundColor: ui.colors.card, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, gap: 12 },
   responseModal: { width: '100%', maxWidth: 520, alignSelf: 'center', backgroundColor: '#FFF', borderRadius: 22, padding: 20, gap: 12 },
+  dayModal: { width: '100%', maxWidth: 520, alignSelf: 'center', backgroundColor: '#FFF', borderRadius: 24, padding: 20, gap: 12 },
+  dayModalSubtitle: { color: ui.colors.muted, fontSize: 13 },
+  dayChildrenList: { gap: 8, marginVertical: 3 },
+  dayChildRow: { minHeight: 48, borderRadius: 13, backgroundColor: ui.colors.input, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  dayRoleDot: { width: 10, height: 10, borderRadius: 5 },
+  dayChildName: { flex: 1, color: ui.colors.text, fontWeight: '900' },
+  dayChildRole: { color: ui.colors.muted, fontWeight: '900' },
+  fatherText: { color: ROLE_COLORS.father },
+  motherText: { color: ROLE_COLORS.mother },
+  dayPrimaryAction: { minHeight: 50, borderRadius: 14, backgroundColor: ui.colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  dayPrimaryText: { color: '#FFF', fontWeight: '900' },
+  daySecondaryAction: { minHeight: 50, borderRadius: 14, backgroundColor: ui.colors.primarySoft, borderWidth: 1, borderColor: ui.colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  daySecondaryText: { color: ui.colors.primary, fontWeight: '900' },
   modalScroll: { gap: 11, paddingBottom: 8 },
   modalHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   modalTitle: { fontSize: 22, fontWeight: '900', color: ui.colors.primaryDark },

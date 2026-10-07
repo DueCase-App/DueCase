@@ -4,7 +4,7 @@ Questa release è una build di collaudo. Il codice non certifica la conformità 
 
 ## Servizi esterni da attivare
 
-- Dominio e servizio email: SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, EMAIL_FROM; impostare SPF/DKIM/DMARC e verificare consegna/rimbalzi. Attivare EMAIL_VERIFICATION_REQUIRED solo dopo prove reali di registrazione, recupero, cambio email e conferma spese. Nessun SMS/SPID/CIE.
+- Dominio e servizio email: SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, EMAIL_FROM; impostare SPF/DKIM/DMARC e verificare consegna/rimbalzi. Attivare EMAIL_VERIFICATION_REQUIRED solo dopo prove reali di registrazione, recupero, cambio email e conferma spese. L’accesso account previsto è tramite email verificata e password.
 - Android: GOOGLE_SERVICES_JSON_BASE64 in GitHub e credenziali FCM del progetto Expo. iOS: credenziali APNs. Collaudare due account su due dispositivi, app aperta/chiusa, telefono bloccato, permesso negato, apertura dalla notifica, duplicati e badge. Il badge numerico dipende anche dal launcher Android.
 - Pagamenti: account store, prodotti e verifica server delle transazioni; rinnovi, revoche, scadenze e ripristino. La famiglia ha un unico diritto Premium, 4,99 €/mese senza prova gratuita. Non attivare il blocco Premium prima di integrare e provare il billing. Nessuna integrazione di pagamento reale è stata simulata.
 - Fornitore di pubblicazione e titolare del trattamento da identificare; verificare con commercialista la posizione fiscale per l'attività a pagamento.
