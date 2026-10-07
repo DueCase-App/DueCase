@@ -22,6 +22,7 @@ import expensesRouter from './routes/expenses.js';
 import familyRouter from './routes/family.js';
 import familyChildrenRouter from './routes/familyChildren.js';
 import historyRouter from './routes/history.js';
+import legalRegistrationGuard from './routes/legalRegistrationGuard.js';
 import messagesRouter from './routes/messages.js';
 import notificationsRouter from './routes/notifications.js';
 import permanenceRouter from './routes/permanence.js';
@@ -54,6 +55,7 @@ app.get('/account-deletion',(_req,res)=>res.sendFile(publicFile('account-deletio
 app.get(['/professionisti','/professionisti/','/professionisti/accetta'],(_req,res)=>res.sendFile(publicFile('professional-portal.html')));
 
 app.use('/api/auth', rateLimit(60, 15*60*1000));
+app.use('/api/auth', legalRegistrationGuard);
 app.use('/api/auth', emailAuthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/auth', accountRouter);
