@@ -130,3 +130,67 @@ export async function sendParentInvitationEmail(input: {
 
   await smtp.sendMail({ from: config.EMAIL_FROM, to: input.to, subject, text, html });
 }
+
+const professionalScopeLabels: Record<string, string> = {
+  calendar: 'Calendario e permanenze',
+  expenses: 'Spese e rimborsi',
+  agreements: 'Accordi',
+  documents: 'Documenti',
+  dossier: 'Dossier ed esportazioni',
+  messages: 'Messaggi',
+};
+
+export async function sendProfessionalInvitationEmail(input: {
+  to: string;
+  inviterName: string;
+  familyName: string;
+  inviteLink: string;
+  scopes: string[];
+  expiresAt: Date;
+}): Promise<void> {
+  const smtp = getTransporter();
+  if (!smtp || !config.EMAIL_FROM) throw new Error('SMTP_NOT_CONFIGURED');
+
+  const expiresLabel = input.expiresAt.toLocaleString('it-IT', { timeZone: 'Europe/Rome' });
+  const scopeLabels = input.scopes.map((scope) => professionalScopeLabels[scope] ?? scope);
+  const permissionsText = scopeLabels.length ? scopeLabels.join(', ') : 'Nessuna sezione';
+  const permissionsHtml = scopeLabels.length
+    ? `<ul>${scopeLabels.map((label) => `<li>${escapeHtml(label)}</li>`).join('')}</ul>`
+    : '<p>Nessuna sezione selezionata.</p>';
+  const subject = `${input.inviterName} ti ha invitato come professionista su DueCase`;
+  const text = [
+    'Ciao,',
+    '',
+    `${input.inviterName} ti ha invitato a consultare la pratica “${input.familyName}” su DueCase come professionista.`,
+    `Accesso autorizzato a: ${permissionsText}.`,
+    '',
+    'L’accesso è in sola lettura: non potrai modificare contenuti, inviare messaggi o approvare/rifiutare richieste per conto dei genitori.',
+    '',
+    input.inviteLink,
+    '',
+    `L'invito scade il ${expiresLabel}.`,
+    'Il genitore che ha concesso l’accesso può revocarlo in qualsiasi momento.',
+    '',
+    'DueCase',
+  ].join('\n');
+
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:#0A3267;line-height:1.5">
+      <h2 style="margin-bottom:8px">DueCase · Accesso professionisti</h2>
+      <p><strong>${escapeHtml(input.inviterName)}</strong> ti ha invitato a consultare la pratica <strong>“${escapeHtml(input.familyName)}”</strong>.</p>
+      <p>Potrai consultare esclusivamente le sezioni autorizzate:</p>
+      ${permissionsHtml}
+      <p><strong>Accesso in sola lettura.</strong> Non potrai modificare contenuti, inviare messaggi o approvare/rifiutare richieste per conto dei genitori.</p>
+      <p style="margin:26px 0"><a href="${escapeHtml(input.inviteLink)}" style="display:inline-block;background:#1769E0;color:#fff;text-decoration:none;padding:14px 22px;border-radius:12px;font-weight:700">Accedi come professionista</a></p>
+      <p style="font-size:13px;color:#5D7CA7">L'invito scade il ${escapeHtml(expiresLabel)}. L’accesso può essere revocato dal genitore che lo ha concesso.</p>
+    </div>`;
+
+  await smtp.sendMail({
+    from: config.EMAIL_FROM,
+    replyTo: config.LEGAL_EMAIL,
+    to: input.to,
+    subject,
+    text,
+    html,
+  });
+}
