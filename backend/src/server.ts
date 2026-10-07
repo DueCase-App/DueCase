@@ -1,3 +1,4 @@
+import { stopLiveListener } from './services/liveService.js';
 import { app } from './app.js';
 import { config } from './config.js';
 import { pool } from './db.js';
@@ -8,6 +9,7 @@ const server = app.listen(config.PORT, '0.0.0.0', () => {
 
 async function shutdown(signal: string): Promise<void> {
   console.log(`${signal} received, shutting down...`);
+  stopLiveListener();
   server.close(async () => {
     await pool.end();
     process.exit(0);

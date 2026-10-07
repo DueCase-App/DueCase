@@ -1,107 +1,28 @@
+import { randomBytes } from 'node:crypto';
 import { Router } from 'express';
 import { getAuth, requireAuth } from '../auth.js';
-import { pool } from '../db.js';
+import { transaction } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
-
 const router = Router();
 router.use(requireAuth);
-
-async function tableExists(tableName: string): Promise<boolean> {
-  const { rows } = await pool.query<{ exists: boolean }>(
-    `SELECT to_regclass($1) IS NOT NULL AS "exists"`,
-    [`public.${tableName}`],
-  );
-  return rows[0]?.exists ?? false;
-}
-
-router.delete('/delete-account', asyncHandler(async (req, res) => {
-  const auth = getAuth(req);
-  const client = await pool.connect();
-
-  try {
-    await client.query('BEGIN');
-
-    const familyId = auth.familyId;
-    let otherFamilyUsers = 0;
-
-    if (familyId) {
-      const countResult = await client.query<{ count: string }>(
-        `SELECT COUNT(*)::text AS count
-           FROM users
-          WHERE family_id = $1
-            AND id <> $2`,
-        [familyId, auth.userId],
-      );
-      otherFamilyUsers = Number(countResult.rows[0]?.count ?? '0');
-    }
-
-    // Elimina i dati personali/mutabili direttamente associati all'account.
-    if (await tableExists('otp_requests')) {
-      await client.query(`DELETE FROM otp_requests WHERE user_id = $1`, [auth.userId]);
-    }
-
-    await client.query(`DELETE FROM documents WHERE uploaded_by_user_id = $1`, [auth.userId]);
-    await client.query(`DELETE FROM expenses WHERE paid_by_user_id = $1`, [auth.userId]);
-    await client.query(`DELETE FROM swap_requests WHERE requested_by = $1`, [auth.userId]);
-    await client.query(`DELETE FROM parents WHERE id = $1`, [auth.userId]);
-
-    const deletion = await client.query(
-      `DELETE FROM users
-        WHERE id = $1`,
-      [auth.userId],
-    );
-
-    if (deletion.rowCount !== 1) {
-      throw new ApiError(404, 'Account non trovato', 'ACCOUNT_NOT_FOUND');
-    }
-
-    // Se era l'ultimo account della famiglia, eliminiamo tutti i dati familiari mutabili.
-    // Il record families viene mantenuto soltanto come contenitore anonimo per gli archivi
-    // append-only (messaggi/report), così da non violare l'immutabilità probatoria.
-    if (familyId && otherFamilyUsers === 0) {
-      await client.query(`DELETE FROM documents WHERE family_id = $1`, [familyId]);
-      await client.query(`DELETE FROM expenses WHERE family_id = $1`, [familyId]);
-      await client.query(`DELETE FROM swap_requests WHERE family_id = $1`, [familyId]);
-      await client.query(`DELETE FROM custody_turns WHERE family_id = $1`, [familyId]);
-      await client.query(`DELETE FROM children WHERE family_id = $1`, [familyId]);
-      await client.query(`DELETE FROM parents WHERE family_id = $1`, [familyId]);
-      await client.query(`DELETE FROM family_subscriptions WHERE family_id = $1`, [familyId]);
-
-      if (await tableExists('family_members')) {
-        await client.query(`DELETE FROM family_members WHERE family_id = $1`, [familyId]);
-      }
-      if (await tableExists('events')) {
-        await client.query(`DELETE FROM events WHERE family_id = $1`, [familyId]);
-      }
-      if (await tableExists('agreements')) {
-        await client.query(`DELETE FROM agreements WHERE family_id = $1`, [familyId]);
-      }
-
-      await client.query(
-        `UPDATE families
-            SET name = 'Famiglia eliminata',
-                invite_code = 'DELETED-' || id::text
-          WHERE id = $1`,
-        [familyId],
-      );
-    }
-
-    await client.query('COMMIT');
-
-    res.json({
-      deleted: true,
-      retainedLegalRecords: {
-        immutableMessages: true,
-        reportExportHashes: true,
-      },
-      note: 'I dati personali e i dati mutabili dell’account sono stati eliminati. I soli registri append-only necessari a preservare integrità e tracciabilità restano scollegati dall’account tramite identificativi opachi.',
-    });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+router.delete('/delete-account', asyncHandler(async(req,res)=>{
+ const auth=getAuth(req);
+ await transaction(async client=>{
+  const current=await client.query('SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[auth.userId]);
+  if(!current.rowCount)throw new ApiError(404,'Account non trovato','ACCOUNT_NOT_FOUND');
+  await client.query('DELETE FROM email_challenges WHERE user_id=$1',[auth.userId]);
+  await client.query('DELETE FROM otp_requests WHERE user_id=$1',[auth.userId]);
+  await client.query('DELETE FROM in_app_notifications WHERE user_id=$1',[auth.userId]);
+  // Do not erase the other parent's shared expenses, receipts, agreements or messages.
+  await client.query(`UPDATE parents SET display_name='Account eliminato' WHERE id=$1`,[auth.userId]);
+  await client.query(`UPDATE users SET email=$2,password_hash=$3,display_name='Account eliminato',
+    first_name=NULL,last_name=NULL,birth_date=NULL,tax_code=NULL,phone=NULL,
+    expo_push_token=NULL,email_verified_at=NULL,token_version=token_version+1,
+    family_id=NULL,deleted_at=clock_timestamp(),updated_at=NOW() WHERE id=$1`,
+    [auth.userId,`deleted-${auth.userId}@invalid.example`,randomBytes(48).toString('hex')]);
+  // Rotate the invitation so a previously shared code cannot reopen this family.
+  if(auth.familyId) await client.query('UPDATE families SET invite_code=$2 WHERE id=$1',[auth.familyId,randomBytes(8).toString('hex').toUpperCase()]);
+ });
+ res.json({deleted:true,note:'Accesso revocato e profilo personale eliminato. I dati già condivisi nella famiglia restano nello storico, attribuiti ad “Account eliminato”.'});
 }));
-
 export default router;

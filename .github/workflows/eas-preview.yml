@@ -6,6 +6,10 @@ on:
     paths:
       - '.github/workflows/eas-preview.yml'
       - 'frontend/**'
+  pull_request:
+    paths:
+      - '.github/workflows/eas-preview.yml'
+      - 'frontend/**'
   workflow_dispatch:
 
 permissions:
@@ -34,13 +38,25 @@ jobs:
           java-version: '17'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: TypeScript check
         run: npm run typecheck
 
       - name: Expo Doctor
         run: npx expo-doctor@latest
+
+      - name: Configure Android push when Firebase configuration is available
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        shell: bash
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > "$RUNNER_TEMP/duecase-google-services.json"
+            echo "GOOGLE_SERVICES_FILE=$RUNNER_TEMP/duecase-google-services.json" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Firebase configuration missing: OS push must be configured and tested before store release."
+          fi
 
       - name: Verify Expo public configuration
         env:

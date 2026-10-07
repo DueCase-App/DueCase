@@ -1,3 +1,4 @@
+import { useLiveRefresh } from '../services/live';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -79,6 +80,7 @@ export function DossierScreen(): React.JSX.Element {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useLiveRefresh(load);
 
   const entityTypes = useMemo(() => [...new Set(activities.map((item) => item.entityType))], [activities]);
   const visibleActivities = useMemo(
@@ -102,10 +104,10 @@ export function DossierScreen(): React.JSX.Element {
           </View>
           <View style={styles.chartCard}>
             <Text style={styles.sectionTitle}>Parenting Time</Text>
-            <Text style={styles.sectionSubtitle}>Percentuale calcolata sui turni di permanenza registrati e approvati.</Text>
+            <Text style={styles.sectionSubtitle}>Ripartizione delle giornate pianificate per ciascun figlio. Non misura le ore effettivamente trascorse insieme.</Text>
             <Bar label="Papà" percentage={report.father.percentage} />
             <Bar label="Mamma" percentage={report.mother.percentage} />
-            <View style={styles.total}><Text style={styles.totalLabel}>Totale registrato</Text><Text style={styles.totalValue}>{report.totalHours.toLocaleString('it-IT', { maximumFractionDigits: 1 })} ore</Text></View>
+            <View style={styles.total}><Text style={styles.totalLabel}>Giornate pianificate per figlio</Text><Text style={styles.totalValue}>{(report.totalHours/24).toLocaleString('it-IT', { maximumFractionDigits: 1 })} giorni-figlio</Text></View>
           </View>
 
           <View style={styles.timelineHeader}>
@@ -144,7 +146,7 @@ export function DossierScreen(): React.JSX.Element {
 }
 
 function ParentCard({ label, hours, percentage, icon }: { label: string; hours: number; percentage: number; icon: keyof typeof Ionicons.glyphMap }): React.JSX.Element {
-  return <View style={styles.parentCard}><View style={styles.parentIcon}><Ionicons name={icon} size={25} color={ui.colors.primary} /></View><Text style={styles.parentLabel}>{label}</Text><Text style={styles.parentPercentage}>{percentage.toLocaleString('it-IT', { maximumFractionDigits: 1 })}%</Text><Text style={styles.parentHours}>{hours.toLocaleString('it-IT', { maximumFractionDigits: 1 })} ore</Text></View>;
+  return <View style={styles.parentCard}><View style={styles.parentIcon}><Ionicons name={icon} size={25} color={ui.colors.primary} /></View><Text style={styles.parentLabel}>{label}</Text><Text style={styles.parentPercentage}>{percentage.toLocaleString('it-IT', { maximumFractionDigits: 1 })}%</Text><Text style={styles.parentHours}>{(hours/24).toLocaleString('it-IT', { maximumFractionDigits: 1 })} giorni-figlio</Text></View>;
 }
 
 function Bar({ label, percentage }: { label: string; percentage: number }): React.JSX.Element {

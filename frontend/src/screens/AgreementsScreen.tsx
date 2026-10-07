@@ -1,10 +1,11 @@
+import { useLiveRefresh } from '../services/live';
+import { SafeModal as Modal } from '../components/SafeModal';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -81,6 +82,7 @@ export function AgreementsScreen(): React.JSX.Element {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  useLiveRefresh(load);
 
   const pending = useMemo(() => items.filter((item) => item.status === 'pending').length, [items]);
 

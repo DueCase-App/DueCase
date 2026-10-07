@@ -2,15 +2,15 @@ export type ParentRole = 'father' | 'mother';
 export type FamilyInfo = { id: string; name: string | null; inviteCode: string | null; };
 
 export type RegistrationChildInput = { displayName: string; birthDate?: string | null; };
-export type RegisterInput = { displayName: string; firstName: string; lastName: string; birthDate: string; taxCode: string; email: string; phone: string; password: string; role: ParentRole; familyName: string; children: RegistrationChildInput[]; inviteOtherParent: boolean; };
-export type AuthUser = { id: string; email: string; displayName: string; firstName: string | null; lastName: string | null; birthDate: string | null; taxCode: string | null; phone: string | null; role: ParentRole; familyId: string | null; family: FamilyInfo | null; };
+export type RegisterInput = { displayName: string; firstName: string; lastName: string; birthDate: string; taxCode: string; email: string; phone?: string; password: string; confirmPassword: string; role: ParentRole; familyName?: string; children: RegistrationChildInput[]; inviteOtherParent: boolean; };
+export type AuthUser = { emailVerifiedAt?: string | null; verificationRequired?: boolean; id: string; email: string; displayName: string; firstName: string | null; lastName: string | null; birthDate: string | null; taxCode: string | null; phone: string | null; role: ParentRole; familyId: string | null; family: FamilyInfo | null; };
 export type AuthResponse = { token: string; user: AuthUser; };
 export type FamilyActionResponse = { family: FamilyInfo; memberCount: number; };
 
 export type FamilyChild = { id: string; familyId?: string; displayName: string; birthDate: string | null; school?: string | null; className?: string | null; sports?: string | null; extracurricular?: string | null; usefulInfo?: string | null; authorizations?: string | null; sharedNotes?: string | null; createdAt?: string; updatedAt?: string; };
 export type FamilyChildInput = Omit<FamilyChild, 'id' | 'familyId' | 'createdAt' | 'updatedAt'>;
 
-export type DailyCustody = { id: string; familyId: string; custodyDate: string; custodianRole: ParentRole; parentId: string | null; notes: string | null; createdAt: string; updatedAt: string; };
+export type DailyCustody = { childId?: string; childName?: string; source?: string; id: string; familyId: string; custodyDate: string; custodianRole: ParentRole; parentId: string | null; notes: string | null; createdAt: string; updatedAt: string; };
 export type CustodyCurrentChild = { childId: string; childName: string; custodianRole: ParentRole | null; overnight: boolean; notes: string | null; source: 'exception' | 'calendar' | 'alternating_weekend' | 'weekly_pattern' | 'undefined'; };
 export type CustodyCurrent = { date: string; children: CustodyCurrentChild[]; };
 export type CustodyPattern = { id: string; childId: string; childName?: string; weekday: number; custodianRole: ParentRole; overnight: boolean; notes: string | null; createdAt: string; updatedAt: string; };

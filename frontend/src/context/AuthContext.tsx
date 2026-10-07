@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, setApiToken } from '../services/api';
+import { api, ApiClientError, setApiToken } from '../services/api';
 import { registerPushNotificationsAsync, unregisterPushNotificationsAsync } from '../services/notifications';
 import { clearStoredToken, getStoredToken, storeToken } from '../services/tokenStorage';
 import type { AuthUser, RegisterInput } from '../types/models';
@@ -7,6 +7,8 @@ import type { AuthUser, RegisterInput } from '../types/models';
 type AuthContextValue = {
   user: AuthUser | null;
   booting: boolean;
+  bootError: string | null;
+  retrySession: () => void;
   login: (email: string, password: string) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -18,6 +20,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [booting, setBooting] = useState(true);
+  const [bootError,setBootError]=useState<string|null>(null);
+  const [attempt,setAttempt]=useState(0);
+  const retrySession=useCallback(()=>{setBootError(null);setBooting(true);setAttempt(v=>v+1);},[]);
 
   useEffect(() => {
     let active = true;
@@ -32,9 +37,11 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
           setUser(restoredUser);
           void registerPushNotificationsAsync();
         }
-      } catch {
-        setApiToken(null);
-        await clearStoredToken();
+      } catch (error) {
+        if (error instanceof ApiClientError && error.status === 401) {
+          setApiToken(null);
+          await clearStoredToken();
+        } else if(active) setBootError('Connessione non disponibile. Il tuo accesso è conservato: riprova tra poco.');
       } finally {
         if (active) setBooting(false);
       }
@@ -42,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
 
     void restoreSession();
     return () => { active = false; };
-  }, []);
+  }, [attempt]);
 
   const login = useCallback(async (email: string, password: string) => {
     const result = await api.auth.login({ email, password });
@@ -74,12 +81,12 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
 
   const value = useMemo<AuthContextValue>(() => ({
     user,
-    booting,
+    booting, bootError, retrySession,
     login,
     register,
     refreshUser,
     logout,
-  }), [user, booting, login, register, refreshUser, logout]);
+  }), [user, booting, bootError, retrySession, login, register, refreshUser, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -1,3 +1,4 @@
+import { dateSchema } from '../services/validation.js';
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -8,7 +9,7 @@ import { ApiError, asyncHandler } from '../http.js';
 const router = Router();
 router.use(requireAuth);
 
-const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
+const dateString = dateSchema;
 const parentRole = z.enum(['father', 'mother']);
 
 const listSchema = z.object({
@@ -39,32 +40,14 @@ router.get('/', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const query = listSchema.parse(req.query);
 
-  const values: string[] = [auth.familyId];
-  const filters = ['family_id = $1', 'custody_date IS NOT NULL', 'custodian_role IS NOT NULL'];
-
-  if (query.from) {
-    values.push(query.from);
-    filters.push(`custody_date >= $${values.length}`);
-  }
-  if (query.to) {
-    values.push(query.to);
-    filters.push(`custody_date <= $${values.length}`);
-  }
-
-  const { rows } = await pool.query<DailyTurnRow>(
-    `SELECT id,
-            family_id AS "familyId",
-            custody_date::text AS "custodyDate",
-            custodian_role AS "custodianRole",
-            parent_id AS "parentId",
-            notes,
-            created_at AS "createdAt",
-            updated_at AS "updatedAt"
-       FROM custody_turns
-      WHERE ${filters.join(' AND ')}
-      ORDER BY custody_date ASC`,
-    values,
-  );
+  const from = query.from ?? new Date().toISOString().slice(0,7)+'-01';
+  const to = query.to ?? new Date(new Date(from).getTime()+31*86400000).toISOString().slice(0,10);
+  if ((new Date(to).getTime()-new Date(from).getTime())/86400000 > 366) throw new ApiError(400,'Seleziona al massimo un anno.','RANGE_TOO_LARGE');
+  const {rows}=await pool.query(`SELECT c.*, d::date::text AS "custodyDate",
+    c."childId"::text || ':' || d::date::text AS id, $1::uuid AS "familyId"
+    FROM generate_series($2::date,$3::date,interval '1 day') d
+    CROSS JOIN LATERAL duecase_custody($1,d::date) c WHERE c."custodianRole" IS NOT NULL
+    ORDER BY d,c."childName"`,[auth.familyId,from,to]);
 
   res.json(rows);
 }));
@@ -75,9 +58,9 @@ router.put('/:date', asyncHandler(async (req, res) => {
   const body = upsertDaySchema.parse(req.body);
 
   const parentResult = await pool.query<{ id: string }>(
-    `SELECT id
-       FROM parents
-      WHERE family_id = $1 AND role = $2
+    `SELECT p.id
+       FROM parents p JOIN users u ON u.id=p.id
+      WHERE p.family_id = $1 AND p.role = $2 AND u.deleted_at IS NULL
       LIMIT 1`,
     [auth.familyId, body.custodianRole],
   );

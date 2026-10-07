@@ -1,3 +1,7 @@
+import { openPrivateFile } from '../services/openFile';
+import { randomUUID } from 'expo-crypto';
+import { useLiveRefresh } from '../services/live';
+import { SafeModal as Modal } from '../components/SafeModal';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -6,7 +10,6 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -41,8 +44,14 @@ export function MessagesScreen(): React.JSX.Element {
   const [text, setText] = useState('');
   const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
   const [previewAttachment, setPreviewAttachment] = useState<MessageAttachment | null>(null);
+  const nearBottom=useRef(true);
+  const [hasOlder,setHasOlder]=useState(false);
+  const [loadingOlder,setLoadingOlder]=useState(false);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const busy = useRef(false);
+  const sendInFlight=useRef(false);
+  const pendingSend = useRef<{key:string;id:string} | null>(null);
   const [tone, setTone] = useState<ToneAnalysis | null>(null);
   const [toneOpen, setToneOpen] = useState(false);
 
@@ -53,7 +62,8 @@ export function MessagesScreen(): React.JSX.Element {
   const load = useCallback(async () => {
     try {
       const items = await api.messages.list(150);
-      setMessages(items);
+      setHasOlder(items.length>=150);
+      setMessages(previous=>{const merged=new Map(previous.map(m=>[m.id,m]));for(const m of items)merged.set(m.id,m);return [...merged.values()].sort((a,b)=>a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id));});
       const unread = items.filter((item) => !item.isMine && !item.readAt);
       await Promise.allSettled(unread.map((item) => api.messages.markRead(item.id)));
     } catch (error) {
@@ -62,7 +72,14 @@ export function MessagesScreen(): React.JSX.Element {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { if (!loading) scrollToComposer(false); }, [loading, messages.length, scrollToComposer]);
+  useLiveRefresh(load);
+  useEffect(() => { if (!loading && nearBottom.current) scrollToComposer(false); }, [loading, messages.length, scrollToComposer]);
+
+  async function loadOlder(){
+    const first=messages[0];if(!first||loadingOlder)return;nearBottom.current=false;setLoadingOlder(true);
+    try{const older=await api.messages.list(150,first.createdAt,first.id);setHasOlder(older.length>=150);setMessages(current=>[...older.filter(m=>!current.some(c=>c.id===m.id)),...current]);await Promise.allSettled(older.filter(m=>!m.isMine&&!m.readAt).map(m=>api.messages.markRead(m.id)));}
+    catch(e){Alert.alert('Messaggi',e instanceof Error?e.message:'Caricamento non riuscito');}finally{setLoadingOlder(false);}
+  }
 
   const pickAttachment = async (): Promise<void> => {
     const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true, multiple: false });
@@ -72,11 +89,15 @@ export function MessagesScreen(): React.JSX.Element {
   };
 
   const actuallySend = async (value: string): Promise<void> => {
-    if ((!value.trim() && !attachment) || sending) return;
+    if ((!value.trim() && !attachment) || sendInFlight.current) return;
+    sendInFlight.current=true;
     setSending(true);
     try {
-      const saved = await api.messages.send(value.trim(), attachment ?? undefined);
-      setMessages((current) => [...current, saved]);
+      const key = JSON.stringify([value.trim(),attachment?.uri]);
+      if(pendingSend.current?.key !== key) pendingSend.current={key,id:randomUUID()};
+      const saved = await api.messages.send(value.trim(), attachment ?? undefined, pendingSend.current.id);
+      pendingSend.current=null;
+      setMessages((current) => current.some(item=>item.id===saved.id) ? current : [...current, saved]);
       setText('');
       setAttachment(null);
       setToneOpen(false);
@@ -84,13 +105,14 @@ export function MessagesScreen(): React.JSX.Element {
       scrollToComposer();
     } catch (error) {
       Alert.alert(error instanceof ApiClientError && error.code === 'PREMIUM_REQUIRED' ? 'Premium richiesto' : 'Messaggi', error instanceof Error ? error.message : 'Invio non riuscito.');
-    } finally { setSending(false); }
+    } finally { sendInFlight.current=false; setSending(false); }
   };
 
   const requestSend = async (): Promise<void> => {
     const value = text.trim();
-    if (!value && !attachment) return;
-    if (!value) { await actuallySend(''); return; }
+    if ((!value && !attachment) || busy.current) return;
+    busy.current=true;
+    if (!value) { try { await actuallySend(''); } finally { busy.current=false; } return; }
     setSending(true);
     try {
       const analysis = await api.messages.analyzeTone(value);
@@ -104,7 +126,7 @@ export function MessagesScreen(): React.JSX.Element {
     } catch (error) {
       if (error instanceof ApiClientError && error.code === 'PREMIUM_REQUIRED') Alert.alert('Premium richiesto', error.message);
       else Alert.alert('Controllo tono non disponibile', 'Il testo non è stato inviato. Riprova tra poco.');
-    } finally { setSending(false); }
+    } finally { busy.current=false; setSending(false); }
   };
 
   return (
@@ -117,22 +139,25 @@ export function MessagesScreen(): React.JSX.Element {
         <View style={[styles.shell, !compact && styles.shellWide, { paddingBottom: Math.max(10, insets.bottom + 4) }]}>
           <View style={styles.header}>
             <View style={styles.headerCopy}>
-              <Text style={styles.eyebrow}>COMUNICAZIONI CONDIVISE</Text>
+
               <Text style={styles.title}>Messaggi</Text>
-              <Text style={styles.subtitle}>Chat tra Mamma e Papà · testo e allegati protetti da hash SHA-256.</Text>
+              <Text style={styles.subtitle}>La vostra conversazione condivisa</Text>
             </View>
-            <View style={styles.integrityPill}><Ionicons name="shield-checkmark-outline" size={17} color={ui.colors.success} /><Text style={styles.integrityText}>Integrità attiva</Text></View>
+            <Pressable accessibilityLabel="Informazioni sui messaggi" onPress={() => Alert.alert("Messaggi e allegati", "Le comunicazioni conservano uno storico e controlli di integrità. Il controllo del tono può suggerire una formulazione più neutra prima dell’invio.")}><Ionicons name="information-circle-outline" size={25} color={ui.colors.primary} /></Pressable>
           </View>
 
           <View style={styles.chatCard}>
             {loading ? <ActivityIndicator style={{ marginTop: 50 }} color={ui.colors.primary} /> : (
               <ScrollView
                 ref={scrollRef}
+                onScroll={e=>{const {contentOffset,contentSize,layoutMeasurement}=e.nativeEvent;nearBottom.current=contentSize.height-contentOffset.y-layoutMeasurement.height<80;}}
+                scrollEventThrottle={100}
                 style={styles.messagesArea}
                 contentContainerStyle={styles.messagesContent}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
               >
+                {hasOlder?<Pressable disabled={loadingOlder} onPress={()=>void loadOlder()} style={{padding:12,alignItems:'center'}}><Text style={{color:ui.colors.primary}}>{loadingOlder?'Caricamento…':'Carica messaggi precedenti'}</Text></Pressable>:null}
                 {messages.length === 0 ? <View style={styles.empty}><Ionicons name="chatbubbles-outline" size={38} color={ui.colors.primary} /><Text style={styles.emptyTitle}>Nessun messaggio</Text><Text style={styles.emptyText}>Le comunicazioni inviate qui resteranno ordinate e verificabili.</Text></View> : null}
                 {messages.map((message) => {
                   const mine = message.senderId === user?.id || message.isMine;
@@ -144,7 +169,7 @@ export function MessagesScreen(): React.JSX.Element {
                         {message.attachments?.map((item) => (
                           <Pressable key={item.id} style={[styles.attachmentCard, mine && styles.attachmentCardMine]} onPress={() => setPreviewAttachment(item)}>
                             {item.mimeType.startsWith('image/') ? <Image source={api.messages.attachmentSource(item.fileUrl)} style={styles.attachmentImage} resizeMode="cover" /> : <View style={styles.fileIcon}><Ionicons name="document-text-outline" size={26} color={mine ? '#FFF' : ui.colors.primary} /></View>}
-                            <View style={styles.attachmentCopy}><Text numberOfLines={1} style={[styles.attachmentName, mine && styles.messageTextMine]}>{item.filename}</Text><Text style={[styles.attachmentMeta, mine && styles.timeMine]}>SHA-256 verificabile · {(item.fileSizeBytes / 1024).toFixed(0)} KB</Text></View>
+                            <View style={styles.attachmentCopy}><Text numberOfLines={1} style={[styles.attachmentName, mine && styles.messageTextMine]}>{item.filename}</Text><Text style={[styles.attachmentMeta, mine && styles.timeMine]}>Allegato · {(item.fileSizeBytes / 1024).toFixed(0)} KB</Text></View>
                           </Pressable>
                         ))}
                         <View style={styles.messageMeta}><Text style={[styles.time, mine && styles.timeMine]}>{formatTimestamp(message.createdAt)}</Text>{mine ? <Ionicons name={message.readAt ? 'checkmark-done' : 'checkmark'} size={15} color={message.readAt ? '#D7F1FF' : '#C6D9EE'} /> : null}<Ionicons name="shield-checkmark" size={13} color={mine ? '#D7F1FF' : ui.colors.success} /></View>
@@ -155,7 +180,7 @@ export function MessagesScreen(): React.JSX.Element {
               </ScrollView>
             )}
 
-            {attachment ? <View style={styles.pendingAttachment}><Ionicons name="attach-outline" size={19} color={ui.colors.primary} /><View style={styles.pendingCopy}><Text numberOfLines={1} style={styles.pendingName}>{attachment.name}</Text><Text style={styles.pendingMeta}>Verrà archiviato con hash SHA-256</Text></View><Pressable onPress={() => setAttachment(null)}><Ionicons name="close-circle" size={23} color={ui.colors.muted} /></Pressable></View> : null}
+            {attachment ? <View style={styles.pendingAttachment}><Ionicons name="attach-outline" size={19} color={ui.colors.primary} /><View style={styles.pendingCopy}><Text numberOfLines={1} style={styles.pendingName}>{attachment.name}</Text><Text style={styles.pendingMeta}>Pronto per l’invio</Text></View><Pressable onPress={() => setAttachment(null)}><Ionicons name="close-circle" size={23} color={ui.colors.muted} /></Pressable></View> : null}
             <View style={styles.composer}>
               <Pressable style={styles.attachButton} onPress={() => void pickAttachment()} accessibilityLabel="Aggiungi allegato"><Ionicons name="attach" size={23} color={ui.colors.primary} /></Pressable>
               <TextInput
@@ -170,7 +195,7 @@ export function MessagesScreen(): React.JSX.Element {
               />
               <Pressable disabled={(!text.trim() && !attachment) || sending} onPress={() => void requestSend()} style={[styles.sendButton, ((!text.trim() && !attachment) || sending) && { opacity: 0.45 }]}>{sending ? <ActivityIndicator color="#FFF" /> : <Ionicons name="send" size={20} color="#FFF" />}</Pressable>
             </View>
-            <Text style={styles.helper}><Ionicons name="sparkles-outline" size={13} /> ToneMeter controlla il testo prima dell’invio; gli allegati restano protetti separatamente da SHA-256.</Text>
+
           </View>
         </View>
 
@@ -191,6 +216,7 @@ export function MessagesScreen(): React.JSX.Element {
             <View style={styles.modalBackdrop}><View style={styles.previewCard}>
               <View style={styles.previewHeader}><View style={{ flex: 1 }}><Text style={styles.toneTitle}>Allegato protetto</Text><Text numberOfLines={1} style={styles.toneDescription}>{previewAttachment?.filename}</Text></View><Pressable onPress={() => setPreviewAttachment(null)}><Ionicons name="close" size={25} color={ui.colors.text} /></Pressable></View>
               {previewAttachment?.mimeType.startsWith('image/') ? <Image source={api.messages.attachmentSource(previewAttachment.fileUrl)} style={styles.previewImage} resizeMode="contain" /> : <View style={styles.pdfPreview}><Ionicons name="document-text-outline" size={52} color={ui.colors.primary} /><Text style={styles.emptyTitle}>Documento PDF</Text><Text style={styles.emptyText}>Il file è archiviato nel messaggio e verificato dal backend prima dell’apertura.</Text></View>}
+              <Pressable style={styles.useSuggestion} onPress={() => { if(previewAttachment) void openPrivateFile(api.messages.attachmentSource(previewAttachment.fileUrl),previewAttachment.filename,previewAttachment.mimeType).catch(e=>Alert.alert("Allegato",e.message)); }}><Text style={styles.useSuggestionText}>Apri o salva allegato</Text></Pressable>
               <Text selectable style={styles.hashText}>SHA-256: {previewAttachment?.dataHash}</Text>
             </View></View>
           </SafeAreaView>

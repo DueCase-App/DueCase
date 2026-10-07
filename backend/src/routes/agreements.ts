@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, requireFamily } from '../auth.js';
-import { pool } from '../db.js';
+import { pool, transaction } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
 import { parentRoleSubject, sendPushToOtherParent, sendPushToUser } from '../services/notificationService.js';
 
@@ -51,8 +51,8 @@ async function appendHistory(input: {
   actorUserId: string;
   action: 'created' | 'approved' | 'rejected' | 'changes_requested' | 'updated';
   snapshot: unknown;
-}): Promise<void> {
-  await pool.query(
+}, db: Pick<typeof pool, 'query'> = pool): Promise<void> {
+  await db.query(
     `INSERT INTO family_agreement_history (id, agreement_id, family_id, actor_user_id, action, snapshot)
      VALUES ($1,$2,$3,$4,$5,$6::jsonb)`,
     [randomUUID(), input.agreementId, input.familyId, input.actorUserId, input.action, JSON.stringify(input.snapshot)],
@@ -114,7 +114,8 @@ router.post('/', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const body = createSchema.parse(req.body);
   const id = randomUUID();
-  const { rows } = await pool.query(
+  const agreement = await transaction(async (client) => {
+  const { rows } = await client.query(
     `INSERT INTO family_agreements (id, family_id, created_by, created_by_role, category, title, body)
      VALUES ($1,$2,$3,$4,$5,$6,$7)
      RETURNING id, family_id AS "familyId", created_by AS "createdBy", created_by_role AS "createdByRole", category, title, body,
@@ -123,12 +124,14 @@ router.post('/', asyncHandler(async (req, res) => {
     [id, auth.familyId, auth.userId, auth.role, body.category, body.title, body.body],
   );
   const agreement = rows[0];
-  await appendHistory({ agreementId: id, familyId: auth.familyId, actorUserId: auth.userId, action: 'created', snapshot: agreement });
-  await pool.query(
+  await appendHistory({ agreementId: id, familyId: auth.familyId, actorUserId: auth.userId, action: 'created', snapshot: agreement }, client);
+  await client.query(
     `INSERT INTO family_activity_history (id, family_id, actor_user_id, entity_type, entity_id, action, details)
      VALUES ($1,$2,$3,'agreement',$4,'created',$5::jsonb)`,
     [randomUUID(), auth.familyId, auth.userId, id, JSON.stringify({ title: body.title, category: body.category, role: auth.role })],
   );
+    return agreement;
+  });
   await sendPushToOtherParent(auth.familyId, auth.userId, {
     title: 'Nuovo accordo DueCase',
     body: `${parentRoleSubject(auth.role)} ha proposto un nuovo accordo: ${body.title}`,
@@ -141,7 +144,8 @@ router.post('/:id/respond', asyncHandler(async (req, res) => {
   const auth = requireFamily(req);
   const agreementId = uuid.parse(req.params.id);
   const body = responseSchema.parse(req.body);
-  const existingResult = await pool.query<{
+  const { agreement, existing } = await transaction(async (client) => {
+  const existingResult = await client.query<{
     id: string;
     createdBy: string;
     status: string;
@@ -158,23 +162,27 @@ router.post('/:id/respond', asyncHandler(async (req, res) => {
   if (existing.createdBy === auth.userId) throw new ApiError(403, 'Non puoi rispondere al tuo stesso accordo', 'SELF_REVIEW_NOT_ALLOWED');
   if (existing.status !== 'pending') throw new ApiError(409, 'Questo accordo ha già ricevuto una risposta', 'AGREEMENT_ALREADY_REVIEWED');
 
-  const { rows } = await pool.query(
+  const { rows } = await client.query(
     `UPDATE family_agreements
         SET status = $1, reviewed_by = $2, reviewed_by_role = $3, response_note = $4, reviewed_at = clock_timestamp(), updated_at = NOW()
-      WHERE id = $5 AND family_id = $6
+      WHERE id = $5 AND family_id = $6 AND status = 'pending'
       RETURNING id, family_id AS "familyId", created_by AS "createdBy", created_by_role AS "createdByRole", category, title, body,
                 status, reviewed_by AS "reviewedBy", reviewed_by_role AS "reviewedByRole", response_note AS "responseNote",
                 reviewed_at AS "reviewedAt", created_at AS "createdAt", updated_at AS "updatedAt"`,
     [body.status, auth.userId, auth.role, body.note ?? null, agreementId, auth.familyId],
   );
   const agreement = rows[0];
-  await appendHistory({ agreementId, familyId: auth.familyId, actorUserId: auth.userId, action: body.status, snapshot: agreement });
-  await pool.query(
+  if (!agreement) throw new ApiError(409, 'Accordo già gestito', 'AGREEMENT_ALREADY_REVIEWED');
+  await appendHistory({ agreementId, familyId: auth.familyId, actorUserId: auth.userId, action: body.status, snapshot: agreement }, client);
+  await client.query(
     `INSERT INTO family_activity_history (id, family_id, actor_user_id, entity_type, entity_id, action, details)
      VALUES ($1,$2,$3,'agreement',$4,$5,$6::jsonb)`,
     [randomUUID(), auth.familyId, auth.userId, agreementId, body.status, JSON.stringify({ note: body.note ?? null, role: auth.role })],
   );
 
+    return { agreement, existing };
+  });
+  await pool.query(`UPDATE in_app_notifications SET read_at=clock_timestamp() WHERE user_id=$1 AND family_id=$2 AND entity_type='agreement' AND entity_id=$3 AND read_at IS NULL`,[auth.userId,auth.familyId,agreementId]);
   const notification = responseNotification(body.status, existing.title, auth.role);
   await sendPushToUser(existing.createdBy, {
     title: notification.title,

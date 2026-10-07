@@ -1,3 +1,5 @@
+import { useLiveRefresh } from '../services/live';
+import { SafeModal as Modal } from '../components/SafeModal';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -5,7 +7,6 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -56,6 +57,7 @@ export function ChildrenScreen(): React.JSX.Element {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useLiveRefresh(load);
 
   const openEditor = (child?: FamilyChild): void => {
     setEditing(child ?? null);
@@ -150,14 +152,14 @@ export function ChildrenScreen(): React.JSX.Element {
             <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.form}>
               <Field label="Nome *" value={form.displayName} onChangeText={(displayName) => setForm((v) => ({ ...v, displayName }))} placeholder="Nome del figlio" />
               <Text style={styles.label}>Data di nascita</Text>
-              <Pressable style={styles.dateField} onPress={openDatePicker}>
+              {Platform.OS==='web'?<input aria-label="Data di nascita" type="date" max={isoDate(new Date())} value={form.birthDate??''} onChange={e=>setForm(v=>({...v,birthDate:e.target.value||null}))} style={{padding:14,fontSize:16,borderRadius:12,border:'1px solid #D9E7F4'}}/>:<Pressable style={styles.dateField} onPress={openDatePicker}>
                 <Ionicons name="calendar-outline" size={18} color={ui.colors.primary} />
                 <Text style={styles.dateText}>{form.birthDate ? formatDate(form.birthDate) : 'Seleziona la data'}</Text>
-              </Pressable>
+              </Pressable>}
               {Platform.OS === 'ios' && showIosDate ? (
                 <View style={styles.iosPickerWrap}>
                   <DateTimePicker value={form.birthDate ? new Date(`${form.birthDate}T12:00:00`) : new Date()} mode="date" maximumDate={new Date()} display="spinner" onChange={(_e, d) => { if (d) setForm((v) => ({ ...v, birthDate: isoDate(d) })); }} />
-                  <Pressable onPress={() => setShowIosDate(false)}><Text style={styles.doneText}>Fatto</Text></Pressable>
+                  <Pressable onPress={() => { if(!form.birthDate) setForm(v=>({...v,birthDate:isoDate(new Date())})); setShowIosDate(false); }}><Text style={styles.doneText}>Fatto</Text></Pressable>
                 </View>
               ) : null}
               <Field label="Scuola" value={form.school ?? ''} onChangeText={(school) => setForm((v) => ({ ...v, school }))} placeholder="Nome della scuola" />

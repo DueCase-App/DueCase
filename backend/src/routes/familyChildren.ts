@@ -1,3 +1,5 @@
+import { parentRoleSubject, sendPushToOtherParent } from '../services/notificationService.js';
+import { dateSchema } from '../services/validation.js';
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -83,6 +85,7 @@ router.post('/', asyncHandler(async (req, res) => {
      VALUES ($1,$2,$3,'child',$4,'created',$5::jsonb)`,
     [randomUUID(), auth.familyId, auth.userId, id, JSON.stringify({ displayName: body.displayName })],
   );
+  await sendPushToOtherParent(auth.familyId,auth.userId,{title:'Nuova scheda figlio',body:`${parentRoleSubject(auth.role)} ha aggiunto una scheda.`,data:{type:'child_created',screen:'children',childId:id}});
   res.status(201).json(rows[0]);
 }));
 
@@ -138,6 +141,7 @@ router.put('/:id', asyncHandler(async (req, res) => {
      VALUES ($1,$2,$3,'child',$4,'updated',$5::jsonb)`,
     [randomUUID(), auth.familyId, auth.userId, childId, JSON.stringify(body)],
   );
+  await sendPushToOtherParent(auth.familyId,auth.userId,{title:'Scheda figlio aggiornata',body:`${parentRoleSubject(auth.role)} ha aggiornato una scheda.`,data:{type:'child_updated',screen:'children',childId}});
   res.json(rows[0]);
 }));
 

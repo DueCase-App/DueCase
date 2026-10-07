@@ -1,3 +1,4 @@
+import { config } from '../config.js';
 import bcrypt from 'bcrypt';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
@@ -8,13 +9,14 @@ import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
 import { isValidExpoPushToken } from '../services/notificationService.js';
 
+import { passwordSchema, dateSchema } from '../services/validation.js';
 const router = Router();
 const BCRYPT_ROUNDS = 12;
 const INVITE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 const roleSchema = z.enum(['father', 'mother']);
 const emailSchema = z.string().trim().email().max(254).transform((value) => value.toLowerCase());
-const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const isoDateSchema = dateSchema.refine(v => v <= new Date().toISOString().slice(0,10), 'La nascita non può essere futura.');
 const taxCodeSchema = z.string().trim().transform((value) => value.replace(/\s+/g, '').toUpperCase()).refine(
   (value) => /^[A-Z0-9]{16}$/.test(value),
   'Invalid Italian tax code',
@@ -33,12 +35,14 @@ const registerSchema = z.object({
   taxCode: taxCodeSchema.optional(),
   phone: z.string().trim().min(6).max(32).optional(),
   email: emailSchema,
-  password: z.string().min(8).max(72),
+  password: passwordSchema,
+  confirmPassword: z.string(),
   role: roleSchema,
   familyName: z.string().trim().min(2).max(100).optional(),
   children: z.array(registrationChildSchema).max(12).optional().default([]),
   inviteOtherParent: z.boolean().optional().default(true),
 }).superRefine((value, ctx) => {
+  if(value.password !== value.confirmPassword) ctx.addIssue({code:'custom',path:['confirmPassword'],message:'Le password non coincidono.'});
   if (!value.displayName && (!value.firstName || !value.lastName)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -79,6 +83,8 @@ type UserRow = {
   familyName: string | null;
   inviteCode: string | null;
   passwordHash?: string;
+  tokenVersion?: number;
+  emailVerifiedAt?: string | null;
 };
 
 type PgMeta = {
@@ -91,6 +97,8 @@ type PgMeta = {
 function publicUser(row: UserRow) {
   return {
     id: row.id,
+    emailVerifiedAt: row.emailVerifiedAt ?? null,
+    verificationRequired: config.EMAIL_VERIFICATION_REQUIRED,
     email: row.email,
     displayName: row.displayName,
     firstName: row.firstName,
@@ -137,6 +145,7 @@ function normalizeRegisterPayload(input: unknown): unknown {
     email: raw.email,
     phone: raw.phone,
     password: raw.password,
+    confirmPassword: raw.confirmPassword,
     role: raw.role,
     familyName: raw.familyName ?? raw.family_name,
     children,
@@ -294,7 +303,7 @@ router.post('/register', asyncHandler(async (req, res) => {
     }
 
     stage = 'create_access_token';
-    const token = signAccessToken(user.id);
+    const token = signAccessToken(user.id, user.tokenVersion ?? 0);
 
     stage = 'commit_transaction';
     await client.query('COMMIT');
@@ -381,12 +390,12 @@ router.post('/login', asyncHandler(async (req, res) => {
             u.tax_code AS "taxCode",
             u.phone,
             u.role,
-            u.family_id AS "familyId",
+            u.family_id AS "familyId", u.token_version AS "tokenVersion", u.email_verified_at AS "emailVerifiedAt",
             f.name AS "familyName",
             f.invite_code AS "inviteCode"
        FROM users u
        LEFT JOIN families f ON f.id = u.family_id
-      WHERE LOWER(u.email) = $1`,
+      WHERE u.deleted_at IS NULL AND LOWER(u.email) = $1`,
     [body.email],
   );
 
@@ -396,7 +405,7 @@ router.post('/login', asyncHandler(async (req, res) => {
   }
 
   res.json({
-    token: signAccessToken(user.id),
+    token: signAccessToken(user.id, user.tokenVersion ?? 0),
     user: publicUser(user),
   });
 }));
@@ -405,6 +414,8 @@ router.get('/me', requireAuth, asyncHandler(async (req, res) => {
   const auth = getAuth(req);
   res.json({
     id: auth.userId,
+    emailVerifiedAt: auth.emailVerifiedAt,
+    verificationRequired: config.EMAIL_VERIFICATION_REQUIRED,
     email: auth.email,
     displayName: auth.displayName,
     firstName: auth.firstName,
@@ -421,6 +432,8 @@ router.get('/me', requireAuth, asyncHandler(async (req, res) => {
     } : null,
   });
 }));
+
+router.get('/push-status',requireAuth,asyncHandler(async(req,res)=>{const {rows}=await pool.query('SELECT expo_push_token IS NOT NULL AS registered FROM users WHERE id=$1',[getAuth(req).userId]);res.json({registered:Boolean(rows[0]?.registered)});}));
 
 router.put('/push-token', requireAuth, asyncHandler(async (req, res) => {
   const auth = getAuth(req);

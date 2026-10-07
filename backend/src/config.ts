@@ -9,6 +9,7 @@ const schema = z.object({
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must contain at least 32 characters'),
   JWT_EXPIRES_IN: z.string().default('7d'),
   OTP_SECRET: z.string().min(32).optional(),
+  EMAIL_VERIFICATION_REQUIRED: z.enum(['true','false']).default('false').transform(v => v === 'true'),
   SMTP_HOST: z.string().trim().min(1).optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(587),
   SMTP_SECURE: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),

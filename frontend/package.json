@@ -1,6 +1,6 @@
 {
   "name": "separated-parents-frontend",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "private": true,
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
@@ -17,6 +17,7 @@
     "@react-navigation/native-stack": "^7.20.0",
     "expo": "~57.0.23",
     "expo-constants": "~57.0.20",
+    "expo-crypto": "~57.0.3",
     "expo-dev-client": "~57.0.19",
     "expo-document-picker": "~57.0.3",
     "expo-file-system": "~57.0.7",
@@ -29,10 +30,12 @@
     "expo-splash-screen": "~57.0.9",
     "expo-system-ui": "~57.0.4",
     "react": "19.2.3",
+    "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "react-native-calendars": "^1.1314.0",
     "react-native-safe-area-context": "~5.7.0",
-    "react-native-screens": "~4.26.0"
+    "react-native-screens": "~4.26.0",
+    "react-native-web": "^0.21.2"
   },
   "devDependencies": {
     "@types/react": "~19.2.4",

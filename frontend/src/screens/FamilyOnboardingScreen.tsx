@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
   choiceText: { color: '#64748B', lineHeight: 21 },
   card: { width: '100%', maxWidth: 620, alignSelf: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 22, padding: 20, gap: 16 },
   badge: { alignSelf: 'flex-start', color: '#047857', backgroundColor: '#ECFDF5', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, fontSize: 12, fontWeight: '900' },
-  codeBox: { alignItems: 'center', gap: 8, padding: 22, borderRadius: 18, backgroundColor: '#EEF2FF', borderWidth: 1, borderColor: '#C7D2FE' },
+  codeBox: { alignItems: 'center', gap: 8, padding: 22, borderRadius: 18, backgroundColor: '#EAF4FF', borderWidth: 1, borderColor: '#D9E7F4' },
   codeLabel: { color: '#6366F1', fontSize: 12, fontWeight: '900', letterSpacing: 1.4 },
   code: { color: '#312E81', fontSize: 30, fontWeight: '900', letterSpacing: 3 },
   note: { color: '#64748B', lineHeight: 20, textAlign: 'center' },

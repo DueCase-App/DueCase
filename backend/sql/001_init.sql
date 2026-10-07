@@ -255,7 +255,7 @@ CREATE TABLE IF NOT EXISTS expenses (
   receipt_filename TEXT,
   receipt_data BYTEA,
   status TEXT NOT NULL DEFAULT 'pending_approval'
-    CHECK (status IN ('pending_approval', 'approved', 'declined')),
+    CHECK (status IN ('draft','submitted','pending_approval','approved','declined','disputed','to_pay','partially_paid','paid','closed')),
   expense_date DATE NOT NULL DEFAULT CURRENT_DATE,
   notes TEXT,
   reviewed_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
@@ -320,14 +320,14 @@ ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_category_check;
 
 UPDATE expenses SET status = 'pending_approval' WHERE status IN ('pending', 'declared');
 UPDATE expenses SET status = 'declined' WHERE status = 'rejected';
-UPDATE expenses SET status = 'approved' WHERE status = 'paid';
+-- paid is a current workflow state; never downgrade existing reimbursements.
 
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'expenses_status_check') THEN
     ALTER TABLE expenses
       ADD CONSTRAINT expenses_status_check
-      CHECK (status IN ('pending_approval', 'approved', 'declined')) NOT VALID;
+      CHECK (status IN ('draft','submitted','pending_approval','approved','declined','disputed','to_pay','partially_paid','paid','closed')) NOT VALID;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'expenses_category_check') THEN
     ALTER TABLE expenses

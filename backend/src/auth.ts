@@ -8,6 +8,8 @@ export type ParentRole = 'father' | 'mother';
 
 export type AuthContext = {
   userId: string;
+  tokenVersion: number;
+  emailVerifiedAt: string | null;
   email: string;
   displayName: string;
   firstName: string | null;
@@ -31,8 +33,8 @@ type SubscriptionRow = {
 const expiresIn = config.JWT_EXPIRES_IN as SignOptions['expiresIn'];
 const PREMIUM_MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-export function signAccessToken(userId: string): string {
-  return jwt.sign({}, config.JWT_SECRET, {
+export function signAccessToken(userId: string, tokenVersion = 0): string {
+  return jwt.sign({version: tokenVersion}, config.JWT_SECRET, {
     subject: userId,
     expiresIn,
     issuer: 'separated-parents-api',
@@ -42,6 +44,7 @@ export function signAccessToken(userId: string): string {
 
 export async function requireAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
+    if ((req as AuthenticatedRequest).auth) { next(); return; }
     const authorization = req.header('authorization');
     if (!authorization?.startsWith('Bearer ')) {
       throw new ApiError(401, 'Authentication required', 'AUTH_REQUIRED');
@@ -72,7 +75,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
 
     const { rows } = await pool.query<AuthContext>(
       `SELECT u.id AS "userId",
-              u.email,
+              u.email, u.token_version AS "tokenVersion", u.email_verified_at AS "emailVerifiedAt",
               u.display_name AS "displayName",
               u.first_name AS "firstName",
               u.last_name AS "lastName",
@@ -85,12 +88,12 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
               f.invite_code AS "inviteCode"
          FROM users u
          LEFT JOIN families f ON f.id = u.family_id
-        WHERE u.id = $1`,
+        WHERE u.id = $1 AND u.deleted_at IS NULL`,
       [payload.sub],
     );
 
     const auth = rows[0];
-    if (!auth) {
+    if (!auth || auth.tokenVersion !== (payload.version ?? 0)) {
       throw new ApiError(401, 'User no longer exists', 'INVALID_TOKEN');
     }
 
@@ -111,6 +114,7 @@ export function getAuth(req: Request): AuthContext {
 
 export function requireFamily(req: Request): AuthContext & { familyId: string } {
   const auth = getAuth(req);
+  if (config.EMAIL_VERIFICATION_REQUIRED && !auth.emailVerifiedAt) throw new ApiError(403, 'Verifica prima il tuo indirizzo email.', 'EMAIL_VERIFICATION_REQUIRED');
   if (!auth.familyId) {
     throw new ApiError(409, 'Complete family setup first', 'FAMILY_REQUIRED');
   }
@@ -125,7 +129,8 @@ export async function checkPremiumStatus(req: Request, _res: Response, next: Nex
     }
 
     const auth = getAuth(req);
-    if (!auth.familyId) {
+    if (config.EMAIL_VERIFICATION_REQUIRED && !auth.emailVerifiedAt) throw new ApiError(403, 'Verifica prima il tuo indirizzo email.', 'EMAIL_VERIFICATION_REQUIRED');
+  if (!auth.familyId) {
       throw new ApiError(
         403,
         'Abbonamento Premium richiesto',

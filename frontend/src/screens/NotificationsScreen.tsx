@@ -1,3 +1,4 @@
+import { useLiveRefresh } from '../services/live';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -14,7 +15,7 @@ function iconFor(type: string): keyof typeof Ionicons.glyphMap {
   return 'notifications-outline';
 }
 
-export function NotificationsScreen(): React.JSX.Element {
+export function NotificationsScreen({onNavigate}:{onNavigate:(screen:string)=>void}): React.JSX.Element {
   const [items, setItems] = useState<InAppNotification[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -24,8 +25,12 @@ export function NotificationsScreen(): React.JSX.Element {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  useLiveRefresh(load);
 
   const markRead = async (item: InAppNotification): Promise<void> => {
+    const routes:Record<string,string>={message:'messages',agreement:'agreements',expense:'expenses',expense_payment:'expenses',event:'calendar',custody_exception:'permanence',document:'documents',child:'children'};
+    const target=routes[item.entityType??''];
+    if(target)onNavigate(target);
     if (item.readAt) return;
     try { await api.notifications.markRead(item.id); setItems((current) => current.map((n) => n.id === item.id ? { ...n, readAt: new Date().toISOString() } : n)); }
     catch { /* la notifica resta visibile e potrà essere ritentata */ }

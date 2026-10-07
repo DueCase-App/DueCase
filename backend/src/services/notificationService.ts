@@ -105,9 +105,11 @@ async function deliver(userId: string, token: string, notification: Notification
   }
 
   try {
+    const count = await pool.query<{total:number}>('SELECT COUNT(*)::int AS total FROM in_app_notifications WHERE user_id=$1 AND read_at IS NULL',[userId]);
     const [ticket] = await expo.sendPushNotificationsAsync([{
       to: token,
       sound: 'default',
+      badge: count.rows[0]?.total ?? 0,
       title: notification.title,
       body: notification.body,
       data: notification.data,
