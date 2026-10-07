@@ -1,0 +1,88 @@
+name: DueCase Store Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Piattaforma da compilare'
+        required: true
+        default: 'android'
+        type: choice
+        options:
+          - android
+          - ios
+          - all
+
+permissions:
+  contents: read
+
+jobs:
+  store-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      EXPO_PUBLIC_API_URL: https://duecase-api.onrender.com/api
+      NODE_ENV: production
+      CI: '1'
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Verify required Expo token
+        shell: bash
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::Missing EXPO_TOKEN repository secret. Add an Expo access token before starting a store build."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Expo Doctor
+        run: npx expo-doctor@latest
+
+      - name: Configure Android Firebase when available
+        if: ${{ inputs.platform == 'android' || inputs.platform == 'all' }}
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        shell: bash
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > "$RUNNER_TEMP/duecase-google-services.json"
+            echo "GOOGLE_SERVICES_FILE=$RUNNER_TEMP/duecase-google-services.json" >> "$GITHUB_ENV"
+          else
+            echo "::warning::GOOGLE_SERVICES_JSON_BASE64 is missing. Android push notifications will not be ready for store release."
+          fi
+
+      - name: Verify production Expo configuration
+        run: npx expo config --type public
+
+      - name: Install EAS CLI
+        run: npm install --global eas-cli
+
+      - name: Start EAS production build
+        shell: bash
+        run: |
+          PLATFORM='${{ inputs.platform }}'
+          echo "Starting DueCase production build for: $PLATFORM"
+          eas build --platform "$PLATFORM" --profile production --non-interactive --no-wait
+
+      - name: Next steps
+        run: |
+          echo "Build request submitted to EAS."
+          echo "Do not submit to App Store / Google Play until push, billing (if enabled), legal review and production database checks are complete."
