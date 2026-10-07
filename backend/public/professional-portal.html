@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>DueCase · Accesso professionisti</title>
+  <link rel="stylesheet" href="/professional-portal.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/professionisti" aria-label="DueCase Accesso professionisti">
+      <span class="brand-mark" aria-hidden="true">⌂⌂</span>
+      <span><strong>DueCase</strong><small>Accesso professionisti</small></span>
+    </a>
+    <button id="logoutBtn" class="link-button hidden" type="button">Esci</button>
+  </header>
+
+  <main class="page">
+    <section id="statusBox" class="status hidden" role="status"></section>
+
+    <section id="authView" class="auth-layout">
+      <div class="hero-card">
+        <p class="eyebrow">AREA RISERVATA</p>
+        <h1>Consulta le pratiche autorizzate dai tuoi assistiti.</h1>
+        <p>Accesso separato da Padre e Madre, esclusivamente in sola lettura. Ogni genitore decide quali sezioni condividere e può revocare l’accesso in qualsiasi momento.</p>
+        <div class="trust-grid">
+          <div><strong>Sola lettura</strong><span>Nessuna modifica ai dati familiari.</span></div>
+          <div><strong>Permessi granulari</strong><span>Vedi solo le sezioni autorizzate.</span></div>
+          <div><strong>Accessi tracciati</strong><span>Consultazioni ed esportazioni vengono registrate.</span></div>
+        </div>
+      </div>
+
+      <div class="auth-card">
+        <div id="inviteSummary" class="invite-summary hidden"></div>
+
+        <form id="loginForm" class="stack">
+          <div>
+            <p class="eyebrow">ACCESSO PROFESSIONISTI</p>
+            <h2>Accedi</h2>
+          </div>
+          <label>Email<input id="loginEmail" type="email" autocomplete="username" required></label>
+          <label>Password<input id="loginPassword" type="password" autocomplete="current-password" required></label>
+          <button class="primary" type="submit">Accedi</button>
+          <p class="fineprint">Non è prevista una registrazione libera: l’account professionista nasce esclusivamente da un invito di un genitore DueCase.</p>
+        </form>
+
+        <form id="registerForm" class="stack hidden">
+          <div>
+            <p class="eyebrow">PRIMO ACCESSO</p>
+            <h2>Crea il tuo account professionista</h2>
+          </div>
+          <label>Nome<input id="registerFirstName" autocomplete="given-name" required minlength="2"></label>
+          <label>Cognome<input id="registerLastName" autocomplete="family-name" required minlength="2"></label>
+          <label>Studio / organizzazione <span class="optional">facoltativo</span><input id="registerOrganization" autocomplete="organization"></label>
+          <label>Password<input id="registerPassword" type="password" autocomplete="new-password" required minlength="8"></label>
+          <label>Ripeti password<input id="registerConfirmPassword" type="password" autocomplete="new-password" required minlength="8"></label>
+          <button class="primary" type="submit">Crea account e accetta invito</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="portalView" class="portal hidden">
+      <aside class="sidebar">
+        <div class="professional-card">
+          <span class="avatar" aria-hidden="true">P</span>
+          <div><strong id="professionalName">Professionista</strong><small id="professionalEmail"></small></div>
+        </div>
+        <div class="sidebar-title">Pratiche autorizzate</div>
+        <nav id="clientList" class="client-list" aria-label="Pratiche"></nav>
+      </aside>
+
+      <section class="workspace">
+        <div id="emptyWorkspace" class="empty-state">
+          <h2>Seleziona una pratica</h2>
+          <p>Qui troverai esclusivamente i dati che il genitore ha scelto di condividere con te.</p>
+        </div>
+        <div id="clientWorkspace" class="hidden">
+          <header class="workspace-header">
+            <div>
+              <p class="eyebrow">PRATICA</p>
+              <h1 id="familyName"></h1>
+              <p id="grantMeta" class="muted"></p>
+            </div>
+            <span class="readonly-badge">Sola lettura</span>
+          </header>
+          <div id="scopeTabs" class="tabs" role="tablist"></div>
+          <div id="contentArea" class="content-area"></div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>DueCase · Due case, un’unica squadra</span>
+    <span><a href="mailto:assistenza@duecaseununicasquadra.com">Assistenza</a> · <a href="mailto:privacy@duecaseununicasquadra.com">Privacy</a> · <a href="mailto:legal@duecaseununicasquadra.com">Legal</a></span>
+  </footer>
+
+  <script src="/professional-portal.js" defer></script>
+</body>
+</html>
