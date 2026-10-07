@@ -64,22 +64,58 @@ router.delete('/delete-account', asyncHandler(async(req,res)=>{
  await transaction(async client=>{
   const current=await client.query('SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[auth.userId]);
   if(!current.rowCount)throw new ApiError(404,'Account non trovato','ACCOUNT_NOT_FOUND');
+
   await client.query('DELETE FROM duecase_message_blocks WHERE user_id=$1',[auth.userId]);
   await client.query('DELETE FROM duecase_email_changes WHERE user_id=$1',[auth.userId]);
   await client.query('DELETE FROM email_challenges WHERE user_id=$1',[auth.userId]);
   await client.query('DELETE FROM otp_requests WHERE user_id=$1',[auth.userId]);
   await client.query('DELETE FROM in_app_notifications WHERE user_id=$1',[auth.userId]);
-  // Do not erase the other parent's shared expenses, receipts, agreements or messages.
+  await client.query('UPDATE duecase_sessions SET revoked_at=COALESCE(revoked_at,NOW()) WHERE user_id=$1 AND revoked_at IS NULL',[auth.userId]);
+
+  // Un account eliminato non può continuare a concedere accessi a professionisti.
+  // Gli eventuali grant concessi autonomamente dall'altro genitore restano invariati.
+  await client.query(`
+    WITH revoked AS (
+      UPDATE professional_invitations
+         SET revoked_at=NOW(),updated_at=NOW()
+       WHERE invited_by_user_id=$1
+         AND revoked_at IS NULL
+         AND accepted_at IS NULL
+       RETURNING id,family_id
+    )
+    INSERT INTO professional_access_audit(id,family_id,actor_parent_user_id,action,details)
+    SELECT gen_random_uuid(),family_id,$1,'invitation_revoked',
+           jsonb_build_object('invitationId',id,'reason','parent_account_deleted')
+      FROM revoked`,[auth.userId]);
+
+  await client.query(`
+    WITH revoked AS (
+      UPDATE professional_access_grants
+         SET revoked_at=NOW(),updated_at=NOW()
+       WHERE granted_by_user_id=$1
+         AND revoked_at IS NULL
+       RETURNING id,professional_id,family_id
+    )
+    INSERT INTO professional_access_audit(id,professional_id,grant_id,family_id,actor_parent_user_id,action,details)
+    SELECT gen_random_uuid(),professional_id,id,family_id,$1,'access_revoked',
+           jsonb_build_object('reason','parent_account_deleted')
+      FROM revoked`,[auth.userId]);
+
+  // Do not erase the other parent's shared expenses, receipts, agreements or messages here:
+  // their retention is governed by the shared-history policy and must remain explicit.
   await client.query(`UPDATE parents SET display_name='Account eliminato' WHERE id=$1`,[auth.userId]);
   await client.query(`UPDATE users SET email=$2,password_hash=$3,display_name='Account eliminato',
     first_name=NULL,last_name=NULL,birth_date=NULL,tax_code=NULL,phone=NULL,
     expo_push_token=NULL,email_verified_at=NULL,token_version=token_version+1,
     family_id=NULL,deleted_at=clock_timestamp(),updated_at=NOW() WHERE id=$1`,
     [auth.userId,`deleted-${auth.userId}@invalid.example`,randomBytes(48).toString('hex')]);
-  // Rotate the invitation so a previously shared code cannot reopen this family.
-  if(auth.familyId) await client.query('UPDATE families SET invite_code=$2 WHERE id=$1',[auth.familyId,randomBytes(8).toString('hex').toUpperCase()]);
+
+  // Rotate and clear the pending family invitation so an old link cannot be reused.
+  if(auth.familyId) await client.query(`UPDATE families
+     SET invite_code=$2,invite_email=NULL,invite_sent_at=NULL,invite_expires_at=NULL
+     WHERE id=$1`,[auth.familyId,randomBytes(8).toString('hex').toUpperCase()]);
  });
- res.json({deleted:true,note:'Accesso revocato e profilo personale eliminato. I dati già condivisi nella famiglia restano nello storico, attribuiti ad “Account eliminato”.'});
+ res.json({deleted:true,note:'Accesso revocato e profilo personale eliminato. Sessioni e autorizzazioni professionali concesse da questo account sono state revocate. I dati già condivisi nella famiglia restano nello storico secondo la policy applicabile, attribuiti ad “Account eliminato”.'});
 }));
 router.get('/sessions',asyncHandler(async(req,res)=>{
  const a=getAuth(req);const {rows}=await pool.query('SELECT id,device_label AS device,created_at AS "createdAt",last_seen_at AS "lastSeenAt",(id=$3) AS current FROM duecase_sessions WHERE user_id=$1 AND token_version=$2 AND revoked_at IS NULL AND expires_at>NOW() ORDER BY last_seen_at DESC',[a.userId,a.tokenVersion,a.sessionId]);res.json(rows);
