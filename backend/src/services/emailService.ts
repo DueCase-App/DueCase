@@ -3,6 +3,14 @@ import { config } from '../config.js';
 
 const escapeHtml=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 
+type OutboundEmail = {
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+  replyTo?: string;
+};
+
 let transporter: Transporter | null | undefined;
 
 function getTransporter(): Transporter | null {
@@ -20,6 +28,59 @@ function getTransporter(): Transporter | null {
     auth: { user: config.SMTP_USER, pass: config.SMTP_PASS },
   });
   return transporter;
+}
+
+function parseSender(value: string): { name: string; email: string } {
+  const match = value.match(/^\s*(?:"?([^"<]*)"?\s*)?<([^>]+)>\s*$/);
+  if (match) {
+    return { name: match[1]?.trim() || 'DueCase', email: match[2].trim() };
+  }
+  return { name: 'DueCase', email: value.trim() };
+}
+
+async function sendViaBrevo(message: OutboundEmail): Promise<void> {
+  if (!config.BREVO_API_KEY) throw new Error('SMTP_NOT_CONFIGURED');
+  const sender = parseSender(config.EMAIL_FROM);
+  const response = await fetch(`${config.BREVO_API_URL.replace(/\/$/, '')}/smtp/email`, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'api-key': config.BREVO_API_KEY,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      sender,
+      to: [{ email: message.to }],
+      subject: message.subject,
+      textContent: message.text,
+      ...(message.html ? { htmlContent: message.html } : {}),
+      ...(message.replyTo ? { replyTo: { email: message.replyTo } } : {}),
+      tags: ['duecase-transactional'],
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!response.ok) {
+    const details = (await response.text()).slice(0, 500);
+    throw new Error(`BREVO_SEND_FAILED_${response.status}:${details}`);
+  }
+}
+
+async function sendEmail(message: OutboundEmail): Promise<void> {
+  if (config.BREVO_API_KEY) {
+    await sendViaBrevo(message);
+    return;
+  }
+  const smtp = getTransporter();
+  if (!smtp) throw new Error('SMTP_NOT_CONFIGURED');
+  await smtp.sendMail({
+    from: config.EMAIL_FROM,
+    to: message.to,
+    subject: message.subject,
+    text: message.text,
+    ...(message.html ? { html: message.html } : {}),
+    ...(message.replyTo ? { replyTo: message.replyTo } : {}),
+  });
 }
 
 function officialParentInvitationLink(input: { to: string; invitedRole: 'father'|'mother'; inviteLink: string }): string {
@@ -48,8 +109,7 @@ export async function sendExpenseOtpEmail(input: {
   amount: string;
   expiresInMinutes: number;
 }): Promise<void> {
-  const smtp = getTransporter();
-  if (!smtp || !config.EMAIL_FROM) throw new Error('SMTP_NOT_CONFIGURED');
+  if (!isEmailConfigured()) throw new Error('SMTP_NOT_CONFIGURED');
   const safeTitle = input.expenseTitle.replace(/[<>]/g, '');
   const subject = 'DueCase · Codice di sicurezza per approvazione spesa';
   const text = [
@@ -68,14 +128,24 @@ export async function sendExpenseOtpEmail(input: {
       <p>Il codice scade tra <strong>${input.expiresInMinutes} minuti</strong> e può essere usato una sola volta.</p>
       <p style="font-size:13px;color:#5D7CA7">Se non hai richiesto tu questo codice, non utilizzarlo e verifica l’attività nel tuo account DueCase.</p>
     </div>`;
-  await smtp.sendMail({ from: config.EMAIL_FROM, to: input.to, subject, text, html });
+  await sendEmail({ to: input.to, subject, text, html });
 }
 
 export function isEmailConfigured(): boolean {
-  return Boolean(config.SMTP_HOST && config.SMTP_USER && config.SMTP_PASS && config.EMAIL_FROM);
+  return Boolean(
+    config.BREVO_API_KEY ||
+    (config.SMTP_HOST && config.SMTP_USER && config.SMTP_PASS && config.EMAIL_FROM)
+  );
 }
 
 export async function verifyEmailTransport(): Promise<boolean> {
+  if (config.BREVO_API_KEY) {
+    const response = await fetch(`${config.BREVO_API_URL.replace(/\/$/, '')}/account`, {
+      headers: { accept: 'application/json', 'api-key': config.BREVO_API_KEY },
+      signal: AbortSignal.timeout(10000),
+    });
+    return response.ok;
+  }
   const smtp = getTransporter();
   if (!smtp) return false;
   await smtp.verify();
@@ -83,11 +153,12 @@ export async function verifyEmailTransport(): Promise<boolean> {
 }
 
 export async function sendAccountCode(to: string, code: string, purpose: 'verify' | 'reset'): Promise<void> {
-  const smtp = getTransporter();
-  if (!smtp) throw new Error('SMTP_NOT_CONFIGURED');
-  await smtp.sendMail({ from: config.EMAIL_FROM, to,
+  if (!isEmailConfigured()) throw new Error('SMTP_NOT_CONFIGURED');
+  await sendEmail({
+    to,
     subject: purpose === 'verify' ? 'DueCase · Verifica email' : 'DueCase · Recupero password',
-    text: `Il tuo codice DueCase è ${code}. Scade tra 10 minuti ed è utilizzabile una sola volta. Se non lo hai richiesto, ignora questa email.` });
+    text: `Il tuo codice DueCase è ${code}. Scade tra 10 minuti ed è utilizzabile una sola volta. Se non lo hai richiesto, ignora questa email.`,
+  });
 }
 
 export async function sendParentInvitationEmail(input: {
@@ -98,8 +169,7 @@ export async function sendParentInvitationEmail(input: {
   inviteLink: string;
   expiresAt: Date;
 }): Promise<void> {
-  const smtp = getTransporter();
-  if (!smtp || !config.EMAIL_FROM) throw new Error('SMTP_NOT_CONFIGURED');
+  if (!isEmailConfigured()) throw new Error('SMTP_NOT_CONFIGURED');
 
   const roleLabel = input.invitedRole === 'mother' ? 'Mamma' : 'Papà';
   const expiresLabel = input.expiresAt.toLocaleString('it-IT', { timeZone: 'Europe/Rome' });
@@ -123,7 +193,7 @@ export async function sendParentInvitationEmail(input: {
       <p style="font-size:13px;color:#5D7CA7">L'invito scade il ${escapeHtml(expiresLabel)}. Se non riconosci questo invito, puoi ignorare questa email.</p>
     </div>`;
 
-  await smtp.sendMail({ from: config.EMAIL_FROM, to: input.to, subject, text, html });
+  await sendEmail({ to: input.to, subject, text, html });
 }
 
 const professionalScopeLabels: Record<string, string> = {
@@ -143,8 +213,7 @@ export async function sendProfessionalInvitationEmail(input: {
   scopes: string[];
   expiresAt: Date;
 }): Promise<void> {
-  const smtp = getTransporter();
-  if (!smtp || !config.EMAIL_FROM) throw new Error('SMTP_NOT_CONFIGURED');
+  if (!isEmailConfigured()) throw new Error('SMTP_NOT_CONFIGURED');
 
   const expiresLabel = input.expiresAt.toLocaleString('it-IT', { timeZone: 'Europe/Rome' });
   const scopeLabels = input.scopes.map((scope) => professionalScopeLabels[scope] ?? scope);
@@ -174,10 +243,9 @@ export async function sendProfessionalInvitationEmail(input: {
       <p style="font-size:13px;color:#5D7CA7">L'invito scade il ${escapeHtml(expiresLabel)}. L’accesso può essere revocato dal genitore che lo ha concesso.</p>
     </div>`;
 
-  await smtp.sendMail({
-    from: config.EMAIL_FROM,
-    replyTo: config.LEGAL_EMAIL,
+  await sendEmail({
     to: input.to,
+    replyTo: config.LEGAL_EMAIL,
     subject,
     text,
     html,
