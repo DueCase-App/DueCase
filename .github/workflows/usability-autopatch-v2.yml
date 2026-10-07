@@ -1,0 +1,34 @@
+name: DueCase usability patch v2
+
+on:
+  push:
+    branches: [fix/usability-0.4.1]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/usability-0.4.1
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply targeted patch
+        run: python scripts/usability_patch.py
+      - name: Install frontend
+        run: npm ci --prefix frontend
+      - name: Typecheck frontend
+        run: npm run typecheck --prefix frontend
+      - name: Commit result
+        run: |
+          git config user.name "DueCase Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add frontend/src/screens/ExpensesScreen.tsx frontend/src/screens/CalendarScreen.tsx
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Apply calendar and attachment UX [skip ci]"
+          git push origin HEAD:fix/usability-0.4.1
