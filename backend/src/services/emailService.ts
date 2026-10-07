@@ -83,6 +83,13 @@ export function isEmailConfigured(): boolean {
   return Boolean(config.SMTP_HOST && config.SMTP_USER && config.SMTP_PASS && config.EMAIL_FROM);
 }
 
+export async function verifyEmailTransport(): Promise<boolean> {
+  const smtp = getTransporter();
+  if (!smtp) return false;
+  await smtp.verify();
+  return true;
+}
+
 export async function sendAccountCode(to: string, code: string, purpose: 'verify' | 'reset'): Promise<void> {
   const smtp = getTransporter();
   if (!smtp) throw new Error('SMTP_NOT_CONFIGURED');
