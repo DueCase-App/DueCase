@@ -8,7 +8,7 @@ let transporter: Transporter | null | undefined;
 function getTransporter(): Transporter | null {
   if (transporter !== undefined) return transporter;
 
-  if (!config.SMTP_HOST || !config.EMAIL_FROM) {
+  if (!config.SMTP_HOST || !config.SMTP_USER || !config.SMTP_PASS || !config.EMAIL_FROM) {
     transporter = null;
     return transporter;
   }
@@ -19,9 +19,7 @@ function getTransporter(): Transporter | null {
     secure: config.SMTP_SECURE,
     connectionTimeout: 10000,
     socketTimeout: 15000,
-    auth: config.SMTP_USER && config.SMTP_PASS
-      ? { user: config.SMTP_USER, pass: config.SMTP_PASS }
-      : undefined,
+    auth: { user: config.SMTP_USER, pass: config.SMTP_PASS },
   });
 
   return transporter;
@@ -81,7 +79,10 @@ export async function sendExpenseOtpEmail(input: {
   });
 }
 
-export function isEmailConfigured(): boolean { return Boolean(config.SMTP_HOST && config.EMAIL_FROM); }
+export function isEmailConfigured(): boolean {
+  return Boolean(config.SMTP_HOST && config.SMTP_USER && config.SMTP_PASS && config.EMAIL_FROM);
+}
+
 export async function sendAccountCode(to: string, code: string, purpose: 'verify' | 'reset'): Promise<void> {
   const smtp = getTransporter();
   if (!smtp) throw new Error('SMTP_NOT_CONFIGURED');
