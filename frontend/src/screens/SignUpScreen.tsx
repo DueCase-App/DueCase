@@ -9,6 +9,7 @@ import {
   Alert,
   ImageBackground,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -47,6 +48,8 @@ const COLORS = {
 };
 
 const MIN_DATE = new Date(1900, 0, 1);
+const PRIVACY_URL = 'https://www.duecaseununicasquadra.com/privacy.html';
+const TERMS_URL = 'https://www.duecaseununicasquadra.com/termini.html';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 type DateTarget = 'parent' | 'child';
@@ -104,6 +107,8 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
   const [inviteOtherParent, setInviteOtherParent] = useState(true);
   const [otherParentEmail, setOtherParentEmail] = useState('');
   const [inviteFromLink, setInviteFromLink] = useState<ParentInviteLink | null>(null);
+  const [privacyAcknowledged, setPrivacyAcknowledged] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   const [childModalVisible, setChildModalVisible] = useState(false);
   const [childName, setChildName] = useState('');
@@ -221,6 +226,8 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedOtherParentEmail)) return setError('Inserisci l’email valida dell’altro genitore oppure scegli “Invita più tardi”.');
       if (normalizedOtherParentEmail === normalizedEmail) return setError('L’email dell’altro genitore deve essere diversa dalla tua.');
     }
+    if (!privacyAcknowledged) return setError('Conferma di aver letto l’Informativa privacy.');
+    if (!termsAccepted) return setError('Accetta i Termini e condizioni per creare l’account.');
 
     const registerInput: RegisterInput = {
       displayName: `${trimmedFirstName} ${trimmedLastName}`.trim(),
@@ -429,6 +436,17 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
                 </>}
               </>
             )}
+
+            <View style={styles.legalBox}>
+              <Pressable accessibilityRole="checkbox" accessibilityState={{checked:privacyAcknowledged}} onPress={()=>setPrivacyAcknowledged(v=>!v)} style={styles.legalRow}>
+                <Ionicons name={privacyAcknowledged?'checkbox':'square-outline'} size={24} color={privacyAcknowledged?COLORS.blue:COLORS.muted} />
+                <Text style={styles.legalText}>Dichiaro di aver letto l’<Text style={styles.legalLink} onPress={(event)=>{event.stopPropagation();void Linking.openURL(PRIVACY_URL);}}>Informativa privacy</Text>.</Text>
+              </Pressable>
+              <Pressable accessibilityRole="checkbox" accessibilityState={{checked:termsAccepted}} onPress={()=>setTermsAccepted(v=>!v)} style={styles.legalRow}>
+                <Ionicons name={termsAccepted?'checkbox':'square-outline'} size={24} color={termsAccepted?COLORS.blue:COLORS.muted} />
+                <Text style={styles.legalText}>Accetto i <Text style={styles.legalLink} onPress={(event)=>{event.stopPropagation();void Linking.openURL(TERMS_URL);}}>Termini e condizioni</Text> del servizio.</Text>
+              </Pressable>
+            </View>
 
             {error ? (
               <View style={styles.errorBox}>
@@ -644,6 +662,10 @@ const styles = StyleSheet.create({
   inviteTextArea: { flex: 1, gap: 2 },
   inviteTitle: { color: COLORS.text, fontSize: 15, fontWeight: '900' },
   inviteDescription: { color: COLORS.muted, fontSize: 13, lineHeight: 17 },
+  legalBox: { gap: 10, padding: 14, borderWidth: 1, borderColor: COLORS.border, borderRadius: 15, backgroundColor: '#F8FBFE' },
+  legalRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  legalText: { flex: 1, color: COLORS.text, fontSize: 13, lineHeight: 19 },
+  legalLink: { color: COLORS.blue, fontWeight: '900', textDecorationLine: 'underline' },
   errorBox: { borderRadius: 13, padding: 12, backgroundColor: '#FEF2F2', flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   errorText: { flex: 1, color: COLORS.danger, fontSize: 13, lineHeight: 18, fontWeight: '600' },
   continueButton: { minHeight: 58, borderRadius: 15, backgroundColor: COLORS.blue, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, shadowColor: COLORS.blue, shadowOpacity: 0.24, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 4 },
