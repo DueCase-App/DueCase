@@ -105,6 +105,10 @@ async function deliver(userId: string, token: string, notification: Notification
   }
 
   try {
+    const prefs=await pool.query('SELECT notification_preferences FROM users WHERE id=$1',[userId]);
+    const type=notificationType(notification);
+    const category=/message/.test(type)?'messages':/agreement/.test(type)?'agreements':/expense|payment/.test(type)?'expenses':/calendar|event|custody|turn|swap|permanence/.test(type)?'calendar':'other';
+    if(prefs.rows[0]?.notification_preferences?.[category]===false)return false;
     const count = await pool.query<{total:number}>('SELECT COUNT(*)::int AS total FROM in_app_notifications WHERE user_id=$1 AND read_at IS NULL',[userId]);
     const [ticket] = await expo.sendPushNotificationsAsync([{
       to: token,

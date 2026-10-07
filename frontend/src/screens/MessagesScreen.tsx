@@ -10,6 +10,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Pressable,
   ScrollView,
@@ -58,6 +59,8 @@ export function MessagesScreen(): React.JSX.Element {
   const scrollToComposer = useCallback((animated = true) => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated }), 80);
   }, []);
+
+  useEffect(()=>{const sub=Keyboard.addListener('keyboardDidShow',()=>{if(nearBottom.current)scrollToComposer(false);});return()=>sub.remove();},[scrollToComposer]);
 
   const load = useCallback(async () => {
     try {
@@ -130,13 +133,13 @@ export function MessagesScreen(): React.JSX.Element {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom', 'left', 'right']}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
       <KeyboardAvoidingView
         style={styles.screen}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={0}
       >
-        <View style={[styles.shell, !compact && styles.shellWide, { paddingBottom: Math.max(10, insets.bottom + 4) }]}>
+        <View style={[styles.shell, !compact && styles.shellWide, { paddingBottom: 8 }]}>
           <View style={styles.header}>
             <View style={styles.headerCopy}>
 
@@ -150,6 +153,8 @@ export function MessagesScreen(): React.JSX.Element {
             {loading ? <ActivityIndicator style={{ marginTop: 50 }} color={ui.colors.primary} /> : (
               <ScrollView
                 ref={scrollRef}
+                onLayout={() => {if(nearBottom.current) scrollToComposer(false);}}
+                onContentSizeChange={() => {if(nearBottom.current) scrollToComposer(false);}}
                 onScroll={e=>{const {contentOffset,contentSize,layoutMeasurement}=e.nativeEvent;nearBottom.current=contentSize.height-contentOffset.y-layoutMeasurement.height<80;}}
                 scrollEventThrottle={100}
                 style={styles.messagesArea}
@@ -186,7 +191,7 @@ export function MessagesScreen(): React.JSX.Element {
               <TextInput
                 value={text}
                 onChangeText={setText}
-                onFocus={() => scrollToComposer(false)}
+                onFocus={() => {nearBottom.current=true;scrollToComposer(false);}}
                 placeholder="Scrivi a Mamma o Papà…"
                 placeholderTextColor={ui.colors.muted}
                 multiline
@@ -239,8 +244,8 @@ const styles = StyleSheet.create({
   subtitle: { color: ui.colors.muted, marginTop: 3, maxWidth: 620 },
   integrityPill: { backgroundColor: ui.colors.successSoft, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 8, flexDirection: 'row', gap: 5, alignItems: 'center' },
   integrityText: { color: ui.colors.success, fontWeight: '900', fontSize: 11 },
-  chatCard: { ...cardShadow, flex: 1, width: '100%', maxWidth: 1000, alignSelf: 'center', backgroundColor: ui.colors.card, borderWidth: 1, borderColor: ui.colors.border, borderRadius: 18, overflow: 'hidden' },
-  messagesArea: { flex: 1 },
+  chatCard: { ...cardShadow, flex: 1, minHeight: 0, width: '100%', maxWidth: 1000, alignSelf: 'center', backgroundColor: ui.colors.card, borderWidth: 1, borderColor: ui.colors.border, borderRadius: 18, overflow: 'hidden' },
+  messagesArea: { flex: 1, minHeight: 0 },
   messagesContent: { padding: 16, paddingBottom: 28, gap: 9, flexGrow: 1 },
   row: { width: '100%', flexDirection: 'row' },
   rowMine: { justifyContent: 'flex-end' },

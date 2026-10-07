@@ -104,6 +104,26 @@ await test('Email code attempt limits, single use and reset revoke old JWT',asyn
  await api('/auth/me',{token:father.token,status:401});
  father=await api('/auth/login',{body:{email:'father@example.test',password:'NewPassword.2'}});
 });
+await test('Profile and preferences are scoped, exports exclude secrets, password change revokes sessions',async()=>{
+ await api('/auth/profile',{token:father.token,method:'PUT',body:{firstName:'Nuovo',lastName:'Padre',phone:'3331234567'}});
+ assert.equal((await api('/auth/me',{token:father.token})).displayName,'Nuovo Padre');
+ const defaults=await api('/auth/preferences',{token:father.token});assert.equal(defaults.messages,true);
+ await api('/auth/preferences',{token:father.token,method:'PUT',body:{...defaults,messages:false}});
+ assert.equal((await api('/auth/preferences',{token:father.token})).messages,false);
+ assert.equal((await api('/auth/preferences',{token:mother.token})).messages,true);
+ const exported=await api('/auth/export-profile',{token:father.token});
+ assert.equal(exported.profile.email,'father@example.test');assert.ok(!JSON.stringify(exported).includes('password_hash'));
+ assert.equal((await api('/auth/family-members',{token:father.token})).length,2);
+ await api('/auth/change-password',{token:father.token,body:{currentPassword:'Wrong.1',password:'ChangedPassword.3',confirmPassword:'ChangedPassword.3'},status:400});
+ await api('/auth/change-password',{token:father.token,body:{currentPassword:'NewPassword.2',password:'ChangedPassword.3',confirmPassword:'Mismatch.1'},status:400});
+ const old=father.token;
+ const result=await api('/auth/change-password',{token:old,body:{currentPassword:'NewPassword.2',password:'ChangedPassword.3',confirmPassword:'ChangedPassword.3'}});
+ father.token=result.token;await api('/auth/me',{token:old,status:401});await api('/auth/me',{token:father.token});
+ await api('/auth/login',{body:{email:'father@example.test',password:'NewPassword.2'},status:401});
+ const second=await api('/auth/login',{body:{email:'father@example.test',password:'ChangedPassword.3'}});
+ const revoked=await api('/auth/logout-other-devices',{token:father.token,method:'POST'});father.token=revoked.token;
+ await api('/auth/me',{token:second.token,status:401});await api('/auth/me',{token:father.token});
+});
 await test('Account deletion revokes access without deleting the other parent’s shared ledger',async()=>{
  const before=(await api('/expenses',{token:mother.token})).length;
  await api('/auth/delete-account',{token:father.token,method:'DELETE'});

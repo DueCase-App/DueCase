@@ -13,6 +13,7 @@ type AuthContextValue = {
   register: (input: RegisterInput) => Promise<void>;
   refreshUser: () => Promise<void>;
   logout: () => Promise<void>;
+  replaceToken:(token:string)=>Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -79,14 +80,16 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     await clearStoredToken();
   }, []);
 
+  const replaceToken=useCallback(async(token:string)=>{setApiToken(token);await storeToken(token);void registerPushNotificationsAsync();},[]);
+
   const value = useMemo<AuthContextValue>(() => ({
     user,
     booting, bootError, retrySession,
     login,
     register,
     refreshUser,
-    logout,
-  }), [user, booting, bootError, retrySession, login, register, refreshUser, logout]);
+    logout, replaceToken,
+  }), [user, booting, bootError, retrySession, login, register, refreshUser, logout, replaceToken]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

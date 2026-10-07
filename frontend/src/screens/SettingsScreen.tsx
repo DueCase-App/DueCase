@@ -1,239 +1,54 @@
-import { registerPushNotificationsAsync } from '../services/notifications';
-import { EmailVerification } from '../components/EmailVerification';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, BackHandler, Platform, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
-import * as Notifications from 'expo-notifications';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { File, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { useAuth } from '../context/AuthContext';
+import { EmailVerification } from '../components/EmailVerification';
 import { api } from '../services/api';
+import { pushConfigurationMissing, registerPushNotificationsAsync } from '../services/notifications';
 import { ui } from '../theme/ui';
 
-function roleLabel(role: 'father' | 'mother' | undefined): string {
-  return role === 'mother' ? 'Mamma' : role === 'father' ? 'Papà' : '—';
+type Section='profile'|'security'|'family'|'notifications'|'subscription'|'privacy'|'help';
+const labels:Record<Section,string>={profile:'Profilo',security:'Sicurezza',family:'Famiglia',notifications:'Notifiche',subscription:'Abbonamento',privacy:'Privacy e dati',help:'Assistenza'};
+const preferenceLabels:Record<string,string>={messages:'Messaggi',agreements:'Accordi',expenses:'Spese e rimborsi',calendar:'Calendario e permanenze',other:'Altri aggiornamenti'};
+export function SettingsScreen({onNavigate}:{onNavigate:(screen:string)=>void}){
+ const {user,logout,refreshUser,replaceToken}=useAuth();
+ const [section,setSection]=useState<Section|null>(null);
+ const [firstName,setFirstName]=useState(user?.firstName??'');const [lastName,setLastName]=useState(user?.lastName??'');const [phone,setPhone]=useState(user?.phone??'');
+ const [current,setCurrent]=useState('');const [password,setPassword]=useState('');const [confirm,setConfirm]=useState('');
+ const [busy,setBusy]=useState(false);const [error,setError]=useState('');
+ const [prefs,setPrefs]=useState<Record<string,boolean>|null>(null);
+ const [members,setMembers]=useState<Array<{id:string;displayName:string;role:string}>>([]);
+ const version=Constants.expoConfig?.version??'0.3.1';
+ function open(s:Section|null){setError('');setSection(s);setCurrent('');setPassword('');setConfirm('');}
+ useEffect(()=>{if(!section)return;const sub=BackHandler.addEventListener('hardwareBackPress',()=>{open(null);return true;});return()=>sub.remove();},[section]);
+ useEffect(()=>{let active=true;if(section==='notifications'){setPrefs(null);api.auth.preferences().then(v=>{if(active)setPrefs(v);}).catch(e=>{if(active)setError(e.message);});}if(section==='family')api.auth.familyMembers().then(v=>{if(active)setMembers(v);}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[section]);
+ async function run(action:()=>Promise<void>){if(busy)return;setBusy(true);setError('');try{await action();}catch(e){setError(e instanceof Error?e.message:'Operazione non riuscita. Riprova.');}finally{setBusy(false);}}
+ async function shareCode(){if(!user?.family?.inviteCode)throw Error('Codice famiglia non disponibile.');await Share.share({message:`Unisciti alla mia famiglia su DueCase. Codice: ${user.family.inviteCode}`});}
+ async function exportProfile(){
+  const data=JSON.stringify(await api.auth.exportProfile(),null,2);const name='DueCase-profilo.json';
+  if(Platform.OS==='web'){const u=URL.createObjectURL(new Blob([data],{type:'application/json'}));const a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
+  else {if(!await Sharing.isAvailableAsync())throw Error('Condivisione non disponibile.');const f=new File(Paths.cache,name);f.create({overwrite:true});f.write(data);await Sharing.shareAsync(f.uri,{mimeType:'application/json',dialogTitle:'Salva il tuo profilo'});}
+ }
+ function deleteAccount(){Alert.alert('Elimina account','Il tuo accesso e profilo saranno eliminati. I dati già condivisi restano nello storico della famiglia, attribuiti ad “Account eliminato”.',[{text:'Annulla',style:'cancel'},{text:'Elimina definitivamente',style:'destructive',onPress:()=>void run(async()=>{await api.auth.deleteAccount();await logout();})}]);}
+ const button=(title:string,action:()=>Promise<void>,danger=false)=><Pressable accessibilityRole="button" disabled={busy} onPress={()=>void run(action)} style={[s.button,danger&&{backgroundColor:ui.colors.danger},busy&&{opacity:.5}]}><Text style={s.buttonText}>{title}</Text></Pressable>;
+ return <View style={s.screen}>
+  <View style={s.header}>{section&&<Pressable accessibilityLabel="Torna alle impostazioni" onPress={()=>open(null)} style={s.back}><Ionicons name="arrow-back" size={26} color={ui.colors.primaryDark}/></Pressable>}<Text style={s.title}>{section?labels[section]:'Impostazioni'}</Text></View>
+  <ScrollView key={section??'root'} style={{flex:1}} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator>
+   {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{busy&&<ActivityIndicator color={ui.colors.primary}/>}
+   {!section&&<><Text style={s.name}>{user?.displayName}</Text><Text style={s.muted}>{user?.email}</Text>{(Object.keys(labels) as Section[]).map(key=><Row key={key} title={labels[key]} onPress={()=>open(key)}/>)}<Row title="Esci dall’account" onPress={()=>void run(logout)}/><Text style={s.muted}>DueCase · versione {version}</Text></>}
+   {section==='profile'&&<><Field label="Nome" value={firstName} onChangeText={setFirstName}/><Field label="Cognome" value={lastName} onChangeText={setLastName}/><Field label="Telefono (facoltativo)" value={phone} onChangeText={setPhone} phone/>{button('Salva profilo',async()=>{await api.auth.updateProfile({firstName,lastName,phone});await refreshUser();Alert.alert('Profilo','Modifiche salvate.');})}<Text style={s.name}>{user?.email}</Text><EmailVerification/></>}
+   {section==='security'&&<><Text style={s.name}>Cambia password</Text><Field label="Password attuale" value={current} onChangeText={setCurrent} secret/><Field label="Nuova password" value={password} onChangeText={setPassword} secret/><Text style={s.muted}>Almeno 8 caratteri, una maiuscola e un carattere speciale.</Text><Field label="Ripeti nuova password" value={confirm} onChangeText={setConfirm} secret/>{button('Aggiorna password',async()=>{if(password!==confirm)throw Error('Le password non coincidono.');const r=await api.auth.changePassword(current,password,confirm);await replaceToken(r.token);setCurrent('');setPassword('');setConfirm('');Alert.alert('Password aggiornata','Gli altri accessi sono stati disconnessi.');})}<Row title="Disconnetti gli altri dispositivi" onPress={()=>Alert.alert('Disconnetti altri dispositivi','Gli altri accessi al tuo account dovranno accedere nuovamente. Questo dispositivo resta collegato.',[{text:'Annulla',style:'cancel'},{text:'Conferma',onPress:()=>void run(async()=>{const r=await api.auth.logoutOthers();await replaceToken(r.token);Alert.alert('Accessi','Altri accessi disconnessi.');})}])}/></>}
+   {section==='family'&&<><Text style={s.name}>{user?.family?.name??'La tua famiglia'}</Text>{members.map(m=><View key={m.id} style={s.card}><Text style={s.name}>{m.displayName}</Text><Text style={s.muted}>{m.role==='mother'?'Mamma':'Papà'}{m.id===user?.id?' · Tu':''}</Text></View>)}{members.length===1&&<Text style={s.muted}>L’altro genitore non è ancora collegato.</Text>}<Text style={s.muted}>Codice famiglia: {user?.family?.inviteCode??'—'}</Text>{button('Condividi codice famiglia',shareCode)}<Row title="Gestisci i figli" onPress={()=>onNavigate('children')}/></>}
+   {section==='notifications'&&<><Text style={s.name}>Notifiche sul telefono</Text><Text style={s.muted}>{pushConfigurationMissing()?'Le notifiche a telefono bloccato non sono ancora attive: manca la configurazione Firebase di DueCase. Non devi modificare la connessione del telefono.':'Collega il telefono e verifica i permessi per ricevere notifiche.'}</Text>{!pushConfigurationMissing()&&button('Verifica collegamento',async()=>{const token=await registerPushNotificationsAsync();Alert.alert('Notifiche',token?'Telefono collegato.':'Collegamento non riuscito: verifica i permessi del telefono.');})}<Text style={s.muted}>Scegli quali avvisi push ricevere. Gli aggiornamenti restano sempre consultabili nell’app.</Text>{prefs?Object.keys(preferenceLabels).map(k=><View key={k} style={s.toggle}><Text style={s.toggleLabel}>{preferenceLabels[k]}</Text><Switch accessibilityLabel={preferenceLabels[k]} disabled={busy} value={prefs[k]} onValueChange={value=>void run(async()=>{const saved=await api.auth.savePreferences({...prefs,[k]:value});setPrefs(saved);})}/></View>):!error&&<ActivityIndicator/>}</>}
+   {section==='subscription'&&<><Text style={s.name}>Modalità test attiva</Text><Text style={s.muted}>Durante il collaudo le funzioni sono sbloccate senza pagamento. Il piano previsto è Premium famiglia: 4,99 €/mese per entrambi i genitori, senza prova gratuita.</Text><Text style={s.muted}>Acquisto, gestione e ripristino dell’abbonamento saranno disponibili dopo l’attivazione dei pagamenti sugli store.</Text></>}
+   {section==='privacy'&&<><Text style={s.name}>I tuoi dati</Text><Text style={s.muted}>Scarica i dati del tuo profilo e le preferenze. Per lo storico condiviso usa il Dossier della famiglia.</Text>{button('Esporta dati del profilo',exportProfile)}<Row title="Apri Dossier della famiglia" onPress={()=>onNavigate('dossier')}/><Text style={s.name}>Informativa e condizioni</Text><Text style={s.muted}>I documenti definitivi saranno disponibili prima della pubblicazione sugli store. Non sono ancora configurati.</Text><Text style={s.name}>Eliminazione account</Text><Text style={s.muted}>L’eliminazione revoca l’accesso e rimuove il profilo personale. Lo storico già condiviso con l’altro genitore viene conservato.</Text><Row title="Elimina account" onPress={deleteAccount}/></>}
+   {section==='help'&&<><Text style={s.name}>DueCase {version}</Text><Text style={s.muted}>Piattaforma: {Platform.OS}. Per segnalare un problema, descrivi la schermata e i passaggi. Puoi allegare uno screenshot evitando dati personali non necessari.</Text>{button('Prepara segnalazione',async()=>{await Share.share({message:`DueCase ${version} · ${Platform.OS}\nSchermata:\nPassaggi per riprodurre il problema:\nRisultato atteso:\nRisultato osservato:`});})}<Text style={s.muted}>Scegli tu dove condividere la segnalazione. Nessun invio automatico.</Text></>}
+  </ScrollView>
+ </View>;
 }
-
-function permissionLabel(status: Notifications.PermissionStatus | null): string {
-  if (status === Notifications.PermissionStatus.GRANTED) return 'Attive';
-  if (status === Notifications.PermissionStatus.DENIED) return 'Disattivate';
-  return 'Da configurare';
-}
-
-export function SettingsScreen(): React.JSX.Element {
-  const { user, logout } = useAuth();
-  const insets = useSafeAreaInsets();
-  const [pushRegistered,setPushRegistered]=useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [notificationStatus, setNotificationStatus] = useState<Notifications.PermissionStatus | null>(null);
-  const appVersion = Constants.expoConfig?.version ?? '0.2.4';
-
-  const refreshNotificationPermission = async (): Promise<void> => {
-    try {
-      const permission = await Notifications.getPermissionsAsync();
-      setNotificationStatus(permission.status);
-      setPushRegistered((await api.auth.pushStatus()).registered);
-    } catch {
-      setNotificationStatus(null);
-    }
-  };
-
-  useEffect(() => { void refreshNotificationPermission(); }, []);
-
-  const manageNotifications = async (): Promise<void> => {
-    try {
-      if (notificationStatus !== Notifications.PermissionStatus.GRANTED) {
-        const result = await Notifications.requestPermissionsAsync();
-        setNotificationStatus(result.status);
-        if (result.status === Notifications.PermissionStatus.GRANTED) { await registerPushNotificationsAsync(); return; }
-      }
-      if (notificationStatus === Notifications.PermissionStatus.GRANTED) { const token=await registerPushNotificationsAsync();setPushRegistered(Boolean(token));Alert.alert('Notifiche',token?'Dispositivo collegato. La ricezione va verificata con un invio di prova.':'Autorizzazione concessa, ma collegamento push non riuscito. Controllare rete e configurazione del servizio.');return; }
-      if (Platform.OS !== 'web') await Linking.openSettings();
-      else Alert.alert('Notifiche', 'Le autorizzazioni delle notifiche vanno gestite dalle impostazioni del browser.');
-    } catch (error) {
-      Alert.alert('Notifiche', error instanceof Error ? error.message : 'Impossibile aprire le impostazioni delle notifiche.');
-    }
-  };
-
-  const shareFamilyCode = async (): Promise<void> => {
-    const code = user?.family?.inviteCode;
-    if (!code) {
-      Alert.alert('Famiglia', 'Il codice famiglia non è ancora disponibile.');
-      return;
-    }
-    try {
-      await Share.share({
-        title: 'DueCase · Codice famiglia',
-        message: `Unisciti alla mia famiglia su DueCase. Codice famiglia: ${code}`,
-      });
-    } catch (error) {
-      Alert.alert('Condivisione', error instanceof Error ? error.message : 'Impossibile condividere il codice famiglia.');
-    }
-  };
-
-  const confirmDelete = (): void => {
-    Alert.alert(
-      'Elimina account',
-      'Questa operazione revoca l’accesso ed elimina il tuo profilo personale. Spese, messaggi, documenti e accordi già condivisi restano nello storico della famiglia come “Account eliminato”.',
-      [
-        { text: 'Annulla', style: 'cancel' },
-        { text: 'Elimina definitivamente', style: 'destructive', onPress: () => void deleteAccount() },
-      ],
-    );
-  };
-
-  const deleteAccount = async (): Promise<void> => {
-    setDeleting(true);
-    try {
-      await api.auth.deleteAccount();
-      await logout();
-    } catch (error) {
-      Alert.alert('Elimina account', error instanceof Error ? error.message : 'Impossibile eliminare l’account.');
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom', 'left', 'right']}>
-      <ScrollView
-        style={styles.screen}
-        contentContainerStyle={[styles.content, { paddingBottom: Math.max(92, insets.bottom + 72) }]}
-        showsVerticalScrollIndicator={true}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.header}>
-          <Text style={styles.eyebrow}>ACCOUNT E APP</Text>
-          <Text style={styles.title}>Impostazioni</Text>
-          <Text style={styles.subtitle}>Profilo, famiglia, notifiche e privacy. Scorri per tutte le opzioni.</Text>
-        </View>
-
-        <EmailVerification />
-        <View style={styles.profileCard}>
-          <View style={styles.avatar}><Ionicons name={user?.role === 'mother' ? 'woman-outline' : 'man-outline'} size={30} color={ui.colors.primary} /></View>
-          <View style={styles.flex}>
-            <Text style={styles.profileName}>{user?.displayName}</Text>
-            <Text style={styles.profileMeta}>{roleLabel(user?.role)} · {user?.email}</Text>
-            <Text style={styles.familyMeta}>{user?.family?.name ?? 'Famiglia'} · codice {user?.family?.inviteCode ?? '—'}</Text>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Famiglia</Text>
-          <SettingRow
-            icon="share-social-outline"
-            title="Condividi codice famiglia"
-            subtitle={user?.family?.inviteCode ? `Codice ${user.family.inviteCode}` : 'Codice non disponibile'}
-            onPress={() => void shareFamilyCode()}
-          />
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Notifiche</Text>
-          <SettingRow
-            icon="notifications-outline"
-            title="Notifiche push"
-            subtitle={`${notificationStatus===Notifications.PermissionStatus.GRANTED&&!pushRegistered?'Collegamento da completare':permissionLabel(notificationStatus)} · tocca per gestirle`}
-            onPress={() => void manageNotifications()}
-          />
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Abbonamento</Text>
-          <View style={styles.testBox}>
-            <View style={styles.testIcon}><Ionicons name="flask-outline" size={22} color={ui.colors.primary} /></View>
-            <View style={styles.flex}>
-              <Text style={styles.testTitle}>Modalità test attiva</Text>
-              <Text style={styles.testText}>Durante il collaudo le funzioni operative sono sbloccate senza pagamento. Il piano Premium famiglia da 4,99 €/mese verrà riattivato prima della pubblicazione sugli Store.</Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Privacy e sicurezza</Text>
-          <View style={styles.infoBox}>
-            <Ionicons name="shield-checkmark-outline" size={22} color={ui.colors.primary} />
-            <Text style={styles.infoText}>DueCase separa i dati per famiglia. Le informazioni di una famiglia non sono accessibili da utenti appartenenti a famiglie diverse.</Text>
-          </View>
-          <View style={styles.infoBox}>
-            <Ionicons name="lock-closed-outline" size={22} color={ui.colors.success} />
-            <Text style={styles.infoText}>Messaggi, allegati, approvazioni e storico sono progettati per mantenere tracciabilità e integrità dei dati condivisi.</Text>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Applicazione</Text>
-          <View style={styles.appInfoCard}>
-            <View style={styles.appInfoRow}><Text style={styles.appInfoLabel}>Versione</Text><Text style={styles.appInfoValue}>{appVersion}</Text></View>
-            <View style={styles.appInfoDivider} />
-            <View style={styles.appInfoRow}><Text style={styles.appInfoLabel}>Piattaforma</Text><Text style={styles.appInfoValue}>{Platform.OS === 'android' ? 'Android' : Platform.OS === 'ios' ? 'iPhone / iPad' : 'Web / Desktop'}</Text></View>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Accesso</Text>
-          <SettingRow icon="log-out-outline" title="Esci dall’account" subtitle="Il tuo account resterà attivo." onPress={() => void logout()} />
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          <Pressable disabled={deleting} onPress={confirmDelete} style={styles.deleteRow}>
-            <View style={styles.deleteIcon}><Ionicons name="trash-outline" size={21} color={ui.colors.danger} /></View>
-            <View style={styles.flex}>
-              <Text style={styles.deleteTitle}>Elimina account</Text>
-              <Text style={styles.deleteSubtitle}>Cancella definitivamente il tuo profilo e i dati personali eliminabili.</Text>
-            </View>
-            {deleting ? <ActivityIndicator color={ui.colors.danger} /> : <Ionicons name="chevron-forward" size={19} color={ui.colors.danger} />}
-          </Pressable>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-function SettingRow({ icon, title, subtitle, onPress }: { icon: keyof typeof Ionicons.glyphMap; title: string; subtitle: string; onPress: () => void }): React.JSX.Element {
-  return (
-    <Pressable onPress={onPress} style={styles.settingRow}>
-      <View style={styles.settingIcon}><Ionicons name={icon} size={21} color={ui.colors.primary} /></View>
-      <View style={styles.flex}><Text style={styles.settingTitle}>{title}</Text><Text style={styles.settingSubtitle}>{subtitle}</Text></View>
-      <Ionicons name="chevron-forward" size={19} color={ui.colors.muted} />
-    </Pressable>
-  );
-}
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: ui.colors.background },
-  screen: { flex: 1, backgroundColor: ui.colors.background },
-  content: { paddingHorizontal: 20, paddingTop: 22, gap: 18, maxWidth: 850, width: '100%', alignSelf: 'center' },
-  header: { gap: 3 },
-  flex: { flex: 1, minWidth: 0 },
-  eyebrow: { fontSize: 10, fontWeight: '900', color: ui.colors.orange, letterSpacing: 1 },
-  title: { fontSize: 30, fontWeight: '900', color: ui.colors.primaryDark },
-  subtitle: { color: ui.colors.muted, marginTop: 3 },
-  profileCard: { backgroundColor: '#FFF', borderRadius: 18, borderWidth: 1, borderColor: ui.colors.border, padding: 18, flexDirection: 'row', alignItems: 'center', gap: 14 },
-  avatar: { width: 58, height: 58, borderRadius: 18, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
-  profileName: { fontSize: 19, fontWeight: '900', color: ui.colors.primaryDark },
-  profileMeta: { color: ui.colors.text, marginTop: 3 },
-  familyMeta: { color: ui.colors.muted, marginTop: 2, fontSize: 12 },
-  section: { gap: 9 },
-  sectionTitle: { fontSize: 13, fontWeight: '900', color: ui.colors.primaryDark, marginLeft: 2 },
-  settingRow: { backgroundColor: '#FFF', minHeight: 70, borderRadius: 15, borderWidth: 1, borderColor: ui.colors.border, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  settingIcon: { width: 42, height: 42, borderRadius: 13, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
-  settingTitle: { fontWeight: '900', color: ui.colors.primaryDark },
-  settingSubtitle: { color: ui.colors.muted, fontSize: 11, marginTop: 3, lineHeight: 16 },
-  infoBox: { borderRadius: 14, backgroundColor: ui.colors.primarySoft, padding: 14, flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
-  infoText: { flex: 1, color: ui.colors.text, lineHeight: 19, fontSize: 12 },
-  testBox: { borderRadius: 15, borderWidth: 1, borderColor: '#BDD5EE', backgroundColor: '#F4F8FD', padding: 14, flexDirection: 'row', gap: 11, alignItems: 'flex-start' },
-  testIcon: { width: 42, height: 42, borderRadius: 13, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
-  testTitle: { color: ui.colors.primaryDark, fontWeight: '900' },
-  testText: { color: ui.colors.muted, fontSize: 11, lineHeight: 17, marginTop: 3 },
-  appInfoCard: { backgroundColor: '#FFF', borderRadius: 15, borderWidth: 1, borderColor: ui.colors.border, paddingHorizontal: 14 },
-  appInfoRow: { minHeight: 52, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
-  appInfoLabel: { color: ui.colors.muted, fontWeight: '700' },
-  appInfoValue: { color: ui.colors.primaryDark, fontWeight: '900' },
-  appInfoDivider: { height: StyleSheet.hairlineWidth, backgroundColor: ui.colors.border },
-  deleteRow: { backgroundColor: '#FFF', minHeight: 76, borderRadius: 15, borderWidth: 1, borderColor: '#F2C4CC', padding: 13, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  deleteIcon: { width: 42, height: 42, borderRadius: 13, backgroundColor: ui.colors.dangerSoft, alignItems: 'center', justifyContent: 'center' },
-  deleteTitle: { fontWeight: '900', color: ui.colors.danger },
-  deleteSubtitle: { color: ui.colors.muted, fontSize: 11, marginTop: 3 },
-});
+function Field({label,value,onChangeText,secret=false,phone=false}:{label:string;value:string;onChangeText:(v:string)=>void;secret?:boolean;phone?:boolean}){return <View style={{gap:6}}><Text style={s.label}>{label}</Text><TextInput accessibilityLabel={label} value={value} onChangeText={onChangeText} secureTextEntry={secret} autoCapitalize={secret?'none':'words'} autoCorrect={!secret} keyboardType={phone?'phone-pad':'default'} style={s.input}/></View>;}
+function Row({title,onPress}:{title:string;onPress:()=>void}){return <Pressable accessibilityRole="button" style={s.row} onPress={onPress}><Text style={s.rowTitle}>{title}</Text><Ionicons name="chevron-forward" size={20} color={ui.colors.primary}/></Pressable>;}
+const s=StyleSheet.create({screen:{flex:1,minHeight:0},header:{flexDirection:'row',alignItems:'center',gap:12,padding:18},back:{padding:8},title:{fontSize:26,fontWeight:'900',color:ui.colors.primaryDark,flexShrink:1},content:{paddingHorizontal:18,paddingBottom:24,gap:14,width:'100%',maxWidth:850,alignSelf:'center'},name:{fontSize:18,fontWeight:'800',color:ui.colors.primaryDark},muted:{color:ui.colors.muted,fontSize:14,lineHeight:21},error:{color:ui.colors.danger,padding:12,backgroundColor:'#FFF0F0',borderRadius:12},card:{backgroundColor:'white',borderRadius:16,padding:16,gap:6},row:{minHeight:58,backgroundColor:'white',borderRadius:14,padding:16,flexDirection:'row',alignItems:'center',gap:12,borderWidth:1,borderColor:ui.colors.border},rowTitle:{flex:1,fontSize:16,fontWeight:'700',color:ui.colors.primaryDark},label:{fontWeight:'700',color:ui.colors.text},input:{backgroundColor:'white',borderWidth:1,borderColor:ui.colors.border,borderRadius:12,padding:14,fontSize:16,color:ui.colors.text},button:{backgroundColor:ui.colors.primary,borderRadius:14,padding:16,alignItems:'center'},buttonText:{color:'white',fontWeight:'800',fontSize:16},toggle:{flexDirection:'row',alignItems:'center',gap:12,backgroundColor:'white',padding:14,borderRadius:14},toggleLabel:{flex:1,color:ui.colors.text,fontSize:16}});

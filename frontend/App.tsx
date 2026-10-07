@@ -8,6 +8,7 @@ import * as Notifications from 'expo-notifications';
 import { useEffect, useMemo, useState } from 'react';
 import {
   BackHandler,
+  Keyboard,
   Image,
   ImageBackground,
   Platform,
@@ -182,6 +183,8 @@ function AuthenticatedApp({ requestedRoute, onRequestedRouteHandled }: { request
   const desktop = width >= 900;
   const [routeHistory, setRouteHistory] = useState<MainRoute[]>(['home']);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [keyboardOpen,setKeyboardOpen]=useState(false);
+  useEffect(()=>{const a=Keyboard.addListener('keyboardDidShow',()=>setKeyboardOpen(true));const b=Keyboard.addListener('keyboardDidHide',()=>setKeyboardOpen(false));return()=>{a.remove();b.remove();};},[]);
   const route = routeHistory[routeHistory.length - 1] ?? 'home';
 
   useEffect(() => {
@@ -204,12 +207,12 @@ function AuthenticatedApp({ requestedRoute, onRequestedRouteHandled }: { request
   const navigate = (next: MainRoute): void => { setRouteHistory((current) => current[current.length - 1] === next ? current : [...current, next]); setMoreOpen(false); };
   const page = <LinearGradient colors={ui.gradients.page} style={styles.page}>
     {route === 'home' ? <HomeScreen onNavigate={(target: HomeDestination) => navigate(target as MainRoute)} /> : null}
-    {route === 'calendar' ? <CalendarScreen /> : null}{route === 'permanence' ? <PermanenceScreen /> : null}{route === 'children' ? <ChildrenScreen /> : null}{route === 'expenses' ? <ExpensesScreen /> : null}{route === 'agreements' ? <AgreementsScreen /> : null}{route === 'messages' ? <MessagesScreen /> : null}{route === 'documents' ? <DocumentsScreen /> : null}{route === 'dossier' ? <DossierScreen /> : null}{route === 'notifications' ? <NotificationsScreen onNavigate={(target)=>navigate(target as MainRoute)} /> : null}{route === 'settings' ? <SettingsScreen /> : null}{route === 'family' ? <FamilyCard /> : null}
+    {route === 'calendar' ? <CalendarScreen /> : null}{route === 'permanence' ? <PermanenceScreen /> : null}{route === 'children' ? <ChildrenScreen /> : null}{route === 'expenses' ? <ExpensesScreen /> : null}{route === 'agreements' ? <AgreementsScreen /> : null}{route === 'messages' ? <MessagesScreen /> : null}{route === 'documents' ? <DocumentsScreen /> : null}{route === 'dossier' ? <DossierScreen /> : null}{route === 'notifications' ? <NotificationsScreen onNavigate={(target)=>navigate(target as MainRoute)} /> : null}{route === 'settings' ? <SettingsScreen onNavigate={(target)=>navigate(target as MainRoute)} /> : null}{route === 'family' ? <FamilyCard /> : null}
   </LinearGradient>;
 
   return <View style={styles.authenticatedRoot}>
     <StatusBar barStyle="dark-content" backgroundColor={ui.colors.backgroundSolid} translucent={false} />
-    {desktop ? <SafeAreaView style={styles.safeArea} edges={['top', 'right', 'bottom', 'left']}><View style={styles.desktopShell}><DesktopSidebar route={route} navigate={navigate} />{page}</View></SafeAreaView> : <><SafeAreaView style={styles.mobilePageSafeArea} edges={['top', 'left', 'right']}>{page}</SafeAreaView><SafeAreaView style={styles.mobileNavSafeArea} edges={['bottom', 'left', 'right']}><MobileNavigation active={mobileActive} onNavigate={(key) => key === 'more' ? setMoreOpen(true) : navigate(key)} /></SafeAreaView></>}
+    {desktop ? <SafeAreaView style={styles.safeArea} edges={['top', 'right', 'bottom', 'left']}><View style={styles.desktopShell}><DesktopSidebar route={route} navigate={navigate} />{page}</View></SafeAreaView> : <><SafeAreaView style={styles.mobilePageSafeArea} edges={['top', 'left', 'right']}>{page}</SafeAreaView>{!keyboardOpen&&<SafeAreaView style={styles.mobileNavSafeArea} edges={['bottom', 'left', 'right']}><MobileNavigation active={mobileActive} onNavigate={(key) => key === 'more' ? setMoreOpen(true) : navigate(key)} /></SafeAreaView>}</>}
     <Modal visible={moreOpen} transparent animationType="slide" onRequestClose={() => setMoreOpen(false)}><Pressable style={styles.moreBackdrop} onPress={() => setMoreOpen(false)}><Pressable style={[styles.moreSheet, { paddingBottom: Math.max(28, insets.bottom + 20) }]} onPress={(event) => event.stopPropagation()}>
       <View style={styles.sheetHandle} /><View style={styles.moreHeader}><View><Text style={styles.moreTitle}>Tutto DueCase</Text><Text style={styles.moreSubtitle}>Scegli una sezione</Text></View><Pressable style={styles.close} onPress={() => setMoreOpen(false)}><Ionicons name="close" size={22} color={ui.colors.text} /></Pressable></View>
       <View style={styles.moreGrid}>{navigationItems.filter((item) => !['home', 'calendar', 'agreements', 'expenses'].includes(item.key)).map((item) => <Pressable key={item.key} onPress={() => navigate(item.key)} style={[styles.moreItem, route === item.key && styles.moreItemActive]}><View style={styles.moreIcon}><Ionicons name={item.icon} size={23} color={ui.colors.primary} /></View><CountBadge count={item.key in counts ? counts[item.key as keyof typeof counts] : 0} /><Text style={styles.moreItemText}>{item.label}</Text></Pressable>)}</View>
