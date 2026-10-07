@@ -1,6 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Alert, Linking } from 'react-native';
 import { api, ApiClientError, setApiToken } from '../services/api';
 import { registerPushNotificationsAsync, unregisterPushNotificationsAsync } from '../services/notifications';
+import {
+  clearPendingParentInvite,
+  getPendingParentInvite,
+  parseParentInviteUrl,
+  rememberParentInvite,
+} from '../services/parentInvitations';
 import { clearStoredToken, getStoredToken, storeToken } from '../services/tokenStorage';
 import type { AuthUser, RegisterInput } from '../types/models';
 
@@ -18,6 +25,7 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 const LEGAL_DOCUMENT_VERSION = '2026-10-07';
+const handledAuthenticatedInvites = new Set<string>();
 
 export function AuthProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -52,6 +60,56 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     void restoreSession();
     return () => { active = false; };
   }, [attempt]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    let active = true;
+    let handling = false;
+
+    const handleAuthenticatedInvite = async (url: string | null | undefined): Promise<void> => {
+      if (!active) return;
+      const invite = parseParentInviteUrl(url);
+      if (!invite) return;
+
+      const pending = getPendingParentInvite();
+      if (pending?.inviteCode === invite.inviteCode) return;
+
+      const handledKey = `${user.id}:${invite.inviteCode}`;
+      if (handledAuthenticatedInvites.has(handledKey)) return;
+      handledAuthenticatedInvites.add(handledKey);
+
+      if (invite.email !== user.email.trim().toLowerCase()) {
+        Alert.alert('Invito DueCase', `Questo invito è destinato a ${invite.email}. Accedi con quell’indirizzo email per continuare.`);
+        return;
+      }
+
+      if (user.familyId) {
+        Alert.alert('Invito DueCase', 'Questo account è già collegato a una famiglia. Se l’invito riguarda un altro account, esci e accedi con l’indirizzo email indicato nell’invito.');
+        return;
+      }
+
+      rememberParentInvite(invite);
+      if (handling) return;
+      handling = true;
+      try {
+        await api.family.join(invite.inviteCode);
+        const refreshedUser = await api.auth.me();
+        if (!active) return;
+        setUser(refreshedUser);
+        clearPendingParentInvite();
+        Alert.alert('Invito accettato', 'Ora sei collegato alla famiglia condivisa su DueCase.');
+      } catch (error) {
+        if (!active) return;
+        Alert.alert('Invito non accettato', error instanceof Error ? error.message : 'Non è stato possibile collegare l’account alla famiglia.');
+      } finally {
+        handling = false;
+      }
+    };
+
+    void Linking.getInitialURL().then((url) => handleAuthenticatedInvite(url)).catch(() => undefined);
+    const subscription = Linking.addEventListener('url', ({ url }) => { void handleAuthenticatedInvite(url); });
+    return () => { active = false; subscription.remove(); };
+  }, [user]);
 
   const login = useCallback(async (email: string, password: string) => {
     const result = await api.auth.login({ email, password });
