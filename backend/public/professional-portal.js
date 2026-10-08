@@ -37,6 +37,11 @@
 
   function token() { return sessionStorage.getItem(TOKEN_KEY); }
   function setToken(value) { if (value) sessionStorage.setItem(TOKEN_KEY, value); else sessionStorage.removeItem(TOKEN_KEY); }
+  function clearInviteUrl() {
+    if (location.pathname !== '/professionisti' || location.search) {
+      history.replaceState({ duecasePortal: true }, '', '/professionisti');
+    }
+  }
   function show(el, visible = true) { el.classList.toggle('hidden', !visible); }
   function text(el, value) { el.textContent = value == null ? '' : String(value); }
   function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
@@ -86,6 +91,7 @@
       const message = payload && typeof payload === 'object' && payload.error ? payload.error : `Operazione non riuscita (${response.status})`;
       const error = new Error(message);
       error.code = payload && typeof payload === 'object' ? payload.code : undefined;
+      error.status = response.status;
       throw error;
     }
     return payload;
@@ -139,29 +145,63 @@
   }
 
   async function acceptPendingInvitation() {
-    if (!inviteToken || !token()) return;
+  if (!inviteToken || !token()) return false;
+  try {
     await api('/professional-auth/accept-invitation', { method: 'POST', body: JSON.stringify({ token: inviteToken }) }, true);
-    history.replaceState({}, '', '/professionisti');
+    clearInviteUrl();
     invitation = null;
     setStatus('Invito accettato. La pratica è stata aggiunta al tuo account.');
+    return true;
+  } catch (error) {
+    if (error?.code === 'PROFESSIONAL_INVITE_INVALID' || error?.status === 410) {
+      clearInviteUrl();
+      invitation = null;
+      setStatus('Questo invito è già stato utilizzato, è scaduto o è stato revocato. Il tuo account professionista resta attivo.');
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function loadSession() {
+  if (!token()) return false;
+  try {
+    professional = await api('/professional-auth/me', {}, true);
+  } catch (error) {
+    setToken(null);
+    professional = null;
+    setStatus(error.message || 'Sessione scaduta. Accedi nuovamente.', true);
+    return false;
   }
 
-  async function loadSession() {
-    if (!token()) return false;
+  if (inviteToken) {
     try {
-      professional = await api('/professional-auth/me', {}, true);
-      if (inviteToken) await acceptPendingInvitation();
-      await loadClients();
-      showPortal();
-      return true;
+      await acceptPendingInvitation();
     } catch (error) {
-      setToken(null);
-      if (!inviteToken) setStatus(error.message || 'Sessione scaduta.', true);
-      return false;
+      setStatus(error.message || 'Impossibile accettare questo invito.', true);
+      clearInviteUrl();
     }
   }
 
-  async function loadClients() {
+  try {
+    await loadClients();
+  } catch (error) {
+    if (error?.status === 401 || error?.status === 403) {
+      setToken(null);
+      professional = null;
+      setStatus('Sessione scaduta. Accedi nuovamente.', true);
+      return false;
+    }
+    showPortal();
+    setStatus(error.message || 'Impossibile caricare le pratiche autorizzate.', true);
+    return true;
+  }
+
+  showPortal();
+  return true;
+}
+
+async function loadClients() {
     clients = await api('/professional/clients', {}, true);
     clear(clientList);
     clients.forEach((client) => {
@@ -396,7 +436,14 @@
       });
       setToken(result.token);
       professional = result.professional;
-      if (inviteToken) await acceptPendingInvitation();
+      if (inviteToken) {
+        try {
+          await acceptPendingInvitation();
+        } catch (inviteError) {
+          setStatus(inviteError.message || 'Impossibile accettare questo invito.', true);
+          clearInviteUrl();
+        }
+      }
       await loadClients();
       showPortal();
     } catch (error) { setStatus(error.message || 'Accesso non riuscito.', true); }
@@ -425,7 +472,7 @@
       });
       setToken(result.token);
       professional = result.professional;
-      history.replaceState({}, '', '/professionisti');
+      clearInviteUrl();
       await loadClients();
       showPortal();
       setStatus('Account professionista creato e invito accettato.');
