@@ -24,7 +24,7 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-const LEGAL_DOCUMENT_VERSION = '2026-10-07';
+const LEGAL_DOCUMENT_VERSION = '2026-10-08';
 const handledAuthenticatedInvites = new Set<string>();
 
 export function AuthProvider({ children }: { children: ReactNode }): React.JSX.Element {

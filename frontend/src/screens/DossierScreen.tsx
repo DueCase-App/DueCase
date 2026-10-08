@@ -162,7 +162,7 @@ export function DossierScreen(): React.JSX.Element {
             })}
           </View>
 
-          <View style={styles.notice}><Ionicons name="shield-checkmark-outline" size={22} color={ui.colors.primary} /><Text style={styles.noticeText}>Questa anteprima mostra le ultime 120 attività. Usa l’esportazione per consultare tutto lo storico disponibile. Il dossier non è un documento certificato.</Text></View>
+          <View style={styles.notice}><Ionicons name="shield-checkmark-outline" size={22} color={ui.colors.primary} /><Text style={styles.noticeText}>Questa anteprima mostra le ultime 120 attività. Usa l’esportazione per consultare tutto lo storico disponibile. Il dossier è un riepilogo documentale dei dati presenti in DueCase: non è un documento certificato e non attribuisce automaticamente valore legale o probatorio predeterminato. L’eventuale utilizzo esterno dipende dalla normativa applicabile e dalla valutazione dell’autorità o del professionista competente.</Text></View>
         </>
       ) : null}
     </ScrollView>

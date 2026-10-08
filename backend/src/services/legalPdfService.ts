@@ -12,7 +12,7 @@ export async function createLegalReportPdf(input:LegalPdfInput):Promise<Buffer>{
  text(`Famiglia: ${input.familyName}`,12);text(`Generato da: ${input.generatedBy}`);
  text(`Generato il: ${new Date(input.generatedAt).toLocaleString('it-IT',{timeZone:'Europe/Rome'})} (Europe/Rome)`);
  text(`Identificativo: ${input.reportId}`,8);doc.moveDown();
- text('Documento riepilogativo dei dati disponibili nell’app. Non è una certificazione, una firma digitale o una marca temporale qualificata. I controlli SHA-256 permettono il confronto tecnico dei file esportati; non dimostrano la veridicità dei fatti dichiarati.',9);doc.moveDown();
+ text('Documento riepilogativo dei dati disponibili nell’app. Non è una certificazione, una firma digitale o una marca temporale qualificata e non attribuisce automaticamente valore legale o probatorio predeterminato. I controlli SHA-256 permettono il confronto tecnico dei file esportati; non dimostrano identità, data certa o veridicità dei fatti dichiarati. L’eventuale efficacia giuridica o probatoria dipende dalla normativa applicabile e dalla valutazione dell’autorità competente.',9);doc.moveDown();
  text('Indice delle sezioni',13);input.sections.forEach((s,i)=>text(`${i+1}. ${s.title}`,9));
  doc.addPage();
  for(const [index,section] of input.sections.entries()){

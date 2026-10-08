@@ -121,7 +121,7 @@ export function AgreementsScreen(): React.JSX.Element {
         <View style={{ flex: 1 }}>
           <Text style={styles.eyebrow}>DECISIONI CONDIVISE</Text>
           <Text style={styles.title}>Accordi</Text>
-          <Text style={styles.subtitle}>Proposte, risposte e storico tra Mamma e Papà.</Text>
+          <Text style={styles.subtitle}>Proposte, risposte e storico tra Mamma e Papà. Le accettazioni registrano azioni nell’app e non sostituiscono provvedimenti giudiziari o accordi formalizzati nelle forme richieste dalla legge.</Text>
         </View>
         <Pressable style={styles.primaryButton} onPress={() => setCreateOpen(true)}><Ionicons name="add" size={20} color="#FFF" /><Text style={styles.primaryButtonText}>Nuovo</Text></Pressable>
       </View>

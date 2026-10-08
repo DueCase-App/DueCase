@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { ApiError } from '../http.js';
 
 const router = Router();
-export const CURRENT_LEGAL_VERSION = '2026-10-07';
+export const CURRENT_LEGAL_VERSION = '2026-10-08';
 
 type LegalRegistrationBody = Record<string, unknown> | undefined;
 
