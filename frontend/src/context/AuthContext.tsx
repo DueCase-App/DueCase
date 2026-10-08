@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Alert, Linking } from 'react-native';
+import { BrandedAlertHost } from '../components/BrandedAlertHost';
 import { api, ApiClientError, setApiToken } from '../services/api';
 import { registerPushNotificationsAsync, unregisterPushNotificationsAsync } from '../services/notifications';
 import {
@@ -158,7 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     logout, replaceToken,
   }), [user, booting, bootError, retrySession, login, register, refreshUser, logout, replaceToken]);
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={value}>{children}<BrandedAlertHost /></AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {
