@@ -1,0 +1,192 @@
+name: One-time professional flow fix
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Patch professional flow
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_one(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected 1 match, found {count}")
+              p.write_text(text.replace(old, new))
+
+          portal = "backend/public/professional-portal.js"
+
+          replace_one(
+              portal,
+              "      const error = new Error(message);\n      error.code = payload && typeof payload === 'object' ? payload.code : undefined;\n      throw error;",
+              "      const error = new Error(message);\n      error.code = payload && typeof payload === 'object' ? payload.code : undefined;\n      error.status = response.status;\n      throw error;"
+          )
+
+          replace_one(
+              portal,
+              "  function token() { return sessionStorage.getItem(TOKEN_KEY); }\n  function setToken(value) { if (value) sessionStorage.setItem(TOKEN_KEY, value); else sessionStorage.removeItem(TOKEN_KEY); }\n  function show(el, visible = true) { el.classList.toggle('hidden', !visible); }",
+              "  function token() { return sessionStorage.getItem(TOKEN_KEY); }\n  function setToken(value) { if (value) sessionStorage.setItem(TOKEN_KEY, value); else sessionStorage.removeItem(TOKEN_KEY); }\n  function clearInviteUrl() {\n    if (location.pathname !== '/professionisti' || location.search) {\n      history.replaceState({ duecasePortal: true }, '', '/professionisti');\n    }\n  }\n  function show(el, visible = true) { el.classList.toggle('hidden', !visible); }"
+          )
+
+          old_accept = """  async function acceptPendingInvitation() {
+            if (!inviteToken || !token()) return;
+            await api('/professional-auth/accept-invitation', { method: 'POST', body: JSON.stringify({ token: inviteToken }) }, true);
+            history.replaceState({}, '', '/professionisti');
+            invitation = null;
+            setStatus('Invito accettato. La pratica è stata aggiunta al tuo account.');
+          }
+
+          async function loadSession() {
+            if (!token()) return false;
+            try {
+              professional = await api('/professional-auth/me', {}, true);
+              if (inviteToken) await acceptPendingInvitation();
+              await loadClients();
+              showPortal();
+              return true;
+            } catch (error) {
+              setToken(null);
+              if (!inviteToken) setStatus(error.message || 'Sessione scaduta.', true);
+              return false;
+            }
+          }"""
+          old_accept = "\n".join(line[10:] if line.startswith("          ") else line for line in old_accept.splitlines())
+
+          new_accept = """  async function acceptPendingInvitation() {
+            if (!inviteToken || !token()) return false;
+            try {
+              await api('/professional-auth/accept-invitation', { method: 'POST', body: JSON.stringify({ token: inviteToken }) }, true);
+              clearInviteUrl();
+              invitation = null;
+              setStatus('Invito accettato. La pratica è stata aggiunta al tuo account.');
+              return true;
+            } catch (error) {
+              if (error?.code === 'PROFESSIONAL_INVITE_INVALID' || error?.status === 410) {
+                clearInviteUrl();
+                invitation = null;
+                setStatus('Questo invito è già stato utilizzato, è scaduto o è stato revocato. Il tuo account professionista resta attivo.');
+                return false;
+              }
+              throw error;
+            }
+          }
+
+          async function loadSession() {
+            if (!token()) return false;
+            try {
+              professional = await api('/professional-auth/me', {}, true);
+            } catch (error) {
+              setToken(null);
+              professional = null;
+              setStatus(error.message || 'Sessione scaduta. Accedi nuovamente.', true);
+              return false;
+            }
+
+            if (inviteToken) {
+              try {
+                await acceptPendingInvitation();
+              } catch (error) {
+                setStatus(error.message || 'Impossibile accettare questo invito.', true);
+                clearInviteUrl();
+              }
+            }
+
+            try {
+              await loadClients();
+            } catch (error) {
+              if (error?.status === 401 || error?.status === 403) {
+                setToken(null);
+                professional = null;
+                setStatus('Sessione scaduta. Accedi nuovamente.', true);
+                return false;
+              }
+              showPortal();
+              setStatus(error.message || 'Impossibile caricare le pratiche autorizzate.', true);
+              return true;
+            }
+
+            showPortal();
+            return true;
+          }"""
+          new_accept = "\n".join(line[10:] if line.startswith("          ") else line for line in new_accept.splitlines())
+          replace_one(portal, old_accept, new_accept)
+
+          replace_one(
+              portal,
+              "      setToken(result.token);\n      professional = result.professional;\n      if (inviteToken) await acceptPendingInvitation();\n      await loadClients();\n      showPortal();",
+              "      setToken(result.token);\n      professional = result.professional;\n      if (inviteToken) {\n        try {\n          await acceptPendingInvitation();\n        } catch (inviteError) {\n          setStatus(inviteError.message || 'Impossibile accettare questo invito.', true);\n          clearInviteUrl();\n        }\n      }\n      await loadClients();\n      showPortal();"
+          )
+
+          replace_one(
+              portal,
+              "      history.replaceState({}, '', '/professionisti');\n      await loadClients();",
+              "      clearInviteUrl();\n      await loadClients();"
+          )
+
+          settings = "frontend/src/screens/SettingsScreen.tsx"
+
+          replace_one(
+              settings,
+              "import { ActivityIndicator, Alert, BackHandler, Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from 'react-native';",
+              "import { ActivityIndicator, Alert, AppState, BackHandler, Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from 'react-native';"
+          )
+
+          replace_one(
+              settings,
+              "if(section==='professionals'){professionalAccess.list().then(v=>{if(active)setProfessionalState(v);}).catch(e=>{if(active)setError(e instanceof Error?e.message:'Impossibile caricare gli accessi professionali.');});}",
+              "if(section==='professionals'){professionalAccess.list().then(v=>{if(active){setProfessionalState(v);setError('');}}).catch(e=>{if(active)setError(e instanceof Error?e.message:'Impossibile caricare gli accessi professionali.');});}"
+          )
+
+          replace_one(
+              settings,
+              "return()=>{active=false;};},[section]);\n async function run(action:()=>Promise<void>){if(busy)return;setBusy(true);setError('');try{await action();}catch(e){setError(e instanceof Error?e.message:'Operazione non riuscita. Riprova.');}finally{setBusy(false);}}",
+              "return()=>{active=false;};},[section]);\n useEffect(()=>{if(section!=='professionals')return;const refresh=()=>{professionalAccess.list().then(v=>{setProfessionalState(v);setError('');}).catch(()=>{});};const sub=AppState.addEventListener('change',state=>{if(state==='active')refresh();});const timer=setInterval(refresh,10000);return()=>{sub.remove();clearInterval(timer);};},[section]);\n async function run(action:()=>Promise<void>){if(busy)return;setBusy(true);setError('');try{await action();}catch(e){if(section==='professionals'){try{await reloadProfessionals();}catch{}if(e instanceof Error&&/Invito non disponibile|già accettato|scaduto|revocato/i.test(e.message)){setError('Lo stato dell’invito è cambiato. La schermata è stata aggiornata.');return;}}setError(e instanceof Error?e.message:'Operazione non riuscita. Riprova.');}finally{setBusy(false);}}"
+          )
+
+          replace_one(
+              settings,
+              " async function reloadProfessionals(){setProfessionalState(await professionalAccess.list());}",
+              " async function reloadProfessionals(){const state=await professionalAccess.list();setProfessionalState(state);setError('');}"
+          )
+          PY
+
+      - name: Check backend
+        run: |
+          npm ci --prefix backend
+          npm run typecheck --prefix backend
+          npm test --prefix backend
+
+      - name: Check frontend
+        run: |
+          npm ci --prefix frontend
+          npm run typecheck --prefix frontend
+
+      - name: Commit fixes and remove one-time workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/fix-professional-flow.yml
+          git config user.name "DueCase Automation"
+          git config user.email "info@duecaseununicasquadra.com"
+          git add backend/public/professional-portal.js frontend/src/screens/SettingsScreen.tsx .github/workflows/fix-professional-flow.yml
+          git commit -m "Fix professional portal session and invitation flow"
+          git push origin main
