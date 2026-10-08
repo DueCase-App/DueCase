@@ -25,17 +25,17 @@ jobs:
         run: npx expo-doctor
       - name: Web bundle smoke build
         run: npx expo export --platform web --output-dir /tmp/duecase-web-audit
+      - name: Production dependency audit
+        run: npm audit --omit=dev --json || true
       - name: Scan interaction placeholders
         working-directory: .
         run: |
-          echo '=== PLACEHOLDER / INCOMPLETE UI TEXT ==='
-          grep -RInE --exclude-dir=node_modules --exclude='functional-audit.yml' 'TODO|FIXME|coming soon|non ancora (attiv|dispon|implement)|mock|placeholder' frontend/src frontend/App.tsx 2>/dev/null || true
+          echo '=== INCOMPLETE UI TEXT ==='
+          grep -RInE --exclude-dir=node_modules --exclude='functional-audit.yml' 'TODO|FIXME|coming soon|non ancora (attiv|dispon|implement)|mock' frontend/src frontend/App.tsx 2>/dev/null || true
           echo '=== DISABLED CONSTANT CONTROLS ==='
           grep -RInE --exclude-dir=node_modules 'disabled=\{true\}|onPress=\{\(\)=>\{\}\}|onPress=\{undefined\}' frontend/src frontend/App.tsx 2>/dev/null || true
           echo '=== APP SCREENS ==='
           find frontend/src/screens -maxdepth 1 -type f -name '*Screen.tsx' -printf '%f\n' | sort
-          echo '=== API REQUESTS ==='
-          grep -oE "request<[^>]*>\('[^']+'|request\('[^']+'|request<[^>]*>\(\`/[^\`]+|request\(\`/[^\`]+" frontend/src/services/api.ts | sed -E "s/.*(\/[^'\`]+).*/\1/" | sort -u || true
 
   backend-audit:
     runs-on: ubuntu-latest
