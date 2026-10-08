@@ -27,6 +27,7 @@ jobs:
       - name: Publish prerelease APK
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           test -f apk/DueCase-0.4.4.apk
