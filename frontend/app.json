@@ -4,7 +4,7 @@
     "slug": "duecase",
     "owner": "riccardobiusos-team",
     "scheme": "duecase",
-    "version": "0.4.3",
+    "version": "0.4.4",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "backgroundColor": "#FFF9F0",
@@ -30,6 +30,7 @@
       [
         "expo-notifications",
         {
+          "icon": "./assets/notification-icon.png",
           "color": "#1769E0",
           "defaultChannel": "duecase-events",
           "enableBackgroundRemoteNotifications": false
@@ -56,7 +57,7 @@
       "config": {
         "usesNonExemptEncryption": false
       },
-      "buildNumber": "43"
+      "buildNumber": "44"
     },
     "android": {
       "package": "com.duecaseununicasquadra.duecase",
@@ -72,7 +73,7 @@
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
       ],
-      "versionCode": 43
+      "versionCode": 44
     },
     "extra": {
       "eas": {
