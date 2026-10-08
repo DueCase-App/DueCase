@@ -1,13 +1,21 @@
 const fs = require('node:fs');
+
 module.exports = ({ config }) => {
-  const googleServicesFile = process.env.GOOGLE_SERVICES_FILE;
+  const googleServicesFile = process.env.GOOGLE_SERVICES_FILE || './google-services.json';
+  const androidPushConfigured = fs.existsSync(googleServicesFile);
+
   return {
     ...config,
-    extra: {...config.extra, androidPushConfigured: Boolean(googleServicesFile && fs.existsSync(googleServicesFile))},
-    plugins: (config.plugins || []).filter((plugin) => plugin !== './plugins/withDueCaseSplashFallback'),
+    extra: {
+      ...config.extra,
+      androidPushConfigured,
+    },
+    plugins: (config.plugins || []).filter(
+      (plugin) => plugin !== './plugins/withDueCaseSplashFallback'
+    ),
     android: {
       ...config.android,
-      ...(googleServicesFile && fs.existsSync(googleServicesFile) ? { googleServicesFile } : {}),
+      ...(androidPushConfigured ? { googleServicesFile } : {}),
     },
   };
 };
