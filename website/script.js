@@ -11,6 +11,12 @@ if(menuButton&&nav){
   }));
 }
 
+const calendarChip=document.querySelector('.floating-chip.chip-one');
+if(calendarChip){
+  calendarChip.style.left='-18%';
+  calendarChip.style.top='11%';
+}
+
 const cookie=document.querySelector('.cookie-note');
 if(cookie){
   if(sessionStorage.getItem('duecase-cookie-note')==='hidden')cookie.remove();
