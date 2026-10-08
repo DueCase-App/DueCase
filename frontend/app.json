@@ -2,6 +2,7 @@
   "expo": {
     "name": "DueCase",
     "slug": "duecase",
+    "owner": "riccardobiusos-team",
     "scheme": "duecase",
     "version": "0.4.3",
     "orientation": "portrait",
@@ -45,7 +46,7 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.duecaseununicasquadra.duecase",
+      "bundleIdentifier": "com.duecaseunicasquadra.duecase",
       "backgroundColor": "#FFF9F0",
       "icon": "./assets/duecase-logo-hd.png",
       "infoPlist": {
@@ -58,7 +59,7 @@
       "buildNumber": "43"
     },
     "android": {
-      "package": "com.duecaseununicasquadra.duecase",
+      "package": "com.duecaseunicasquadra.duecase",
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/duecase-logo-hd.png",
