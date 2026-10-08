@@ -25,14 +25,23 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           def replace_one(path, old, new):
               p = Path(path)
               text = p.read_text()
               count = text.count(old)
               if count != 1:
-                  raise SystemExit(f"{path}: expected 1 match, found {count}")
+                  raise SystemExit(f"{path}: expected 1 exact match, found {count}")
               p.write_text(text.replace(old, new))
+
+          def sub_one(path, pattern, replacement):
+              p = Path(path)
+              text = p.read_text()
+              updated, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected 1 regex match, found {count}")
+              p.write_text(updated)
 
           portal = "backend/public/professional-portal.js"
 
@@ -48,31 +57,7 @@ jobs:
               "  function token() { return sessionStorage.getItem(TOKEN_KEY); }\n  function setToken(value) { if (value) sessionStorage.setItem(TOKEN_KEY, value); else sessionStorage.removeItem(TOKEN_KEY); }\n  function clearInviteUrl() {\n    if (location.pathname !== '/professionisti' || location.search) {\n      history.replaceState({ duecasePortal: true }, '', '/professionisti');\n    }\n  }\n  function show(el, visible = true) { el.classList.toggle('hidden', !visible); }"
           )
 
-          old_accept = """  async function acceptPendingInvitation() {
-            if (!inviteToken || !token()) return;
-            await api('/professional-auth/accept-invitation', { method: 'POST', body: JSON.stringify({ token: inviteToken }) }, true);
-            history.replaceState({}, '', '/professionisti');
-            invitation = null;
-            setStatus('Invito accettato. La pratica è stata aggiunta al tuo account.');
-          }
-
-          async function loadSession() {
-            if (!token()) return false;
-            try {
-              professional = await api('/professional-auth/me', {}, true);
-              if (inviteToken) await acceptPendingInvitation();
-              await loadClients();
-              showPortal();
-              return true;
-            } catch (error) {
-              setToken(null);
-              if (!inviteToken) setStatus(error.message || 'Sessione scaduta.', true);
-              return false;
-            }
-          }"""
-          old_accept = "\n".join(line[10:] if line.startswith("          ") else line for line in old_accept.splitlines())
-
-          new_accept = """  async function acceptPendingInvitation() {
+          replacement = '''  async function acceptPendingInvitation() {
             if (!inviteToken || !token()) return false;
             try {
               await api('/professional-auth/accept-invitation', { method: 'POST', body: JSON.stringify({ token: inviteToken }) }, true);
@@ -127,9 +112,15 @@ jobs:
 
             showPortal();
             return true;
-          }"""
-          new_accept = "\n".join(line[10:] if line.startswith("          ") else line for line in new_accept.splitlines())
-          replace_one(portal, old_accept, new_accept)
+          }
+
+          async function loadClients()'''
+          replacement = "\n".join(line[10:] if line.startswith("          ") else line for line in replacement.splitlines())
+          sub_one(
+              portal,
+              r"  async function acceptPendingInvitation\(\) \{.*?\n  \}\n\n  async function loadSession\(\) \{.*?\n  \}\n\n  async function loadClients\(\)",
+              replacement
+          )
 
           replace_one(
               portal,
