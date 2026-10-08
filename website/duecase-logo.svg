@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">DueCase</title>
+  <desc id="desc">Logo DueCase con due case e un cuore</desc>
+  <rect width="128" height="128" rx="28" fill="#FFF8ED"/>
+  <path d="M14 60 45 34l30 26v38H14V60Z" fill="none" stroke="#1769E0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M52 56 82 34l32 26v38H80" fill="none" stroke="#FF922E" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M65 91c-3-2.5-17-13-17-23 0-6.8 5-11.3 11.2-11.3 3.8 0 7 1.8 9.2 4.8 2.2-3 5.4-4.8 9.2-4.8 6.2 0 11.2 4.5 11.2 11.3 0 10-14 20.5-17 23l-3.2 2.6L65 91Z" fill="#1769E0"/>
+</svg>
