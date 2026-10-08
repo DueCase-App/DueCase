@@ -20,6 +20,7 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import { NewExpensePage } from './NewExpensePage';
 import { api } from '../services/api';
 import { cardShadow, ui } from '../theme/ui';
 import type { Expense, ExpenseCategory, ExpensePayment, FamilyActivity, FamilyBalance, FamilyChild, ParentRole } from '../types/models';
@@ -221,6 +222,10 @@ export function ExpensesScreen(): React.JSX.Element {
       : `Devi rimborsare ${euro(balance.settlementAmount)}`;
 
   const cardWidth = width >= 1050 ? '48.8%' : '100%';
+
+  if (formVisible) {
+    return <NewExpensePage childrenList={children} onClose={() => setFormVisible(false)} onDone={() => { setFormVisible(false); void load(); }} />;
+  }
 
   return (
     <View style={styles.screen}>
