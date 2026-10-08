@@ -14,7 +14,7 @@
     "start": "node dist/scripts/migrate.js && node dist/server.js",
     "seed": "tsx src/scripts/seed.ts",
     "migrate:prod": "node dist/scripts/migrate.js",
-    "check:public": "node --check public/professional-portal.js && node --check public/account-deletion.js",
+    "check:public": "node --check public/professional-portal.js && node --check public/professional-password-reset.js && node --check public/account-deletion.js",
     "test": "npm run check:public && npm run build && LEGAL_GUARD_TEST_BYPASS=true node --test tests/*.test.mjs"
   },
   "dependencies": {
@@ -38,7 +38,6 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
     "@types/jsonwebtoken": "^9.0.10",
-    "@types/multer": "^2.0.0",
     "@types/node": "^22.18.0",
     "@types/nodemailer": "^6.4.17",
     "@types/pg": "^8.15.5",
