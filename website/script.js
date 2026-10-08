@@ -1,3 +1,7 @@
+document.querySelectorAll('img[src*="raw.githubusercontent.com"][src*="duecase-logo-hd.png"]').forEach(img=>{
+  img.src='/duecase-logo.svg';
+});
+
 const menuButton=document.querySelector('.menu-toggle');
 const nav=document.querySelector('.nav');
 if(menuButton&&nav){
