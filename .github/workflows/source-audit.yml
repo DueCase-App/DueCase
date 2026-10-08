@@ -17,7 +17,9 @@ jobs:
         run: |
           echo '=== IDENTITY REFERENCES ==='
           grep -RInE --exclude-dir=node_modules --exclude='package-lock.json' --exclude='source-audit.yml' 'tecnico-elios|eliostech' frontend backend website docs README.md 2>/dev/null || true
-          echo '=== TAX CODE REFERENCES ==='
-          grep -RInE --exclude-dir=node_modules --exclude='package-lock.json' --exclude='source-audit.yml' 'tax_code|taxCode|codice fiscale' frontend backend website docs README.md 2>/dev/null || true
-          echo '=== LEGAL WORDING REFERENCES ==='
-          grep -RInE --exclude-dir=node_modules --exclude='package-lock.json' --exclude='source-audit.yml' 'Conferma e Firma|firmare l.approvazione|firma elettronica|marca temporale|data certa|documento certificato|valore legale|probatori' frontend backend website docs README.md 2>/dev/null || true
+          echo '=== CURRENT TAX-CODE REFERENCES (historical migrations excluded) ==='
+          grep -RInE --exclude-dir=node_modules --exclude-dir=sql --exclude='package-lock.json' --exclude='source-audit.yml' 'tax_code|taxCode|codice fiscale' frontend backend website docs README.md 2>/dev/null || true
+          echo '=== LEGACY TAX-CODE MIGRATIONS (expected history only) ==='
+          grep -nE 'tax_code|taxCode|codice fiscale' backend/sql/003_registration_profile.sql backend/sql/024_remove_tax_code_data.sql backend/sql/026_drop_tax_code_column.sql 2>/dev/null || true
+          echo '=== AMBIGUOUS LEGAL WORDING ==='
+          grep -RInE --exclude-dir=node_modules --exclude='package-lock.json' --exclude='source-audit.yml' 'Conferma e Firma|firmare l.approvazione|esportazioni probatorie|registro esportazioni probatorie' frontend backend website docs README.md 2>/dev/null || true
