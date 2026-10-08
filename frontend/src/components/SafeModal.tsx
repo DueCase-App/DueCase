@@ -3,12 +3,16 @@ import { Keyboard, KeyboardAvoidingView, Modal as NativeModal, Platform, View, t
 import { KeyboardViewport } from './KeyboardViewport';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+type SafeModalProps = Omit<ModalProps, 'onRequestClose'> & {
+  onRequestClose?: () => void;
+};
+
 /**
  * Safe viewport for every dialog.
  * On Android the first Back press dismisses the keyboard instead of closing
  * the whole form, so users can continue filling the remaining fields.
  */
-export function SafeModal({ children, onRequestClose, ...props }: ModalProps): React.JSX.Element {
+export function SafeModal({ children, onRequestClose, ...props }: SafeModalProps): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
