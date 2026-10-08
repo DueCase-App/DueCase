@@ -27,6 +27,8 @@ import messagesRouter from './routes/messages.js';
 import notificationsRouter from './routes/notifications.js';
 import permanenceRouter from './routes/permanence.js';
 import professionalAuthRouter from './routes/professionalAuth.js';
+import professionalPasswordResetRouter from './routes/professionalPasswordReset.js';
+import professionalPrivacyOverridesRouter from './routes/professionalPrivacyOverrides.js';
 import professionalPortalRouter from './routes/professionalPortal.js';
 import professionalsRouter from './routes/professionals.js';
 import safetyRouter from './routes/safety.js';
@@ -38,10 +40,20 @@ export const app = express();
 const publicFile=(name:string)=>fileURLToPath(new URL(`../public/${name}`,import.meta.url));
 
 app.disable('x-powered-by');
+app.set('trust proxy', 1);
 app.use(helmet());
-app.use(cors({
-  origin: config.CORS_ORIGIN === '*' ? true : config.CORS_ORIGIN.split(',').map((value) => value.trim()),
-}));
+
+const productionDefaultOrigins = [
+  config.SITE_URL,
+  'https://duecaseununicasquadra.com',
+  'https://www.duecaseununicasquadra.com',
+  'https://duecase-web.onrender.com',
+  'https://duecase-api.onrender.com',
+];
+const corsOrigin = config.CORS_ORIGIN === '*'
+  ? (config.NODE_ENV === 'production' ? [...new Set(productionDefaultOrigins)] : true)
+  : config.CORS_ORIGIN.split(',').map((value) => value.trim()).filter(Boolean);
+app.use(cors({ origin: corsOrigin }));
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/api/health', asyncHandler(async (_req, res) => {
@@ -62,7 +74,9 @@ app.use('/api/auth', accountRouter);
 app.use('/api/auth', emailChangeRouter);
 
 // Accesso professionisti completamente separato dagli account Padre/Madre.
+app.use('/api/professional-auth', professionalPasswordResetRouter);
 app.use('/api/professional-auth', professionalAuthRouter);
+app.use('/api/professional', professionalPrivacyOverridesRouter);
 app.use('/api/professional', professionalPortalRouter);
 
 // Famiglia, notifiche e storico sono consultabili anche senza Premium.
