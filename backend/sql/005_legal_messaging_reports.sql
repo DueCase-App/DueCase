@@ -1,4 +1,4 @@
--- DueCase: messaggistica immutabile e registro esportazioni probatorie.
+-- DueCase: messaggistica immutabile e registro tecnico delle esportazioni.
 -- Idempotente: viene eseguita automaticamente all'avvio del backend.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;

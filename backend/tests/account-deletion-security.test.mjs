@@ -74,7 +74,7 @@ await test('account deletion revokes only access granted by the deleted parent',
  assert.ok(audit.rows.some(row=>row.action==='invitation_revoked'&&row.details?.reason==='parent_account_deleted'));
  assert.ok(audit.rows.some(row=>row.action==='access_revoked'&&row.details?.reason==='parent_account_deleted'));
 
- const deleted=await db.query(`SELECT first_name,last_name,birth_date,tax_code,phone,family_id,deleted_at,display_name FROM users WHERE id=$1`,[father.user.id]);
+ const deleted=await db.query(`SELECT first_name,last_name,birth_date,phone,family_id,deleted_at,display_name FROM users WHERE id=$1`,[father.user.id]);
  assert.equal(deleted.rows[0].first_name,null);
  assert.equal(deleted.rows[0].last_name,null);
  assert.equal(deleted.rows[0].family_id,null);

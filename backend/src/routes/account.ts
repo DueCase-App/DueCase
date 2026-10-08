@@ -56,7 +56,7 @@ router.get('/family-members',asyncHandler(async(req,res)=>{
 router.get('/export-profile',asyncHandler(async(req,res)=>{
  const a=getAuth(req);
  const {rows}=await pool.query('SELECT notification_preferences FROM users WHERE id=$1',[a.userId]);
- res.json({exportedAt:new Date().toISOString(),profile:{id:a.userId,email:a.email,firstName:a.firstName,lastName:a.lastName,displayName:a.displayName,birthDate:a.birthDate,taxCode:a.taxCode,phone:a.phone,role:a.role,emailVerifiedAt:a.emailVerifiedAt},notificationPreferences:{...defaults,...rows[0].notification_preferences}});
+ res.json({exportedAt:new Date().toISOString(),profile:{id:a.userId,email:a.email,firstName:a.firstName,lastName:a.lastName,displayName:a.displayName,birthDate:a.birthDate,phone:a.phone,role:a.role,emailVerifiedAt:a.emailVerifiedAt},notificationPreferences:{...defaults,...rows[0].notification_preferences}});
 }));
 
 router.delete('/delete-account', asyncHandler(async(req,res)=>{
@@ -105,7 +105,7 @@ router.delete('/delete-account', asyncHandler(async(req,res)=>{
   // their retention is governed by the shared-history policy and must remain explicit.
   await client.query(`UPDATE parents SET display_name='Account eliminato' WHERE id=$1`,[auth.userId]);
   await client.query(`UPDATE users SET email=$2,password_hash=$3,display_name='Account eliminato',
-    first_name=NULL,last_name=NULL,birth_date=NULL,tax_code=NULL,phone=NULL,
+    first_name=NULL,last_name=NULL,birth_date=NULL,phone=NULL,
     expo_push_token=NULL,email_verified_at=NULL,token_version=token_version+1,
     family_id=NULL,deleted_at=clock_timestamp(),updated_at=NOW() WHERE id=$1`,
     [auth.userId,`deleted-${auth.userId}@invalid.example`,randomBytes(48).toString('hex')]);

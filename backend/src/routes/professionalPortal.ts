@@ -246,7 +246,6 @@ router.get('/clients/:grantId/dossier', rateLimit(6, 60 * 1000, ['GET']), asyncH
     firstName: professional.firstName,
     lastName: professional.lastName,
     birthDate: null,
-    taxCode: null,
     phone: null,
     role: 'father',
     familyId: grant.familyId,

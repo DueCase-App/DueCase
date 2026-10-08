@@ -17,7 +17,6 @@ export type AuthContext = {
   firstName: string | null;
   lastName: string | null;
   birthDate: string | null;
-  taxCode: string | null;
   phone: string | null;
   role: ParentRole;
   familyId: string | null;
@@ -83,7 +82,6 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
               u.first_name AS "firstName",
               u.last_name AS "lastName",
               u.birth_date::text AS "birthDate",
-              u.tax_code AS "taxCode",
               u.phone,
               u.role,
               u.family_id AS "familyId",

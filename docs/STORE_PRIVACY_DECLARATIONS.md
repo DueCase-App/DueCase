@@ -1,6 +1,6 @@
 # DueCase — dichiarazioni privacy App Store / Google Play
 
-Stato: bozza operativa aggiornata al 7 ottobre 2026. Va ricontrollata sul binario finale e sugli SDK effettivamente inclusi prima dell'invio agli store.
+Stato: bozza operativa aggiornata all’8 ottobre 2026. Va ricontrollata sul binario finale e sugli SDK effettivamente inclusi prima dell'invio agli store.
 
 ## URL pubblici da usare negli store
 
@@ -30,7 +30,6 @@ Riferimenti ufficiali da ricontrollare al momento della submission:
 - Email
 - Telefono facoltativo
 - Data di nascita
-- Codice fiscale
 - Ruolo familiare (Papà/Mamma)
 - Identificativo interno account/famiglia
 
@@ -92,7 +91,7 @@ Probabili categorie da dichiarare come raccolte e collegate all'identità:
 - Identifiers: User ID / account identifiers
 - User Content: Emails or Text Messages, Photos or Videos se usati come allegati, Other User Content
 - Financial Info: Other Financial Info per spese/rimborsi (da verificare nella tassonomia corrente)
-- Sensitive Info: valutare per codice fiscale, dati familiari e possibili documenti/annotazioni sanitarie
+- Sensitive Info: valutare in base ai contenuti familiari e agli eventuali documenti/annotazioni con dati relativi alla salute o altre categorie sensibili effettivamente consentite dal build finale
 - Purchases: quando sarà attivo l'abbonamento
 
 Non dichiarare “Tracking” salvo introduzione futura di SDK o pratiche che rientrino nella definizione Apple.

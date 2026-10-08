@@ -367,7 +367,7 @@
   function renderDossier() {
     clear(contentArea);
     const p = panel('Dossier della pratica');
-    p.appendChild(elem('p', 'muted', 'L’esportazione contiene solo le sezioni che il genitore ti ha autorizzato a consultare. Il download viene registrato nello storico degli accessi professionali.'));
+    p.appendChild(elem('p', 'muted', 'L’esportazione contiene solo le sezioni che il genitore ti ha autorizzato a consultare. Il download viene registrato nello storico degli accessi professionali. Il dossier è un riepilogo dei dati presenti nel servizio: non è una certificazione e non attribuisce automaticamente valore legale o probatorio predeterminato.')); 
     const actions = elem('div', 'action-row');
     ['pdf', 'zip', 'csv'].forEach((format) => {
       const button = elem('button', format === 'pdf' ? 'primary' : 'secondary', `Scarica ${format.toUpperCase()}`);

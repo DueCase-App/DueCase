@@ -153,7 +153,7 @@ BEFORE UPDATE OR DELETE ON message_read_receipts
 FOR EACH ROW
 EXECUTE FUNCTION duecase_message_read_receipts_append_only_guard();
 
--- 3) Le esportazioni probatorie restano append-only ma non devono impedire
+-- 3) Le registrazioni tecniche delle esportazioni restano append-only ma non devono impedire
 -- la cancellazione fisica dell'account o della famiglia. Gli UUID restano opachi.
 DO $$
 DECLARE

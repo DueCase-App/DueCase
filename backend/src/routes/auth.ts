@@ -17,11 +17,6 @@ const INVITE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const roleSchema = z.enum(['father', 'mother']);
 const emailSchema = z.string().trim().email().max(254).transform((value) => value.toLowerCase());
 const isoDateSchema = dateSchema.refine(v => v <= new Date().toISOString().slice(0,10), 'La nascita non può essere futura.');
-const taxCodeSchema = z.string().trim().transform((value) => value.replace(/\s+/g, '').toUpperCase()).refine(
-  (value) => /^[A-Z0-9]{16}$/.test(value),
-  'Invalid Italian tax code',
-);
-
 const registrationChildSchema = z.object({
   displayName: z.string().trim().min(2).max(120),
   birthDate: isoDateSchema.nullable().optional(),
@@ -32,7 +27,6 @@ const registerSchema = z.object({
   firstName: z.string().trim().min(2).max(80).optional(),
   lastName: z.string().trim().min(2).max(80).optional(),
   birthDate: isoDateSchema.optional(),
-  taxCode: taxCodeSchema.optional(),
   phone: z.string().trim().min(6).max(32).optional(),
   email: emailSchema,
   password: passwordSchema,
@@ -76,7 +70,6 @@ type UserRow = {
   firstName: string | null;
   lastName: string | null;
   birthDate: string | null;
-  taxCode: string | null;
   phone: string | null;
   role: ParentRole;
   familyId: string | null;
@@ -104,7 +97,6 @@ function publicUser(row: UserRow) {
     firstName: row.firstName,
     lastName: row.lastName,
     birthDate: row.birthDate,
-    taxCode: row.taxCode,
     phone: row.phone,
     role: row.role,
     familyId: row.familyId,
@@ -141,7 +133,6 @@ function normalizeRegisterPayload(input: unknown): unknown {
     firstName: raw.firstName ?? raw.name,
     lastName: raw.lastName ?? raw.surname,
     birthDate: raw.birthDate ?? raw.birth_date,
-    taxCode: raw.taxCode ?? raw.tax_code,
     email: raw.email,
     phone: raw.phone,
     password: raw.password,
@@ -240,25 +231,23 @@ router.post('/register', asyncHandler(async (req, res) => {
          first_name,
          last_name,
          birth_date,
-         tax_code,
          phone,
          role,
          family_id,
          invite_other_parent
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING id,
                  email,
                  display_name AS "displayName",
                  first_name AS "firstName",
                  last_name AS "lastName",
                  birth_date::text AS "birthDate",
-                 tax_code AS "taxCode",
                  phone,
                  role,
                  family_id AS "familyId",
-                 $13::text AS "familyName",
-                 $14::text AS "inviteCode"`,
+                 $12::text AS "familyName",
+                 $13::text AS "inviteCode"`,
       [
         id,
         body.email,
@@ -267,7 +256,6 @@ router.post('/register', asyncHandler(async (req, res) => {
         body.firstName ?? null,
         body.lastName ?? null,
         body.birthDate ?? null,
-        body.taxCode ?? null,
         body.phone ?? null,
         body.role,
         familyId,
@@ -340,9 +328,6 @@ router.post('/register', asyncHandler(async (req, res) => {
 
     if (meta.code === '23505') {
       const constraint = meta.constraint?.toLowerCase() ?? '';
-      if (constraint.includes('tax_code')) {
-        throw new ApiError(409, 'Questo codice fiscale è già associato a un account', 'TAX_CODE_ALREADY_EXISTS', safeDetails);
-      }
       if (constraint.includes('email')) {
         throw new ApiError(409, 'Esiste già un account con questa email', 'EMAIL_ALREADY_EXISTS', safeDetails);
       }
@@ -387,7 +372,6 @@ router.post('/login', asyncHandler(async (req, res) => {
             u.first_name AS "firstName",
             u.last_name AS "lastName",
             u.birth_date::text AS "birthDate",
-            u.tax_code AS "taxCode",
             u.phone,
             u.role,
             u.family_id AS "familyId", u.token_version AS "tokenVersion", u.email_verified_at AS "emailVerifiedAt",
@@ -421,7 +405,6 @@ router.get('/me', requireAuth, asyncHandler(async (req, res) => {
     firstName: auth.firstName,
     lastName: auth.lastName,
     birthDate: auth.birthDate,
-    taxCode: auth.taxCode,
     phone: auth.phone,
     role: auth.role,
     familyId: auth.familyId,

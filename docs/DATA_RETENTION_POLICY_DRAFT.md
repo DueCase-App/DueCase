@@ -9,7 +9,7 @@ DueCase deve conservare i dati solo per il tempo necessario alle finalità del s
 ## Classi di dati
 
 ### Account genitore
-Dati: nome, cognome, email, telefono facoltativo, data di nascita, codice fiscale, ruolo, credenziali, preferenze, sessioni.
+Dati: nome, cognome, email, telefono facoltativo, data di nascita, ruolo, credenziali, preferenze, sessioni.
 
 Regola proposta:
 - durante account attivo: conservazione necessaria all'erogazione del servizio;

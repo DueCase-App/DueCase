@@ -126,7 +126,6 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
 
     const input: RegisterInput = {
       displayName:`${first} ${last}`, firstName:first,lastName:last,birthDate:toIsoDate(birthDate),
-      taxCode: undefined as unknown as string,
       email:normalizedEmail,phone:normalizedPhone||undefined,password,confirmPassword,role,
       familyName:inviteFromLink?undefined:familyName.trim(),
       children:(inviteFromLink?[]:children).map(c=>({displayName:c.displayName,birthDate:c.birthDate?toIsoDate(c.birthDate):null})),

@@ -2,7 +2,7 @@ export type ParentRole = 'father' | 'mother';
 export type FamilyInfo = { id: string; name: string | null; inviteCode: string | null; };
 
 export type RegistrationChildInput = { displayName: string; birthDate?: string | null; };
-export type RegisterInput = { displayName: string; firstName: string; lastName: string; birthDate: string; /** @deprecated tax code is no longer collected */ taxCode?: string; email: string; phone?: string; password: string; confirmPassword: string; role: ParentRole; familyName?: string; children: RegistrationChildInput[]; inviteOtherParent: boolean; };
+export type RegisterInput = { displayName: string; firstName: string; lastName: string; birthDate: string; email: string; phone?: string; password: string; confirmPassword: string; role: ParentRole; familyName?: string; children: RegistrationChildInput[]; inviteOtherParent: boolean; };
 export type AuthUser = { emailVerifiedAt?: string | null; verificationRequired?: boolean; id: string; email: string; displayName: string; firstName: string | null; lastName: string | null; birthDate: string | null; phone: string | null; role: ParentRole; familyId: string | null; family: FamilyInfo | null; };
 export type AuthResponse = { token: string; user: AuthUser; };
 export type FamilyActionResponse = { family: FamilyInfo; memberCount: number; };
