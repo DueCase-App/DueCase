@@ -1,0 +1,53 @@
+name: One-time settings back navigation
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  update:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update settings navigation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          settings = Path('frontend/src/screens/SettingsScreen.tsx')
+          text = settings.read_text()
+          old_sig = "export function SettingsScreen({onNavigate}:{onNavigate:(screen:string)=>void}){"
+          new_sig = "export function SettingsScreen({onNavigate,onBackToHome}:{onNavigate:(screen:string)=>void;onBackToHome:()=>void}){"
+          if old_sig not in text:
+              raise SystemExit('Settings signature not found')
+          text = text.replace(old_sig, new_sig, 1)
+
+          old_effect = "useEffect(()=>{if(!section)return;const sub=BackHandler.addEventListener('hardwareBackPress',()=>{open(null);return true;});return()=>sub.remove();},[section]);"
+          new_effect = "useEffect(()=>{const sub=BackHandler.addEventListener('hardwareBackPress',()=>{if(section)open(null);else onBackToHome();return true;});return()=>sub.remove();},[section,onBackToHome]);"
+          if old_effect not in text:
+              raise SystemExit('Settings back effect not found')
+          text = text.replace(old_effect, new_effect, 1)
+
+          old_header = "<View style={s.header}>{section&&<Pressable accessibilityLabel=\"Torna alle impostazioni\" onPress={()=>open(section==='professionals'?'family':null)} style={s.back}><Ionicons name=\"arrow-back\" size={26} color={ui.colors.primaryDark}/></Pressable>}<Text style={s.title}>{section?labels[section]:'Impostazioni'}</Text></View>"
+          new_header = "<View style={s.header}><Pressable accessibilityLabel={section?'Torna alle impostazioni':'Torna alla Home'} onPress={()=>section?open(null):onBackToHome()} style={s.back}><Ionicons name=\"arrow-back\" size={26} color={ui.colors.primaryDark}/></Pressable><Text style={s.title}>{section?labels[section]:'Impostazioni'}</Text></View>"
+          if old_header not in text:
+              raise SystemExit('Settings header not found')
+          text = text.replace(old_header, new_header, 1)
+          settings.write_text(text)
+
+          app = Path('frontend/App.tsx')
+          app_text = app.read_text()
+          old_app = "{route === 'settings' ? <SettingsScreen onNavigate={(target)=>navigate(target as MainRoute)} /> : null}"
+          new_app = "{route === 'settings' ? <SettingsScreen onNavigate={(target)=>navigate(target as MainRoute)} onBackToHome={()=>{setRouteHistory(['home']);setMoreOpen(false);}} /> : null}"
+          if old_app not in app_text:
+              raise SystemExit('SettingsScreen call not found')
+          app.write_text(app_text.replace(old_app, new_app, 1))
+          PY
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/App.tsx frontend/src/screens/SettingsScreen.tsx
+          git diff --cached --quiet || git commit -m "Add settings back navigation"
+          git push
