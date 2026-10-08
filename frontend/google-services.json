@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "943878299830",
+    "project_id": "duecaseunasquadra",
+    "storage_bucket": "duecaseunasquadra.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:943878299830:android:65faa536393330e676c617",
+        "android_client_info": {
+          "package_name": "com.duecaseununicasquadra.duecase"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBVSP5sbj7BB0oPX4oRIVKCXIArj5e2uAc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
