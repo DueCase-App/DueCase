@@ -1,0 +1,41 @@
+name: Publish DueCase 0.4.4 APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-apk-0.4.4.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download verified APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: DueCase-0.4.4-Android
+          path: apk
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 37773624097
+
+      - name: Publish prerelease APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          test -f apk/DueCase-0.4.4.apk
+          if gh release view v0.4.4-preview >/dev/null 2>&1; then
+            gh release upload v0.4.4-preview apk/DueCase-0.4.4.apk --clobber
+          else
+            gh release create v0.4.4-preview apk/DueCase-0.4.4.apk \
+              --target main \
+              --title 'DueCase 0.4.4 Preview' \
+              --notes 'APK Android di test DueCase 0.4.4, compilato e verificato dal workflow Android Preview APK.' \
+              --prerelease
+          fi
