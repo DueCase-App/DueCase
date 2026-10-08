@@ -46,3 +46,4 @@ replace(
 );
 
 console.log('functional audit fixes applied');
+// Triggered after the workflow was added; remove this helper after the verified commit.
