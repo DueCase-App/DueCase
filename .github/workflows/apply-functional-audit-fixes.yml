@@ -1,0 +1,41 @@
+name: Apply functional audit fixes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/functional-audit-fixes.cjs'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply fixes
+        run: node tools/functional-audit-fixes.cjs
+      - name: Verify frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run typecheck
+          npx expo-doctor
+          npx expo export --platform web --output-dir /tmp/duecase-functional-fix
+      - name: Commit fixes
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "Info@duecaseununicasquadra.com"
+          git config user.email "Info@duecaseununicasquadra.com"
+          git add frontend/package.json frontend/package-lock.json frontend/src/screens/HomeScreen.tsx frontend/src/screens/SettingsScreen.tsx
+          git commit -m "Fix functional navigation and app metadata"
+          git push
