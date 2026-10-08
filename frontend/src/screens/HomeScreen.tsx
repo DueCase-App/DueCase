@@ -64,6 +64,7 @@ export function HomeScreen({ onNavigate }: { onNavigate: (target: HomeDestinatio
   const pendingAgreements = useMemo(() => agreements.filter((item) => item.canRespond), [agreements]);
   const outstandingPayments = useMemo(() => expenses.filter((item) => item.status === 'to_pay' || item.status === 'partially_paid'), [expenses]);
   const pendingTotal = pendingExpenses.length + pendingSwaps.length + pendingAgreements.length;
+  const pendingDestination: HomeDestination = pendingExpenses.length ? 'expenses' : pendingSwaps.length ? 'calendar' : 'agreements';
   const firstEvent = events[0] ?? null;
   const quickWidth = width >= 1060 ? '31.8%' : width >= 620 ? '48.5%' : '100%';
 
@@ -97,7 +98,7 @@ export function HomeScreen({ onNavigate }: { onNavigate: (target: HomeDestinatio
         {firstEvent ? <LinearGradient colors={ui.gradients.warm} style={[styles.eventCard, cardShadow]}><Pressable style={styles.eventPress} onPress={() => onNavigate('calendar')}><View style={styles.eventIcon}><Ionicons name="calendar-outline" size={27} color={ui.colors.orangeDark} /></View><View style={styles.flex}><Text style={styles.eyebrow}>PROSSIMO EVENTO</Text><Text style={styles.eventTitle}>{firstEvent.title}</Text><Text style={styles.eventMeta}>{formatEvent(firstEvent.startsAt)}</Text></View><View style={styles.eventAction}><Text style={styles.eventActionText}>Calendario</Text><Ionicons name="chevron-forward" size={17} color="#FFF" /></View></Pressable></LinearGradient> : null}
 
         <View style={styles.summaryGrid}>
-          <Summary icon="hourglass-outline" value={pendingTotal} label="Richieste in sospeso" onPress={() => onNavigate('agreements')} />
+          <Summary icon="hourglass-outline" value={pendingTotal} label="Richieste in sospeso" onPress={() => onNavigate(pendingDestination)} />
           <Summary icon="wallet-outline" value={outstandingPayments.length} label="Pagamenti aperti" onPress={() => onNavigate('expenses')} />
           <Summary icon="notifications-outline" value={notifications.length} label="Notifiche" onPress={() => onNavigate('notifications')} />
         </View>
