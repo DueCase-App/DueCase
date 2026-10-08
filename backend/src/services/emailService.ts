@@ -2,7 +2,7 @@ import nodemailer, { type Transporter } from 'nodemailer';
 import { config } from '../config.js';
 
 const escapeHtml=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
-const LOGO_URL = 'https://raw.githubusercontent.com/DueCase-App/DueCase/main/frontend/assets/duecase-logo-hd.png';
+const LOGO_URL = `${config.SITE_URL.replace(/\/$/, '')}/duecase-logo.svg`;
 
 type OutboundEmail = {
   to: string;
