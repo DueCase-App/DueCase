@@ -46,12 +46,12 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.duecaseunicasquadra.duecase",
+      "bundleIdentifier": "com.duecaseununicasquadra.duecase",
       "backgroundColor": "#FFF9F0",
       "icon": "./assets/duecase-logo-hd.png",
       "infoPlist": {
         "NSCameraUsageDescription": "DueCase usa la fotocamera esclusivamente per fotografare ricevute e documenti che scegli di allegare.",
-        "NSPhotoLibraryUsageDescription": "DueCase accede alla libreria foto esclusivamente per permetterti di selezionare ricevute e documenti da allegare."
+        "NSPhotoLibraryUsageDescription": "DueCase accede alla libreria foto esclusivamente per permetterti di selezionare ricevute e documenti che scegli di allegare."
       },
       "config": {
         "usesNonExemptEncryption": false
@@ -59,7 +59,7 @@
       "buildNumber": "43"
     },
     "android": {
-      "package": "com.duecaseunicasquadra.duecase",
+      "package": "com.duecaseununicasquadra.duecase",
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/duecase-logo-hd.png",
