@@ -20,7 +20,7 @@ const professionalScopeLabels:Record<ProfessionalScope,string>={calendar:'Calend
 const defaultProfessionalScopes:ProfessionalScope[]=['calendar','expenses','agreements','documents','dossier'];
 const ACCOUNT_DELETION_URL='https://www.duecaseununicasquadra.com/cancellazione-account.html';
 const DEFAULT_SUPPORT_EMAIL='assistenza@duecaseununicasquadra.com';
-export function SettingsScreen({onNavigate}:{onNavigate:(screen:string)=>void}){
+export function SettingsScreen({onNavigate,onBackToHome}:{onNavigate:(screen:string)=>void;onBackToHome:()=>void}){
  const {user,logout,refreshUser,replaceToken}=useAuth();
  const [section,setSection]=useState<Section|null>(null);
  const [firstName,setFirstName]=useState(user?.firstName??user?.displayName?.split(' ')[0]??'');const [lastName,setLastName]=useState(user?.lastName??user?.displayName?.split(' ').slice(1).join(' ')??'');const [phone,setPhone]=useState(user?.phone??'');
@@ -42,7 +42,7 @@ export function SettingsScreen({onNavigate}:{onNavigate:(screen:string)=>void}){
  const [members,setMembers]=useState<Array<{id:string;displayName:string;role:string}>>([]);
  const version=Constants.expoConfig?.version??'0.4.3';
  function open(s:Section|null){setError('');setSection(s);setCurrent('');setPassword('');setConfirm('');}
- useEffect(()=>{if(!section)return;const sub=BackHandler.addEventListener('hardwareBackPress',()=>{open(null);return true;});return()=>sub.remove();},[section]);
+ useEffect(()=>{const sub=BackHandler.addEventListener('hardwareBackPress',()=>{if(section)open(null);else onBackToHome();return true;});return()=>sub.remove();},[section,onBackToHome]);
  useEffect(()=>{let active=true;if(section==='notifications'){setPrefs(null);api.auth.preferences().then(v=>{if(active)setPrefs(v);}).catch(e=>{if(active)setError(e.message);});}if(section==='family'){Promise.all([api.auth.familyMembers(),parentInvitations.status()]).then(([familyMembers,invitation])=>{if(!active)return;setMembers(familyMembers);setParentInvite(invitation);setParentInviteEmail(invitation.email??'');}).catch(e=>{if(active)setError(e instanceof Error?e.message:'Impossibile caricare la famiglia.');});}if(section==='professionals'){professionalAccess.list().then(v=>{if(active)setProfessionalState(v);}).catch(e=>{if(active)setError(e instanceof Error?e.message:'Impossibile caricare gli accessi professionali.');});}return()=>{active=false;};},[section]);
  async function run(action:()=>Promise<void>){if(busy)return;setBusy(true);setError('');try{await action();}catch(e){setError(e instanceof Error?e.message:'Operazione non riuscita. Riprova.');}finally{setBusy(false);}}
  async function exportProfile(){
@@ -57,7 +57,7 @@ export function SettingsScreen({onNavigate}:{onNavigate:(screen:string)=>void}){
  async function reloadProfessionals(){setProfessionalState(await professionalAccess.list());}
  const button=(title:string,action:()=>Promise<void>,danger=false)=><Pressable accessibilityRole="button" disabled={busy} onPress={()=>void run(action)} style={[s.button,danger&&{backgroundColor:ui.colors.danger},busy&&{opacity:.5}]}><Text style={s.buttonText}>{title}</Text></Pressable>;
  return <View style={s.screen}>
-  <View style={s.header}>{section&&<Pressable accessibilityLabel="Torna alle impostazioni" onPress={()=>open(section==='professionals'?'family':null)} style={s.back}><Ionicons name="arrow-back" size={26} color={ui.colors.primaryDark}/></Pressable>}<Text style={s.title}>{section?labels[section]:'Impostazioni'}</Text></View>
+  <View style={s.header}><Pressable accessibilityLabel={section?'Torna alle impostazioni':'Torna alla Home'} onPress={()=>section?open(null):onBackToHome()} style={s.back}><Ionicons name="arrow-back" size={26} color={ui.colors.primaryDark}/></Pressable><Text style={s.title}>{section?labels[section]:'Impostazioni'}</Text></View>
   <KeyboardViewport><ScrollView key={section??'root'} style={{flex:1}} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator>
    {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{busy&&<ActivityIndicator color={ui.colors.primary}/>}
    {!section&&<><Text style={s.name}>{user?.displayName}</Text><Text style={s.muted}>{user?.email}</Text>{(Object.keys(labels) as Section[]).filter(key=>key!=='professionals').map(key=><Row key={key} title={labels[key]} onPress={()=>open(key)}/>)}<Row title="Esci dall’account" onPress={()=>void run(logout)}/><Text style={s.muted}>DueCase · versione {version}</Text></>}
