@@ -1,0 +1,35 @@
+name: Add first-party PNG email logo
+
+on:
+  push:
+    paths:
+      - '.github/workflows/one-time-email-logo-png.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy PNG and update email template
+        run: |
+          cp frontend/assets/duecase-logo-hd.png website/duecase-logo.png
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('backend/src/services/emailService.ts')
+          s = p.read_text().replace('/duecase-logo.svg`;', '/duecase-logo.png`;')
+          p.write_text(s)
+          PY
+      - name: Commit PNG asset
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add website/duecase-logo.png backend/src/services/emailService.ts
+          if git diff --cached --quiet; then
+            echo "No changes needed"
+          else
+            git commit -m "Use first-party PNG logo in emails"
+            git push
+          fi
