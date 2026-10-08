@@ -35,6 +35,6 @@ jobs:
           fi
           git config user.name "Info@duecaseununicasquadra.com"
           git config user.email "Info@duecaseununicasquadra.com"
-          git add frontend backend website
-          git commit -m "Align legal notices across DueCase"
+          git add frontend backend website docs
+          git commit -m "Remove tax-code legacy and align legal drafts"
           git push
