@@ -1,5 +1,6 @@
 name: Android Preview APK
 
+# Every frontend change is compiled as a release APK so native regressions are caught before device testing.
 on:
   push:
     branches: [main]
