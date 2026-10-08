@@ -6,8 +6,17 @@ import { ApiError } from '../http.js';
 export const PROFESSIONAL_SCOPES = ['calendar','expenses','agreements','documents','dossier','messages'] as const;
 export type ProfessionalScope = typeof PROFESSIONAL_SCOPES[number];
 export const professionalScopeSchema = z.enum(PROFESSIONAL_SCOPES);
+const PROFESSIONAL_DATA_SCOPES: ProfessionalScope[] = ['calendar','expenses','agreements','documents','messages'];
 export const professionalScopesSchema = z.array(professionalScopeSchema).min(1).max(PROFESSIONAL_SCOPES.length)
-  .transform((scopes) => [...new Set(scopes)]);
+  .transform((scopes) => [...new Set(scopes)])
+  .superRefine((scopes, ctx) => {
+    if (scopes.includes('dossier') && !scopes.some((scope) => PROFESSIONAL_DATA_SCOPES.includes(scope))) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Per autorizzare il Dossier seleziona almeno una sezione dati da includere.',
+      });
+    }
+  });
 
 export function createProfessionalInvitationToken(): string {
   return randomBytes(32).toString('base64url');
