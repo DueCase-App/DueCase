@@ -1,0 +1,46 @@
+name: Localize DueCase brand assets
+
+on:
+  push:
+    paths:
+      - '.github/workflows/one-time-local-brand-assets.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  localize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Replace external logo URLs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          email = Path('backend/src/services/emailService.ts')
+          text = email.read_text()
+          text = text.replace(
+              "const LOGO_URL = 'https://raw.githubusercontent.com/DueCase-App/DueCase/main/frontend/assets/duecase-logo-hd.png';",
+              "const LOGO_URL = `${config.SITE_URL.replace(/\\/$/, '')}/duecase-logo.svg`;",
+          )
+          email.write_text(text)
+
+          page = Path('website/index.html')
+          text = page.read_text().replace(
+              'https://raw.githubusercontent.com/DueCase-App/DueCase/main/frontend/assets/duecase-logo-hd.png',
+              '/duecase-logo.svg',
+          )
+          page.write_text(text)
+          PY
+      - name: Commit localized assets
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/src/services/emailService.ts website/index.html
+          if git diff --cached --quiet; then
+            echo "No changes needed"
+          else
+            git commit -m "Serve brand assets from DueCase domain"
+            git push
+          fi
