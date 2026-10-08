@@ -51,7 +51,7 @@
       "icon": "./assets/duecase-logo-hd.png",
       "infoPlist": {
         "NSCameraUsageDescription": "DueCase usa la fotocamera esclusivamente per fotografare ricevute e documenti che scegli di allegare.",
-        "NSPhotoLibraryUsageDescription": "DueCase accede alla libreria foto esclusivamente per permetterti di selezionare ricevute e documenti che scegli di allegare."
+        "NSPhotoLibraryUsageDescription": "DueCase accede alla libreria foto esclusivamente per permetterti di selezionare ricevute e documenti da allegare."
       },
       "config": {
         "usesNonExemptEncryption": false
@@ -76,7 +76,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "9fb7f36d-c1ce-448b-9659-d7ea6167af1b"
+        "projectId": "f30e926e-cf12-495b-b789-6bd4149"
       }
     }
   }
