@@ -9,12 +9,11 @@ import { appendProfessionalAudit, requireProfessionalGrant, type ProfessionalSco
 import { rateLimit } from '../services/rateLimit.js';
 
 const router = Router();
-router.use(requireProfessionalAuth);
 const uuid = z.string().uuid();
 const CHILD_RELEVANT_SCOPES: ProfessionalScope[] = ['calendar', 'expenses', 'documents'];
 const DATA_SCOPES = ['messages','agreements','expenses','calendar','documents'] as const;
 
-router.get('/clients/:grantId/overview', asyncHandler(async (req, res) => {
+router.get('/clients/:grantId/overview', requireProfessionalAuth, asyncHandler(async (req, res) => {
   const professional = getProfessionalAuth(req);
   const grantId = uuid.parse(req.params.grantId);
   const grant = await requireProfessionalGrant(professional.professionalId, grantId);
@@ -62,7 +61,7 @@ router.get('/clients/:grantId/overview', asyncHandler(async (req, res) => {
   });
 }));
 
-router.get('/clients/:grantId/dossier', rateLimit(6, 60 * 1000, ['GET']), asyncHandler(async (req, res) => {
+router.get('/clients/:grantId/dossier', requireProfessionalAuth, rateLimit(6, 60 * 1000, ['GET']), asyncHandler(async (req, res) => {
   const professional = getProfessionalAuth(req);
   const grantId = uuid.parse(req.params.grantId);
   const grant = await requireProfessionalGrant(professional.professionalId, grantId, 'dossier');
