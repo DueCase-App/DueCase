@@ -29,6 +29,15 @@ router.post('/register', (req, _res, next) => {
     next(error);
     return;
   }
+
+  // Data minimisation: DueCase no longer collects the Italian tax code.
+  // Ignore legacy clients that still send either naming variant so the value
+  // cannot reach the registration service or be persisted.
+  if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
+    delete req.body.taxCode;
+    delete req.body.tax_code;
+  }
+
   next();
 });
 
