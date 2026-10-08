@@ -1,0 +1,127 @@
+name: DueCase EAS Signed Preview
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/eas-signed-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  signed-preview:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      EXPO_PUBLIC_API_URL: https://duecase-api.onrender.com/api
+      NODE_ENV: production
+      CI: '1'
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Verify Expo token
+        shell: bash
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::Missing EXPO_TOKEN repository secret."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Expo Doctor
+        run: npx expo-doctor@latest
+
+      - name: Install EAS CLI
+        run: npm install --global eas-cli
+
+      - name: Verify Expo account
+        run: eas whoami
+
+      - name: Build signed Android APK with EAS credentials
+        shell: bash
+        run: |
+          eas build --platform android --profile preview --non-interactive --wait --json > "$RUNNER_TEMP/eas-build.json"
+          cat "$RUNNER_TEMP/eas-build.json"
+
+          BUILD_URL="$(node - "$RUNNER_TEMP/eas-build.json" <<'NODE'
+          const fs = require('fs');
+          const path = process.argv[2];
+          const parsed = JSON.parse(fs.readFileSync(path, 'utf8'));
+          const build = Array.isArray(parsed) ? parsed[0] : parsed;
+          const url = build?.artifacts?.buildUrl || build?.artifactUrl;
+          if (!url) {
+            console.error('EAS build finished without an APK URL.');
+            process.exit(1);
+          }
+          process.stdout.write(url);
+          NODE
+          )"
+
+          APP_VERSION="$(node -e "console.log(require('./app.json').expo.version)")"
+          APK_DEST="$GITHUB_WORKSPACE/frontend/DueCase-${APP_VERSION}.apk"
+
+          curl --fail --location --retry 5 --retry-delay 2 "$BUILD_URL" --output "$APK_DEST"
+          test -s "$APK_DEST"
+          unzip -t "$APK_DEST" >/dev/null
+
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+          echo "APK_DEST=$APK_DEST" >> "$GITHUB_ENV"
+          echo "EAS_BUILD_URL=$BUILD_URL" >> "$GITHUB_ENV"
+
+      - name: Verify package and signing certificate
+        shell: bash
+        run: |
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+
+          "$AAPT" dump badging "$APK_DEST" | head -1 | tee "$RUNNER_TEMP/package.txt"
+          grep -q "name='com.duecaseununicasquadra.duecase'" "$RUNNER_TEMP/package.txt"
+          "$APKSIGNER" verify --verbose --print-certs "$APK_DEST"
+
+      - name: Upload signed APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DueCase-${{ env.APP_VERSION }}-EAS-Signed-Android
+          path: ${{ env.APK_DEST }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Replace public preview APK with EAS-signed build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          TAG="v${APP_VERSION}-preview"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK_DEST" --clobber
+            gh release edit "$TAG" \
+              --title "DueCase ${APP_VERSION} Preview" \
+              --notes "APK Android di test DueCase ${APP_VERSION}, compilato e firmato tramite EAS con le credenziali Android del progetto DueCase. Questa build sostituisce la precedente build locale per consentire gli aggiornamenti sopra le installazioni EAS esistenti."
+          else
+            gh release create "$TAG" "$APK_DEST" \
+              --target main \
+              --title "DueCase ${APP_VERSION} Preview" \
+              --notes "APK Android di test DueCase ${APP_VERSION}, compilato e firmato tramite EAS con le credenziali Android del progetto DueCase." \
+              --prerelease
+          fi
