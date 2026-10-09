@@ -40,6 +40,17 @@ jobs:
           expenses = expenses.replace(/SET status = 'approved',/g, () => { replacements += 1; return "SET status = 'to_pay',"; });
           if (replacements < 2) throw new Error(`Expected at least two approval status replacements, found ${replacements}`);
           fs.writeFileSync(expensesPath, expenses);
+
+          const paymentsPath = 'backend/src/routes/expensePayments.ts';
+          let payments = fs.readFileSync(paymentsPath, 'utf8');
+          payments = payments
+            .replace("Promise<'to_pay'|'partially_paid'|'closed'>", "Promise<'to_pay'|'partially_paid'|'paid'>")
+            .replace("const nextStatus: 'to_pay'|'partially_paid'|'closed' = confirmed <= 0 ? 'to_pay' : confirmed >= due ? 'closed' : 'partially_paid';", "const nextStatus: 'to_pay'|'partially_paid'|'paid' = confirmed <= 0 ? 'to_pay' : confirmed >= due ? 'paid' : 'partially_paid';")
+            .replace("const nextStatus = confirmedAfter >= due ? 'closed' : 'partially_paid';", "const nextStatus = confirmedAfter >= due ? 'paid' : 'partially_paid';")
+            .replace("let expenseStatus: 'to_pay'|'partially_paid'|'closed' = 'to_pay';", "let expenseStatus: 'to_pay'|'partially_paid'|'paid' = 'to_pay';")
+            .replace("let nextStatus: 'to_pay'|'partially_paid'|'closed' = 'to_pay';", "let nextStatus: 'to_pay'|'partially_paid'|'paid' = 'to_pay';");
+          if (payments.includes("confirmed >= due ? 'closed'")) throw new Error('Paid compatibility patch incomplete');
+          fs.writeFileSync(paymentsPath, payments);
           NODE
 
       - name: Validate backend
@@ -59,6 +70,6 @@ jobs:
           fi
           git config user.name 'DueCase automation'
           git config user.email 'info@duecaseununicasquadra.com'
-          git add backend/src/routes/expenses.ts frontend/src/services/api.ts
+          git add backend/src/routes/expenses.ts backend/src/routes/expensePayments.ts frontend/src/services/api.ts
           git commit -m 'Complete simplified expense settlement flow'
           git push origin main
