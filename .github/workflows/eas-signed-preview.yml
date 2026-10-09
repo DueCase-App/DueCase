@@ -87,6 +87,13 @@ jobs:
           echo "APK_DEST=$APK_DEST" >> "$GITHUB_ENV"
           echo "EAS_BUILD_URL=$BUILD_URL" >> "$GITHUB_ENV"
 
+      - name: Diagnose failed EAS build
+        if: failure()
+        shell: bash
+        run: |
+          echo "Latest Android EAS build details:"
+          eas build:list --platform android --limit 1 --json --non-interactive || true
+
       - name: Verify package and signing certificate
         shell: bash
         run: |
@@ -128,3 +135,4 @@ jobs:
 
 # Trigger signed preview build 2026-10-09
 # Trigger after EXPO_TOKEN refresh 2026-10-09 09:30 Europe/Rome
+# Retry with build diagnostics 2026-10-09
