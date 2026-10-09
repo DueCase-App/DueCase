@@ -140,3 +140,4 @@ jobs:
 # Trigger after EXPO_TOKEN refresh 2026-10-09 09:30 Europe/Rome
 # Retry with build diagnostics 2026-10-09
 # Local prebuild added to surface/fix remote prebuild failure
+# Retry after replacing the corrupt Android notification PNG at runtime
