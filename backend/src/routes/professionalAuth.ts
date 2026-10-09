@@ -25,6 +25,26 @@ const registerSchema = z.object({
   if (value.password !== value.confirmPassword) ctx.addIssue({ code: 'custom', path: ['confirmPassword'], message: 'Le password non coincidono.' });
 });
 const loginSchema = z.object({ email: emailSchema, password: z.string().min(1).max(72) });
+const settingsSchema = z.object({
+  firstName: z.string().trim().min(2).max(80),
+  lastName: z.string().trim().min(2).max(80),
+  organization: z.string().trim().max(160).nullable().optional(),
+  qualification: z.string().trim().max(120).nullable().optional(),
+  phone: z.string().trim().max(40).nullable().optional(),
+  professionalRegister: z.string().trim().max(160).nullable().optional(),
+  registrationNumber: z.string().trim().max(80).nullable().optional(),
+  notifyActivity: z.boolean(),
+  notifyDocuments: z.boolean(),
+  notifyAccessChanges: z.boolean(),
+});
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(72),
+  newPassword: passwordSchema,
+  confirmPassword: z.string(),
+}).superRefine((value, ctx) => {
+  if (value.newPassword !== value.confirmPassword) ctx.addIssue({ code: 'custom', path: ['confirmPassword'], message: 'Le password non coincidono.' });
+});
+
 
 type InvitationRow = {
   id: string;
@@ -214,14 +234,54 @@ router.post('/accept-invitation', requireProfessionalAuth, asyncHandler(async (r
 
 router.get('/me', requireProfessionalAuth, asyncHandler(async (req, res) => {
   const professional = getProfessionalAuth(req);
-  res.json({
-    id: professional.professionalId,
-    email: professional.email,
-    displayName: professional.displayName,
-    firstName: professional.firstName,
-    lastName: professional.lastName,
-    organization: professional.organization,
-  });
+  const { rows } = await pool.query(
+    `SELECT id,email,display_name AS "displayName",first_name AS "firstName",last_name AS "lastName",organization,
+            qualification,phone,professional_register AS "professionalRegister",registration_number AS "registrationNumber",
+            notify_activity AS "notifyActivity",notify_documents AS "notifyDocuments",notify_access_changes AS "notifyAccessChanges"
+       FROM professional_users WHERE id=$1 AND deleted_at IS NULL`,
+    [professional.professionalId],
+  );
+  if (!rows[0]) throw new ApiError(404, 'Account professionista non trovato', 'PROFESSIONAL_NOT_FOUND');
+  res.json(rows[0]);
+}));
+
+router.patch('/me', requireProfessionalAuth, asyncHandler(async (req, res) => {
+  const professional = getProfessionalAuth(req);
+  const body = settingsSchema.parse(req.body);
+  const displayName = `${body.firstName} ${body.lastName}`.trim();
+  const { rows } = await pool.query(
+    `UPDATE professional_users
+        SET first_name=$1,last_name=$2,display_name=$3,organization=$4,qualification=$5,phone=$6,
+            professional_register=$7,registration_number=$8,notify_activity=$9,notify_documents=$10,notify_access_changes=$11,updated_at=NOW()
+      WHERE id=$12 AND deleted_at IS NULL
+      RETURNING id,email,display_name AS "displayName",first_name AS "firstName",last_name AS "lastName",organization,
+                qualification,phone,professional_register AS "professionalRegister",registration_number AS "registrationNumber",
+                notify_activity AS "notifyActivity",notify_documents AS "notifyDocuments",notify_access_changes AS "notifyAccessChanges"`,
+    [body.firstName, body.lastName, displayName, body.organization || null, body.qualification || null, body.phone || null,
+     body.professionalRegister || null, body.registrationNumber || null, body.notifyActivity, body.notifyDocuments, body.notifyAccessChanges, professional.professionalId],
+  );
+  if (!rows[0]) throw new ApiError(404, 'Account professionista non trovato', 'PROFESSIONAL_NOT_FOUND');
+  res.json(rows[0]);
+}));
+
+router.post('/change-password', requireProfessionalAuth, asyncHandler(async (req, res) => {
+  const professional = getProfessionalAuth(req);
+  const body = changePasswordSchema.parse(req.body);
+  const { rows } = await pool.query<{ passwordHash: string; tokenVersion: number }>(
+    `SELECT password_hash AS "passwordHash",token_version AS "tokenVersion" FROM professional_users WHERE id=$1 AND deleted_at IS NULL`,
+    [professional.professionalId],
+  );
+  const account = rows[0];
+  if (!account || !(await bcrypt.compare(body.currentPassword, account.passwordHash))) {
+    throw new ApiError(401, 'La password attuale non è corretta', 'PROFESSIONAL_PASSWORD_INVALID');
+  }
+  const passwordHash = await bcrypt.hash(body.newPassword, BCRYPT_ROUNDS);
+  const nextVersion = account.tokenVersion + 1;
+  await pool.query(
+    `UPDATE professional_users SET password_hash=$1,token_version=$2,updated_at=NOW() WHERE id=$3`,
+    [passwordHash, nextVersion, professional.professionalId],
+  );
+  res.json({ token: signProfessionalAccessToken(professional.professionalId, nextVersion) });
 }));
 
 export default router;

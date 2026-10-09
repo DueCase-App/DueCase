@@ -98,6 +98,8 @@
   const emptyWorkspace = $('emptyWorkspace');
   const clientWorkspace = $('clientWorkspace');
   const statusBox = $('statusBox');
+  const settingsBtn = $('settingsBtn');
+  const settingsWorkspace = $('settingsWorkspace');
 
   let professional = null;
   let clients = [];
@@ -293,6 +295,8 @@ async function loadClients() {
     activeGrant = client;
     activeSection = section;
     [...clientList.querySelectorAll('.client-button')].forEach((button) => button.classList.toggle('active', button.dataset.grantId === client.grantId));
+    show(settingsWorkspace, false);
+    settingsBtn.classList.remove('active');
     show(emptyWorkspace, false);
     show(clientWorkspace, true);
     text($('familyName'), client.familyName);
@@ -495,6 +499,154 @@ async function loadClients() {
     contentArea.appendChild(p);
   }
 
+  async function renderSettings() {
+    show(emptyWorkspace, false);
+    show(clientWorkspace, false);
+    show(settingsWorkspace, true);
+    [...clientList.querySelectorAll('.client-button')].forEach((button) => button.classList.remove('active'));
+    settingsBtn.classList.add('active');
+    settingsWorkspace.innerHTML = `
+      <header class="workspace-header settings-header">
+        <div><p class="eyebrow">ACCOUNT PROFESSIONISTA</p><h1>Impostazioni</h1><p class="muted">Gestisci il tuo profilo professionale, la sicurezza e le preferenze del portale.</p></div>
+      </header>
+      <div class="settings-grid">
+        <section class="content-panel settings-card">
+          <h3>Profilo professionale</h3>
+          <form id="professionalSettingsForm" class="settings-form">
+            <div class="settings-two-col">
+              <label>Nome<input id="settingsFirstName" required minlength="2"></label>
+              <label>Cognome<input id="settingsLastName" required minlength="2"></label>
+            </div>
+            <label>Email<input id="settingsEmail" type="email" readonly></label>
+            <p class="fineprint">Per sicurezza la modifica dell’email richiede una procedura di verifica dedicata. L’indirizzo attuale resta quello usato per accesso e recupero password.</p>
+            <label>Qualifica / ruolo<input id="settingsQualification" placeholder="Es. Avvocato, mediatore, consulente"></label>
+            <label>Studio / organizzazione<input id="settingsOrganization"></label>
+            <div class="settings-two-col">
+              <label>Telefono<input id="settingsPhone" type="tel"></label>
+              <label>Foro / Ordine<input id="settingsRegister"></label>
+            </div>
+            <label>Numero di iscrizione<input id="settingsRegistrationNumber"></label>
+            <h4>Preferenze email</h4>
+            <label class="switch-row"><span><strong>Attività della pratica</strong><small>Aggiornamenti rilevanti sulle pratiche autorizzate.</small></span><input id="notifyActivity" type="checkbox"></label>
+            <label class="switch-row"><span><strong>Nuovi documenti</strong><small>Avvisi quando vengono condivisi nuovi documenti.</small></span><input id="notifyDocuments" type="checkbox"></label>
+            <label class="switch-row"><span><strong>Modifiche agli accessi</strong><small>Revoche e variazioni dei permessi concessi.</small></span><input id="notifyAccessChanges" type="checkbox"></label>
+            <p class="fineprint">Le comunicazioni indispensabili per sicurezza, recupero account e gestione degli inviti non possono essere disattivate.</p>
+            <button class="primary" type="submit">Salva impostazioni</button>
+          </form>
+        </section>
+        <section class="content-panel settings-card">
+          <h3>Sicurezza</h3>
+          <form id="professionalPasswordForm" class="settings-form">
+            <label>Password attuale<input id="settingsCurrentPassword" type="password" autocomplete="current-password" required></label>
+            <label>Nuova password<input id="settingsNewPassword" type="password" autocomplete="new-password" required minlength="8"></label>
+            <label>Ripeti nuova password<input id="settingsConfirmPassword" type="password" autocomplete="new-password" required minlength="8"></label>
+            <button class="secondary" type="submit">Cambia password</button>
+            <p class="fineprint">Il cambio password invalida le altre sessioni professionista già aperte.</p>
+          </form>
+        </section>
+        <section class="content-panel settings-card settings-access-card">
+          <h3>Pratiche e accessi</h3>
+          <p class="muted">Puoi consultare esclusivamente le sezioni autorizzate dai genitori. Da qui puoi verificare rapidamente i permessi attivi.</p>
+          <div id="settingsAccessList" class="record-list"></div>
+        </section>
+        <section class="content-panel settings-card">
+          <h3>Privacy e documenti legali</h3>
+          <div class="settings-links">
+            <a href="https://duecaseununicasquadra.com/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+            <a href="https://duecaseununicasquadra.com/termini.html" target="_blank" rel="noopener noreferrer">Termini e condizioni</a>
+            <a href="https://duecaseununicasquadra.com/cookie.html" target="_blank" rel="noopener noreferrer">Cookie Policy</a>
+          </div>
+          <p class="fineprint">La cancellazione dell’account professionista non modifica o cancella i dati delle famiglie, che restano nella disponibilità dei rispettivi titolari.</p>
+        </section>
+        <section class="content-panel settings-card">
+          <h3>Assistenza</h3>
+          <p class="muted">Per problemi di accesso, cambio email o richiesta di cancellazione dell’account professionista usa il centro assistenza DueCase.</p>
+          <a class="secondary settings-link-button" href="https://duecaseununicasquadra.com/assistenza.html" target="_blank" rel="noopener noreferrer">Apri assistenza</a>
+          <p class="fineprint">Portale professionisti · DueCase</p>
+        </section>
+      </div>`;
+
+    professional = await api('/professional-auth/me', {}, true);
+    text($('professionalName'), professional.displayName || 'Professionista');
+    text($('professionalEmail'), professional.email || '');
+    $('settingsFirstName').value = professional.firstName || '';
+    $('settingsLastName').value = professional.lastName || '';
+    $('settingsEmail').value = professional.email || '';
+    $('settingsQualification').value = professional.qualification || '';
+    $('settingsOrganization').value = professional.organization || '';
+    $('settingsPhone').value = professional.phone || '';
+    $('settingsRegister').value = professional.professionalRegister || '';
+    $('settingsRegistrationNumber').value = professional.registrationNumber || '';
+    $('notifyActivity').checked = professional.notifyActivity !== false;
+    $('notifyDocuments').checked = professional.notifyDocuments !== false;
+    $('notifyAccessChanges').checked = professional.notifyAccessChanges !== false;
+
+    const accessList = $('settingsAccessList');
+    clear(accessList);
+    clients.forEach((client) => {
+      const card = record(client.familyName, client.grantedByName ? `Autorizzato da ${client.grantedByName}` : 'Accesso autorizzato');
+      const chips = elem('div', 'chips');
+      (client.scopes || []).forEach((scope) => chips.appendChild(elem('span', 'chip', scopeLabels[scope] || scope)));
+      card.appendChild(chips);
+      const actions = elem('div', 'action-row');
+      const open = elem('button', 'secondary', 'Apri pratica');
+      open.type = 'button';
+      open.addEventListener('click', () => selectClient(client));
+      actions.appendChild(open);
+      card.appendChild(actions);
+      accessList.appendChild(card);
+    });
+    if (!clients.length) accessList.appendChild(empty('Nessuna pratica attiva.'));
+
+    $('professionalSettingsForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      busy(form, true);
+      setStatus('');
+      try {
+        professional = await api('/professional-auth/me', {
+          method: 'PATCH',
+          body: JSON.stringify({
+            firstName: $('settingsFirstName').value.trim(),
+            lastName: $('settingsLastName').value.trim(),
+            organization: $('settingsOrganization').value.trim() || null,
+            qualification: $('settingsQualification').value.trim() || null,
+            phone: $('settingsPhone').value.trim() || null,
+            professionalRegister: $('settingsRegister').value.trim() || null,
+            registrationNumber: $('settingsRegistrationNumber').value.trim() || null,
+            notifyActivity: $('notifyActivity').checked,
+            notifyDocuments: $('notifyDocuments').checked,
+            notifyAccessChanges: $('notifyAccessChanges').checked,
+          }),
+        }, true);
+        text($('professionalName'), professional.displayName || 'Professionista');
+        text($('professionalEmail'), professional.email || '');
+        setStatus('Impostazioni professionista salvate.');
+      } catch (error) { setStatus(error.message || 'Impossibile salvare le impostazioni.', true); }
+      finally { busy(form, false); }
+    });
+
+    $('professionalPasswordForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const next = $('settingsNewPassword').value;
+      const confirm = $('settingsConfirmPassword').value;
+      if (next !== confirm) return setStatus('Le nuove password non coincidono.', true);
+      busy(form, true);
+      setStatus('');
+      try {
+        const result = await api('/professional-auth/change-password', {
+          method: 'POST',
+          body: JSON.stringify({ currentPassword: $('settingsCurrentPassword').value, newPassword: next, confirmPassword: confirm }),
+        }, true);
+        setToken(result.token);
+        form.reset();
+        setStatus('Password aggiornata. Le altre sessioni sono state disconnesse.');
+      } catch (error) { setStatus(error.message || 'Cambio password non riuscito.', true); }
+      finally { busy(form, false); }
+    });
+  }
+
   loginForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     busy(loginForm, true);
@@ -550,6 +702,10 @@ async function loadClients() {
     finally { busy(registerForm, false); }
   });
 
+  settingsBtn.addEventListener('click', () => {
+    renderSettings().catch((error) => setStatus(error.message || 'Impossibile aprire le impostazioni.', true));
+  });
+
   logoutBtn.addEventListener('click', () => {
     setToken(null);
     professional = null;
@@ -559,6 +715,8 @@ async function loadClients() {
     clear(clientList);
     clear(contentArea);
     show(clientWorkspace, false);
+    show(settingsWorkspace, false);
+    settingsBtn.classList.remove('active');
     show(emptyWorkspace, true);
     showAuth('login');
     setStatus('Sessione chiusa.');
