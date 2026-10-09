@@ -19,6 +19,7 @@ jobs:
     env:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       CI: '1'
+      EAS_BUILD_ID: 7a6935ef-03ff-4b48-914a-57550c1f4ccb
 
     steps:
       - name: Checkout repository
@@ -35,26 +36,25 @@ jobs:
       - name: Verify Expo account
         run: eas whoami
 
-      - name: Wait for latest Android preview build
+      - name: Wait for Android preview build
         shell: bash
         run: |
           set -euo pipefail
-          eas build:list --platform android --limit 1 --json --non-interactive > "$RUNNER_TEMP/latest.json"
-          cat "$RUNNER_TEMP/latest.json"
-
-          BUILD_ID="$(node - "$RUNNER_TEMP/latest.json" <<'NODE'
-          const fs = require('fs');
-          const rows = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-          const build = Array.isArray(rows) ? rows[0] : rows;
-          if (!build?.id) process.exit(1);
-          process.stdout.write(build.id);
-          NODE
-          )"
-
+          BUILD_ID="$EAS_BUILD_ID"
           echo "Monitoring EAS build $BUILD_ID"
 
           for attempt in $(seq 1 60); do
+            set +e
             eas build:view "$BUILD_ID" --json > "$RUNNER_TEMP/build.json"
+            VIEW_STATUS=$?
+            set -e
+
+            if [ "$VIEW_STATUS" -ne 0 ]; then
+              echo "Temporary Expo API error on attempt $attempt; retrying in 15 seconds."
+              sleep 15
+              continue
+            fi
+
             STATUS="$(node - "$RUNNER_TEMP/build.json" <<'NODE'
           const fs = require('fs');
           const build = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
@@ -102,7 +102,6 @@ jobs:
 
           echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
           echo "APK_DEST=$APK_DEST" >> "$GITHUB_ENV"
-          echo "EAS_BUILD_ID=$BUILD_ID" >> "$GITHUB_ENV"
 
       - name: Verify package and signing certificate
         shell: bash
