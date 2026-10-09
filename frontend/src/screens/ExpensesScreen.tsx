@@ -637,7 +637,7 @@ const styles = StyleSheet.create({
   closedNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, borderRadius: 12, padding: 10, backgroundColor: ui.colors.successSoft },
   closedNoticeText: { flex: 1, color: ui.colors.success, fontSize: 12.5, lineHeight: 18, fontWeight: '700' },
   backdrop: { flex: 1, backgroundColor: 'rgba(12,43,99,0.28)', alignItems: 'center', justifyContent: 'center', padding: 16 },
-  dialog: { width: '100%', maxWidth: 560, maxHeight: '92%', borderRadius: ui.radius.xl, backgroundColor: ui.colors.card, padding: 18, gap: 13, ...cardShadow },
+  dialog: { width: '100%', maxWidth: 560, borderRadius: ui.radius.xl, backgroundColor: ui.colors.card, padding: 18, gap: 13, ...cardShadow },
   historyModal: { width: '100%', maxWidth: 620, maxHeight: '88%', borderRadius: ui.radius.xl, backgroundColor: ui.colors.card, padding: 18, gap: 12, ...cardShadow },
   preview: { width: '100%', maxWidth: 650, maxHeight: '88%', borderRadius: ui.radius.xl, backgroundColor: ui.colors.card, padding: 16, gap: 12, ...cardShadow },
   modalHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
