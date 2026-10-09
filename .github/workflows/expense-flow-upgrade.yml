@@ -1,0 +1,64 @@
+name: Apply expense flow upgrade
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/expense-flow-upgrade.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Patch API and approval states
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          const apiPath = 'frontend/src/services/api.ts';
+          let api = fs.readFileSync(apiPath, 'utf8');
+          const oldApi = `    confirmPayment: (expenseId: string, paymentId: string) => request<{ id: string; status: 'confirmed'; expenseStatus: Expense['status'] }>(\`/expenses/\${encodeURIComponent(expenseId)}/payments/\${encodeURIComponent(paymentId)}/confirm\`, { method: 'POST' }),\n    paymentReceiptSource: (path: string) => ({ uri: \`\${API_URL}\${path}\`, headers: authHeaders() }),`;
+          const newApi = `    confirmPayment: (expenseId: string, paymentId: string) => request<{ id: string; status: 'confirmed'; expenseStatus: Expense['status'] }>(\`/expenses/\${encodeURIComponent(expenseId)}/payments/\${encodeURIComponent(paymentId)}/confirm\`, { method: 'POST' }),\n    rejectPayment: (expenseId: string, paymentId: string, reason: string) => request<{ id: string; status: 'rejected'; expenseStatus: Expense['status']; rejectionReason: string }>(\`/expenses/\${encodeURIComponent(expenseId)}/payments/\${encodeURIComponent(paymentId)}/reject\`, { method: 'POST', body: JSON.stringify({ reason }) }),\n    paymentReceiptSource: (path: string) => ({ uri: \`\${API_URL}\${path}\`, headers: authHeaders() }),\n    settlements: () => request<Array<{ id: string; amount: string; status: 'declared' | 'confirmed' | 'rejected'; paidAt: string; notes?: string | null; receiptFilename?: string | null; receiptMimeType?: string | null; receiptUrl?: string | null; paidByUserId: string; paidByName?: string | null; paidByRole?: ParentRole | null; receivedByUserId: string; receivedByName?: string | null; receivedByRole?: ParentRole | null; confirmedAt?: string | null; rejectedAt?: string | null; rejectionReason?: string | null; allocationSummary?: Array<{ expenseId: string; amount: string }>; createdAt?: string; canConfirm: boolean }>>('/expenses/settlements'),\n    createSettlement: (input: { amount: string; paidAt?: string; notes?: string; receipt?: { uri: string; name: string; type: string; file?: Blob } }) => {\n      const form = new FormData();\n      form.append('amount', input.amount);\n      if (input.paidAt) form.append('paidAt', input.paidAt);\n      if (input.notes?.trim()) form.append('notes', input.notes.trim());\n      if (input.receipt) {\n        if (input.receipt.file) form.append('receipt', input.receipt.file, input.receipt.name);\n        else form.append('receipt', { uri: input.receipt.uri, name: input.receipt.name, type: input.receipt.type } as unknown as Blob);\n      }\n      return request<{ id: string; amount: string; status: 'declared'; paidAt: string; canConfirm: false }>('/expenses/settlements', { method: 'POST', body: form });\n    },\n    confirmSettlement: (settlementId: string) => request<{ id: string; status: 'confirmed'; allocations: Array<{ expenseId: string; amount: string }> }>(\`/expenses/settlements/\${encodeURIComponent(settlementId)}/confirm\`, { method: 'POST' }),\n    rejectSettlement: (settlementId: string, reason: string) => request<{ id: string; status: 'rejected'; rejectionReason: string }>(\`/expenses/settlements/\${encodeURIComponent(settlementId)}/reject\`, { method: 'POST', body: JSON.stringify({ reason }) }),\n    settlementReceiptSource: (path: string) => ({ uri: \`\${API_URL}\${path}\`, headers: authHeaders() }),`;
+          if (!api.includes(oldApi)) throw new Error('Expense API anchor not found');
+          api = api.replace(oldApi, newApi);
+          fs.writeFileSync(apiPath, api);
+
+          const expensesPath = 'backend/src/routes/expenses.ts';
+          let expenses = fs.readFileSync(expensesPath, 'utf8');
+          let replacements = 0;
+          expenses = expenses.replace(/SET status = 'approved',/g, () => { replacements += 1; return "SET status = 'to_pay',"; });
+          if (replacements < 2) throw new Error(`Expected at least two approval status replacements, found ${replacements}`);
+          fs.writeFileSync(expensesPath, expenses);
+          NODE
+
+      - name: Validate backend
+        working-directory: backend
+        run: npm ci && npm test
+
+      - name: Validate frontend
+        working-directory: frontend
+        run: npm ci && npm run typecheck
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git config user.name 'DueCase automation'
+          git config user.email 'info@duecaseununicasquadra.com'
+          git add backend/src/routes/expenses.ts frontend/src/services/api.ts
+          git commit -m 'Complete simplified expense settlement flow'
+          git push origin main
