@@ -62,11 +62,11 @@ async function confirmedCents(expenseId: string, familyId: string, client: PoolC
   return Number(result.rows[0]?.cents ?? '0');
 }
 
-async function refreshExpenseStatus(expenseId: string, familyId: string, client: PoolClient): Promise<'to_pay'|'partially_paid'|'closed'> {
+async function refreshExpenseStatus(expenseId: string, familyId: string, client: PoolClient): Promise<'to_pay'|'partially_paid'|'paid'> {
   const expense = await expenseForFamily(expenseId, familyId, client);
   const due = dueForExpense(expense);
   const confirmed = await confirmedCents(expenseId, familyId, client);
-  const nextStatus: 'to_pay'|'partially_paid'|'closed' = confirmed <= 0 ? 'to_pay' : confirmed >= due ? 'closed' : 'partially_paid';
+  const nextStatus: 'to_pay'|'partially_paid'|'paid' = confirmed <= 0 ? 'to_pay' : confirmed >= due ? 'paid' : 'partially_paid';
   await client.query(`UPDATE expenses SET status=$1, updated_at=NOW() WHERE id=$2 AND family_id=$3`, [nextStatus, expenseId, familyId]);
   return nextStatus;
 }
@@ -278,7 +278,7 @@ router.post('/settlements/:settlementId/confirm', asyncHandler(async (req, res) 
       allocations.push({ expenseId: expense.id, amount: allocatedAmount });
       remaining -= allocated;
       const confirmedAfter = already + allocated;
-      const nextStatus = confirmedAfter >= due ? 'closed' : 'partially_paid';
+      const nextStatus = confirmedAfter >= due ? 'paid' : 'partially_paid';
       await client.query(`UPDATE expenses SET status=$1, updated_at=NOW() WHERE id=$2 AND family_id=$3`, [nextStatus, expense.id, auth.familyId]);
       await client.query(
         `INSERT INTO family_activity_history (id,family_id,actor_user_id,entity_type,entity_id,action,details)
@@ -402,7 +402,7 @@ router.post('/:id/payments/:paymentId/reject', asyncHandler(async (req, res) => 
   const client = await pool.connect();
   let payerId = '';
   let amount = '';
-  let expenseStatus: 'to_pay'|'partially_paid'|'closed' = 'to_pay';
+  let expenseStatus: 'to_pay'|'partially_paid'|'paid' = 'to_pay';
   try {
     await client.query('BEGIN');
     const expense = await expenseForFamily(expenseId, auth.familyId, client);
@@ -442,7 +442,7 @@ router.post('/:id/payments/:paymentId/confirm', asyncHandler(async (req, res) =>
   const client = await pool.connect();
   let payerId = '';
   let amount = '';
-  let nextStatus: 'to_pay'|'partially_paid'|'closed' = 'to_pay';
+  let nextStatus: 'to_pay'|'partially_paid'|'paid' = 'to_pay';
   try {
     await client.query('BEGIN');
     const expense = await expenseForFamily(expenseId, auth.familyId, client);

@@ -201,7 +201,23 @@ export const api = {
       return request<ExpensePayment>(`/expenses/${encodeURIComponent(id)}/payments`, { method: 'POST', body: form });
     },
     confirmPayment: (expenseId: string, paymentId: string) => request<{ id: string; status: 'confirmed'; expenseStatus: Expense['status'] }>(`/expenses/${encodeURIComponent(expenseId)}/payments/${encodeURIComponent(paymentId)}/confirm`, { method: 'POST' }),
+    rejectPayment: (expenseId: string, paymentId: string, reason: string) => request<{ id: string; status: 'rejected'; expenseStatus: Expense['status']; rejectionReason: string }>(`/expenses/${encodeURIComponent(expenseId)}/payments/${encodeURIComponent(paymentId)}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
     paymentReceiptSource: (path: string) => ({ uri: `${API_URL}${path}`, headers: authHeaders() }),
+    settlements: () => request<Array<{ id: string; amount: string; status: 'declared' | 'confirmed' | 'rejected'; paidAt: string; notes?: string | null; receiptFilename?: string | null; receiptMimeType?: string | null; receiptUrl?: string | null; paidByUserId: string; paidByName?: string | null; paidByRole?: ParentRole | null; receivedByUserId: string; receivedByName?: string | null; receivedByRole?: ParentRole | null; confirmedAt?: string | null; rejectedAt?: string | null; rejectionReason?: string | null; allocationSummary?: Array<{ expenseId: string; amount: string }>; createdAt?: string; canConfirm: boolean }>>('/expenses/settlements'),
+    createSettlement: (input: { amount: string; paidAt?: string; notes?: string; receipt?: { uri: string; name: string; type: string; file?: Blob } }) => {
+      const form = new FormData();
+      form.append('amount', input.amount);
+      if (input.paidAt) form.append('paidAt', input.paidAt);
+      if (input.notes?.trim()) form.append('notes', input.notes.trim());
+      if (input.receipt) {
+        if (input.receipt.file) form.append('receipt', input.receipt.file, input.receipt.name);
+        else form.append('receipt', { uri: input.receipt.uri, name: input.receipt.name, type: input.receipt.type } as unknown as Blob);
+      }
+      return request<{ id: string; amount: string; status: 'declared'; paidAt: string; canConfirm: false }>('/expenses/settlements', { method: 'POST', body: form });
+    },
+    confirmSettlement: (settlementId: string) => request<{ id: string; status: 'confirmed'; allocations: Array<{ expenseId: string; amount: string }> }>(`/expenses/settlements/${encodeURIComponent(settlementId)}/confirm`, { method: 'POST' }),
+    rejectSettlement: (settlementId: string, reason: string) => request<{ id: string; status: 'rejected'; rejectionReason: string }>(`/expenses/settlements/${encodeURIComponent(settlementId)}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
+    settlementReceiptSource: (path: string) => ({ uri: `${API_URL}${path}`, headers: authHeaders() }),
   },
   agreements: {
     list: (status?: AgreementStatus) => request<FamilyAgreement[]>(`/agreements${status ? `?status=${encodeURIComponent(status)}` : ''}`),

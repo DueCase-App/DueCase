@@ -531,7 +531,7 @@ async function verifyExpenseOtp(req: Request, code: string): Promise<Record<stri
     );
     await client.query(
       `UPDATE expenses
-          SET status = 'approved',
+          SET status = 'to_pay',
               reviewed_by_user_id = $1,
               reviewed_at = $2,
               approval_otp_verified_at = $2,
@@ -578,7 +578,7 @@ async function approveOrdinaryExpense(req: Request): Promise<Record<string, unkn
   const expenseId = uuid.parse(req.params.id);
   const result = await pool.query(
     `UPDATE expenses
-        SET status = 'approved', reviewed_by_user_id = $1, reviewed_at = NOW(), updated_at = NOW()
+        SET status = 'to_pay', reviewed_by_user_id = $1, reviewed_at = NOW(), updated_at = NOW()
       WHERE id = $2
         AND family_id = $3
         AND paid_by_user_id <> $1
