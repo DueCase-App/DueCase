@@ -14,6 +14,7 @@ import {
   sendPushToOtherParent,
   sendPushToUser,
 } from '../services/notificationService.js';
+import { notifyProfessionalsForFamily } from '../services/professionalNotificationService.js';
 
 const router = Router();
 const uuid = z.string().uuid();
@@ -355,6 +356,12 @@ router.post('/', uploadReceipt, asyncHandler(async (req, res) => {
     title: body.isExtraordinary ? 'Nuova spesa straordinaria' : 'Nuova spesa da approvare',
     body: `${parentRoleSubject(auth.role)} ha inserito una spesa di ${formatEuroAmount(body.amount)}. Approvala!`,
     data: { type: 'expense_created', screen: 'expenses', expenseId: id },
+  });
+
+  await notifyProfessionalsForFamily({
+    familyId: auth.familyId, preference: 'notify_activity', scope: 'expenses',
+    title: body.isExtraordinary ? 'Nuova spesa straordinaria' : 'Nuova spesa nella pratica',
+    message: `${auth.displayName} ha inserito la spesa “${body.title}” di ${formatEuroAmount(body.amount)}.`,
   });
 
   res.status(201).json(await readExpense(id, auth.familyId, auth.userId));

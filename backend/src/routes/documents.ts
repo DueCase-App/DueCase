@@ -6,6 +6,7 @@ import { requireAuth, requireFamily } from '../auth.js';
 import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
 import { parentRoleSubject, sendPushToOtherParent } from '../services/notificationService.js';
+import { notifyProfessionalsForFamily } from '../services/professionalNotificationService.js';
 
 const router = Router();
 const uuid = z.string().uuid();
@@ -109,6 +110,12 @@ router.post('/', uploadDocument, asyncHandler(async (req, res) => {
     title: 'Nuovo documento condiviso',
     body: `${parentRoleSubject(auth.role)} ha caricato “${body.title}” nella sezione Documenti.`,
     data: { type: 'document_uploaded', screen: 'documents', documentId: id },
+  });
+
+  await notifyProfessionalsForFamily({
+    familyId: auth.familyId, preference: 'notify_documents', scope: 'documents',
+    title: 'Nuovo documento condiviso',
+    message: `${auth.displayName} ha condiviso il documento “${body.title}” nella pratica autorizzata.`,
   });
 
   const { rows } = await pool.query(`${documentSelect} WHERE d.id = $1 AND d.family_id = $2`, [id, auth.familyId]);

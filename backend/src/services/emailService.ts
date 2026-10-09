@@ -328,3 +328,17 @@ export async function sendProfessionalSecurityNotice(input: { to: string; displa
   });
   await sendEmail({ to: input.to, subject, text, html });
 }
+
+
+export async function sendProfessionalPortalNotice(input: { to: string; displayName: string; title: string; message: string }): Promise<void> {
+  if (!isEmailConfigured()) throw new Error('SMTP_NOT_CONFIGURED');
+  const site = config.SITE_URL.replace(/\/$/, '');
+  const subject = `DueCase · ${input.title}`;
+  const text = `Ciao ${input.displayName},\n\n${input.message}\n\nAccedi al portale professionisti: ${site}/professionisti/`;
+  const html = emailShell({
+    eyebrow: 'Portale professionisti',
+    title: input.title,
+    body: `<p style="margin:0 0 14px">Ciao <strong>${escapeHtml(input.displayName)}</strong>,</p><p style="margin:0 0 20px">${escapeHtml(input.message)}</p><p style="text-align:center;margin:24px 0"><a href="${site}/professionisti/" style="display:inline-block;background:#1769E0;color:#fff;text-decoration:none;padding:14px 24px;border-radius:12px;font-weight:700">Apri portale professionisti</a></p>`,
+  });
+  await sendEmail({ to: input.to, subject, text, html });
+}

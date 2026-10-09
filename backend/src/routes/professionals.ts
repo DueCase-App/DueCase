@@ -7,6 +7,7 @@ import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
 import { isEmailConfigured, sendProfessionalInvitationEmail } from '../services/emailService.js';
 import { rateLimit } from '../services/rateLimit.js';
+import { notifyProfessionalAccessChange } from '../services/professionalNotificationService.js';
 import {
   appendProfessionalAudit,
   createProfessionalInvitationToken,
@@ -208,12 +209,13 @@ router.patch('/grants/:id', asyncHandler(async (req, res) => {
     `UPDATE professional_access_grants
         SET scopes = $1::text[], updated_at = NOW()
       WHERE id = $2 AND family_id = $3 AND granted_by_user_id = $4 AND revoked_at IS NULL
-      RETURNING id, scopes, updated_at AS "updatedAt"`,
+      RETURNING id, professional_id AS "professionalId", scopes, updated_at AS "updatedAt"`,
     [body.scopes, grantId, auth.familyId, auth.userId],
   );
   const grant = rows[0];
   if (!grant) throw new ApiError(404, 'Accesso professionista non trovato', 'PROFESSIONAL_GRANT_NOT_FOUND');
   await appendProfessionalAudit({ action: 'access_scopes_updated', grantId, familyId: auth.familyId, actorParentUserId: auth.userId, details: { scopes: body.scopes } });
+  await notifyProfessionalAccessChange({ professionalId: grant.professionalId, title: 'Permessi della pratica aggiornati', message: `${auth.displayName} ha modificato le sezioni che puoi consultare per la pratica ${auth.familyName ?? 'DueCase'}.` });
   res.json(grant);
 }));
 
@@ -230,6 +232,7 @@ router.delete('/grants/:id', asyncHandler(async (req, res) => {
   const grant = rows[0];
   if (!grant) throw new ApiError(404, 'Accesso professionista non trovato', 'PROFESSIONAL_GRANT_NOT_FOUND');
   await appendProfessionalAudit({ action: 'access_revoked', professionalId: grant.professionalId, grantId, familyId: auth.familyId, actorParentUserId: auth.userId });
+  await notifyProfessionalAccessChange({ professionalId: grant.professionalId, title: 'Accesso alla pratica revocato', message: `${auth.displayName} ha revocato il tuo accesso alla pratica ${auth.familyName ?? 'DueCase'}.` });
   res.status(204).send();
 }));
 

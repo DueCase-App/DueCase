@@ -5,6 +5,7 @@ import { requireAuth, requireFamily } from '../auth.js';
 import { pool, transaction } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
 import { parentRoleSubject, sendPushToOtherParent, sendPushToUser } from '../services/notificationService.js';
+import { notifyProfessionalsForFamily } from '../services/professionalNotificationService.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -118,6 +119,11 @@ router.post('/', asyncHandler(async (req, res) => {
      VALUES ($1,$2,$3,'event',$4,'created',$5::jsonb)`,
     [randomUUID(), auth.familyId, auth.userId, id, JSON.stringify({ title: body.title, status, eventType: body.eventType })],
   );
+  await notifyProfessionalsForFamily({
+    familyId: auth.familyId, preference: 'notify_activity', scope: 'calendar',
+    title: body.requiresApproval ? 'Nuova richiesta calendario' : 'Nuovo evento calendario',
+    message: `${auth.displayName} ha inserito “${body.title}” nel calendario della pratica.`,
+  });
   res.status(201).json({ ...rows[0], canRespond: false });
 }));
 

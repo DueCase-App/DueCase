@@ -5,6 +5,7 @@ import { requireAuth, requireFamily } from '../auth.js';
 import { pool, transaction } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
 import { parentRoleSubject, sendPushToOtherParent, sendPushToUser } from '../services/notificationService.js';
+import { notifyProfessionalsForFamily } from '../services/professionalNotificationService.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -136,6 +137,11 @@ router.post('/', asyncHandler(async (req, res) => {
     title: 'Nuovo accordo DueCase',
     body: `${parentRoleSubject(auth.role)} ha proposto un nuovo accordo: ${body.title}`,
     data: { type: 'agreement_created', screen: 'agreements', agreementId: id },
+  });
+  await notifyProfessionalsForFamily({
+    familyId: auth.familyId, preference: 'notify_activity', scope: 'agreements',
+    title: 'Nuovo accordo nella pratica',
+    message: `${auth.displayName} ha proposto l’accordo “${body.title}”.`,
   });
   res.status(201).json({ ...agreement, createdByName: auth.displayName, canRespond: false });
 }));
