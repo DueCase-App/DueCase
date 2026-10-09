@@ -1,0 +1,93 @@
+/* DueCase · Professional portal compact visual pass */
+body{font-size:14px;line-height:1.5}
+.page{width:min(1160px,calc(100% - 32px));padding-top:22px}
+.topbar{min-height:68px}
+.brand strong{font-size:19px}
+.brand small{font-size:11px}
+
+/* Authentication */
+.hero-card{padding:clamp(24px,3.2vw,38px)}
+.hero-card h1{font-size:clamp(31px,3.7vw,44px);line-height:1.08;margin:7px 0 14px}
+.hero-card>p:not(.eyebrow){font-size:15px;line-height:1.55}
+.stack{gap:12px}
+.stack h2{font-size:25px;line-height:1.18;margin-top:4px}
+.stack label{font-size:13px;gap:5px}
+.stack input{font-size:14px;padding:11px 12px}
+.primary,.secondary{min-height:43px;padding:10px 14px;font-size:13px}
+.fineprint,.muted{font-size:12px;line-height:1.48}
+.eyebrow{font-size:10.5px;letter-spacing:.12em}
+
+/* Portal navigation */
+.portal{grid-template-columns:268px minmax(0,1fr);gap:16px}
+.sidebar{padding:14px}
+.professional-card{padding:11px}
+.professional-card strong{font-size:13.5px}
+.professional-card small{font-size:11.5px}
+.sidebar-title{font-size:10px;margin-top:17px}
+.client-button{padding:10px 11px;font-size:13px}
+.client-button small{font-size:11.5px}
+.settings-nav-button{padding:10px 12px;font-size:13px;border-radius:12px}
+
+/* Main professional pages */
+.workspace{padding:clamp(16px,2.3vw,23px)}
+.workspace-header{gap:14px}
+.workspace-header h1{font-size:clamp(23px,2.4vw,29px);margin:4px 0;letter-spacing:-.02em}
+.readonly-badge{font-size:10.5px;padding:6px 9px}
+.tabs{padding:14px 1px 11px;gap:6px}
+.tab{padding:8px 11px;font-size:12px}
+.content-area{gap:11px}
+.content-panel{padding:14px 15px;border-radius:15px}
+.content-panel h3{font-size:16px;line-height:1.25;margin-bottom:9px}
+.record-list{gap:8px}
+.record{padding:11px 12px;border-radius:12px;font-size:13px}
+.record p{line-height:1.48}
+.meta{font-size:11px;margin-top:6px}
+.chip{font-size:10.5px;padding:5px 8px}
+.action-row{gap:7px;margin-top:8px}
+
+/* Settings */
+.settings-header{margin-bottom:12px}
+.settings-header h1{font-size:27px!important}
+.settings-header .muted{font-size:12px;max-width:680px}
+.settings-grid{gap:14px;grid-template-columns:minmax(0,1.3fr) minmax(270px,.7fr)}
+.settings-card{padding:14px 15px}
+.settings-card h3{font-size:16px;margin-bottom:8px}
+.settings-form{gap:10px;margin-top:8px}
+.settings-form label{font-size:12.5px;gap:4px;font-weight:750}
+.settings-form input{font-size:13px;padding:10px 11px;border-radius:10px}
+.settings-two-col{gap:10px}
+.settings-form h4{font-size:13px;margin:6px 0 0}
+.switch-row{gap:12px;padding:10px 11px;border-radius:11px}
+.switch-row strong{font-size:12.5px}
+.switch-row small{font-size:11px;line-height:1.35}
+.switch-row input{width:18px;height:18px}
+.email-change-box{padding:11px!important;border-radius:11px!important}
+.settings-links{gap:7px;margin-top:7px}
+.settings-links a{font-size:12.5px}
+.settings-link-button{margin-top:7px}
+
+/* Footer */
+.footer{font-size:11px;padding-top:14px}
+
+@media(max-width:940px){
+  .portal{grid-template-columns:1fr}
+  .settings-grid{grid-template-columns:1fr}
+}
+
+@media(max-width:640px){
+  body{font-size:13.5px}
+  .page{width:calc(100% - 18px);padding-top:11px}
+  .topbar{min-height:60px}
+  .hero-card h1{font-size:27px}
+  .stack h2{font-size:23px}
+  .workspace{padding:12px}
+  .workspace-header h1{font-size:23px}
+  .content-panel{padding:12px}
+  .content-panel h3{font-size:15px}
+  .settings-header h1{font-size:24px!important}
+  .settings-card{padding:12px}
+  .settings-form label{font-size:12px}
+  .settings-form input{font-size:13px;padding:10px}
+  .switch-row{padding:9px 10px}
+  .primary,.secondary{font-size:12.5px}
+}
