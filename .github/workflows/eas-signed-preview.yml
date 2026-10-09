@@ -127,3 +127,4 @@ jobs:
           fi
 
 # Trigger signed preview build 2026-10-09
+# Trigger after EXPO_TOKEN refresh 2026-10-09 09:30 Europe/Rome
