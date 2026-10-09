@@ -1,0 +1,36 @@
+name: Patch professional notification preferences
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/patch-prof-notifications.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply patch
+        run: python .github/patch_prof_notifications.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate backend
+        working-directory: backend
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/src/services/emailService.ts backend/src/services/professionalNotificationService.ts backend/src/routes/documents.ts backend/src/routes/expenses.ts backend/src/routes/events.ts backend/src/routes/agreements.ts backend/src/routes/professionals.ts
+          git commit -m "Wire professional email notification preferences"
+          git push
