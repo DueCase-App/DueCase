@@ -24,6 +24,7 @@ const emptyForm: FamilyChildInput = {
   displayName: '', birthDate: null, school: null, className: null, sports: null,
   extracurricular: null, usefulInfo: null, authorizations: null, sharedNotes: null,
 };
+const MIN_BIRTH_DATE = new Date(1900, 0, 1, 12);
 
 function isoDate(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -37,6 +38,25 @@ function formatDate(value: string | null | undefined): string {
   const day = parts[2];
   if (!year || !month || !day) return value;
   return new Date(year, month - 1, day).toLocaleDateString('it-IT');
+}
+
+function formatBirthDateDraft(value: string | null | undefined): string {
+  if (!value) return '';
+  const [year, month, day] = value.split('-');
+  if (!year || !month || !day) return '';
+  return `${day}/${month}/${year}`;
+}
+
+function parseBirthDateDigits(text: string): { draft: string; iso: string | null } {
+  const digits = text.replace(/\D/g, '').slice(0, 8);
+  const draft = digits.slice(0, 2) + (digits.length > 2 ? `/${digits.slice(2, 4)}` : '') + (digits.length > 4 ? `/${digits.slice(4)}` : '');
+  if (digits.length !== 8) return { draft, iso: null };
+  const day = Number(digits.slice(0, 2));
+  const month = Number(digits.slice(2, 4));
+  const year = Number(digits.slice(4));
+  const date = new Date(year, month - 1, day, 12);
+  const valid = date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day && date >= MIN_BIRTH_DATE && date <= new Date();
+  return { draft, iso: valid ? isoDate(date) : null };
 }
 
 export function ChildrenScreen(): React.JSX.Element {
@@ -76,10 +96,11 @@ export function ChildrenScreen(): React.JSX.Element {
   };
 
   const openDatePicker = (): void => {
-    const current = form.birthDate ? new Date(`${form.birthDate}T12:00:00`) : new Date();
+    const current = form.birthDate ? new Date(`${form.birthDate}T12:00:00`) : new Date(new Date().getFullYear() - 8, 0, 1, 12);
     if (Platform.OS === 'android') {
       DateTimePickerAndroid.open({
         value: current,
+        minimumDate: MIN_BIRTH_DATE,
         maximumDate: new Date(),
         mode: 'date',
         onChange: (_event, selected) => { if (selected) setForm((value) => ({ ...value, birthDate: isoDate(selected) })); },
@@ -89,6 +110,7 @@ export function ChildrenScreen(): React.JSX.Element {
 
   const save = async (): Promise<void> => {
     if (!form.displayName.trim()) { Alert.alert('Nome richiesto', 'Inserisci il nome del figlio.'); return; }
+    if (!form.birthDate) { Alert.alert('Data di nascita', 'Inserisci o seleziona una data di nascita valida.'); return; }
     setSaving(true);
     try {
       if (editing) await api.family.updateChild(editing.id, form);
@@ -143,7 +165,7 @@ export function ChildrenScreen(): React.JSX.Element {
       )}
 
       <Modal visible={modalOpen} animationType="slide" transparent onRequestClose={() => setModalOpen(false)}>
-        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={[styles.modalCard, wide && styles.modalCardWide]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{editing ? 'Modifica scheda' : 'Aggiungi un figlio'}</Text>
@@ -151,15 +173,12 @@ export function ChildrenScreen(): React.JSX.Element {
             </View>
             <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.form}>
               <Field label="Nome *" value={form.displayName} onChangeText={(displayName) => setForm((v) => ({ ...v, displayName }))} placeholder="Nome del figlio" />
-              <Text style={styles.label}>Data di nascita</Text>
-              {Platform.OS==='web'?<input aria-label="Data di nascita" type="date" max={isoDate(new Date())} value={form.birthDate??''} onChange={e=>setForm(v=>({...v,birthDate:e.target.value||null}))} style={{padding:14,fontSize:16,borderRadius:12,border:'1px solid #D9E7F4'}}/>:<Pressable style={styles.dateField} onPress={openDatePicker}>
-                <Ionicons name="calendar-outline" size={18} color={ui.colors.primary} />
-                <Text style={styles.dateText}>{form.birthDate ? formatDate(form.birthDate) : 'Seleziona la data'}</Text>
-              </Pressable>}
+              <Text style={styles.label}>Data di nascita *</Text>
+              {Platform.OS==='web'?<input aria-label="Data di nascita" type="date" min="1900-01-01" max={isoDate(new Date())} value={form.birthDate??''} onChange={e=>setForm(v=>({...v,birthDate:e.target.value||null}))} style={{padding:14,fontSize:16,borderRadius:12,border:'1px solid #D9E7F4'}}/>:<BirthDateInput value={form.birthDate} onChange={(birthDate)=>setForm(v=>({...v,birthDate}))} onOpenPicker={openDatePicker}/>} 
               {Platform.OS === 'ios' && showIosDate ? (
                 <View style={styles.iosPickerWrap}>
-                  <DateTimePicker value={form.birthDate ? new Date(`${form.birthDate}T12:00:00`) : new Date()} mode="date" maximumDate={new Date()} display="spinner" onChange={(_e, d) => { if (d) setForm((v) => ({ ...v, birthDate: isoDate(d) })); }} />
-                  <Pressable onPress={() => { if(!form.birthDate) setForm(v=>({...v,birthDate:isoDate(new Date())})); setShowIosDate(false); }}><Text style={styles.doneText}>Fatto</Text></Pressable>
+                  <DateTimePicker value={form.birthDate ? new Date(`${form.birthDate}T12:00:00`) : new Date(new Date().getFullYear() - 8, 0, 1, 12)} mode="date" minimumDate={MIN_BIRTH_DATE} maximumDate={new Date()} display="spinner" onChange={(_e, d) => { if (d) setForm((v) => ({ ...v, birthDate: isoDate(d) })); }} />
+                  <Pressable onPress={() => { setShowIosDate(false); }}><Text style={styles.doneText}>Fatto</Text></Pressable>
                 </View>
               ) : null}
               <Field label="Scuola" value={form.school ?? ''} onChangeText={(school) => setForm((v) => ({ ...v, school }))} placeholder="Nome della scuola" />
@@ -169,16 +188,38 @@ export function ChildrenScreen(): React.JSX.Element {
               <Field label="Informazioni utili" value={form.usefulInfo ?? ''} onChangeText={(usefulInfo) => setForm((v) => ({ ...v, usefulInfo }))} placeholder="Informazioni condivise" multiline />
               <Field label="Autorizzazioni" value={form.authorizations ?? ''} onChangeText={(authorizations) => setForm((v) => ({ ...v, authorizations }))} placeholder="Autorizzazioni e consensi" multiline />
               <Field label="Note condivise" value={form.sharedNotes ?? ''} onChangeText={(sharedNotes) => setForm((v) => ({ ...v, sharedNotes }))} placeholder="Note visibili a Mamma e Papà" multiline />
-
             </ScrollView>
-            <View style={{padding:16}}>              <Pressable disabled={saving} onPress={() => void save()} style={[styles.saveButton, saving && { opacity: 0.6 }]}>
-                {saving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveButtonText}>Salva scheda</Text>}
-              </Pressable></View>
+            <View style={{padding:16}}><Pressable disabled={saving} onPress={() => void save()} style={[styles.saveButton, saving && { opacity: 0.6 }]}>
+              {saving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveButtonText}>Salva scheda</Text>}
+            </Pressable></View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
     </View>
   );
+}
+
+function BirthDateInput({value,onChange,onOpenPicker}:{value:string|null|undefined;onChange:(value:string|null)=>void;onOpenPicker:()=>void}):React.JSX.Element {
+  const [draft,setDraft]=useState(formatBirthDateDraft(value));
+  useEffect(()=>{setDraft(formatBirthDateDraft(value));},[value]);
+  return <View style={styles.birthWrap}>
+    <View style={styles.dateInputShell}>
+      <TextInput
+        value={draft}
+        onChangeText={(text)=>{const parsed=parseBirthDateDigits(text);setDraft(parsed.draft);onChange(parsed.iso);}}
+        keyboardType="number-pad"
+        inputMode="numeric"
+        maxLength={10}
+        placeholder="gg/mm/aaaa"
+        placeholderTextColor="#6C84A2"
+        style={styles.dateInput}
+      />
+      <Pressable accessibilityRole="button" accessibilityLabel="Apri calendario" onPress={onOpenPicker} hitSlop={8}>
+        <Ionicons name="calendar-outline" size={22} color={ui.colors.primary} />
+      </Pressable>
+    </View>
+    <Text style={styles.dateHint}>Digita 8 cifre, ad esempio 04091993 → 04/09/1993.</Text>
+  </View>;
 }
 
 function Field({ label, value, onChangeText, placeholder, multiline = false }: { label: string; value: string; onChangeText: (value: string) => void; placeholder: string; multiline?: boolean }): React.JSX.Element {
@@ -217,6 +258,10 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, fontWeight: '800', color: ui.colors.text },
   input: { minHeight: 50, borderRadius: 12, backgroundColor: ui.colors.input, paddingHorizontal: 14, color: '#202124', fontSize: 15 },
   textarea: { minHeight: 88, paddingTop: 14, textAlignVertical: 'top' },
+  birthWrap: { gap: 5 },
+  dateInputShell: { minHeight: 50, borderRadius: 12, backgroundColor: ui.colors.input, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  dateInput: { flex: 1, color: '#202124', fontSize: 15, paddingVertical: Platform.OS==='ios'?14:10 },
+  dateHint: { color: ui.colors.muted, fontSize: 11, lineHeight: 15 },
   dateField: { minHeight: 50, borderRadius: 12, backgroundColor: ui.colors.input, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
   dateText: { color: '#202124', fontSize: 15 },
   iosPickerWrap: { backgroundColor: ui.colors.primarySoft, borderRadius: 14, overflow: 'hidden', paddingBottom: 10 },
