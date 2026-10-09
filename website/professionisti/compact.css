@@ -18,15 +18,15 @@ body{font-size:14px;line-height:1.5}
 .eyebrow{font-size:10.5px;letter-spacing:.12em}
 
 /* Portal navigation */
-.portal{grid-template-columns:268px minmax(0,1fr);gap:16px}
-.sidebar{padding:14px}
-.professional-card{padding:11px}
-.professional-card strong{font-size:13.5px}
-.professional-card small{font-size:11.5px}
-.sidebar-title{font-size:10px;margin-top:17px}
-.client-button{padding:10px 11px;font-size:13px}
-.client-button small{font-size:11.5px}
-.settings-nav-button{padding:10px 12px;font-size:13px;border-radius:12px}
+.portal{grid-template-columns:276px minmax(0,1fr);gap:16px}
+.sidebar{padding:15px}
+.professional-card{padding:12px}
+.professional-card strong{font-size:14.5px}
+.professional-card small{font-size:12px}
+.sidebar-title{font-size:10.5px;margin-top:18px}
+.client-button{padding:11px 12px;font-size:13.5px}
+.client-button small{font-size:12px}
+.settings-nav-button{padding:11px 13px;font-size:13.5px;border-radius:12px}
 
 /* Main professional pages */
 .workspace{padding:clamp(16px,2.3vw,23px)}
