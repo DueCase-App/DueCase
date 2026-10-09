@@ -1,4 +1,5 @@
 import { PasswordReset } from '../components/PasswordReset';
+import { LegalLinks } from '../components/LegalLinks';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
@@ -145,6 +146,7 @@ export function LoginScreen({ onShowRegister }: LoginScreenProps): React.JSX.Ele
               </Pressable>
 
               <View style={styles.security}><Ionicons name="shield-checkmark" size={18} color={ui.colors.primary} /><Text style={styles.securityText}>I tuoi dati sono sempre protetti</Text></View>
+              <LegalLinks />
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
