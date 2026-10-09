@@ -1,0 +1,88 @@
+name: Patch expenses OTP UI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/patch-expenses-otp-ui.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch ExpensesScreen
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend/src/screens/ExpensesScreen.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          badge_line = '''                    <View style={styles.badgeRow}><StatusPill text={actionText} tone={tone} />{expense.isExtraordinary ? <View style={styles.extraordinaryPill}><Ionicons name="shield-checkmark-outline" size={14} color={ui.colors.primary} /><Text style={styles.extraordinaryText}>Straordinaria</Text></View> : null}</View>'''
+          otp_notice = badge_line + '''\n                    {expense.isExtraordinary && !expense.otpSignatureMetadata ? (\n                      <View style={styles.otpRequirementNotice}>\n                        <Ionicons name="mail-outline" size={17} color={ui.colors.primary} />\n                        <Text style={styles.otpRequirementText}>Per approvare questa spesa straordinaria è richiesto un codice OTP inviato via email all’altro genitore</Text>\n                      </View>\n                    ) : null}'''
+          if badge_line not in text:
+              raise SystemExit('Badge anchor not found')
+          text = text.replace(badge_line, otp_notice, 1)
+
+          start = text.index('function OtpApprovalModal')
+          end = text.index('\nfunction PaymentModal', start)
+          segment = text[start:end]
+
+          old_open = '''return <Modal visible={expense !== null} transparent animationType="slide" onRequestClose={onClose}><View style={styles.backdrop}><View style={styles.dialog}>'''
+          new_open = '''return <Modal visible={expense !== null} transparent animationType="slide" onRequestClose={onClose}><View style={styles.backdrop}><ScrollView style={styles.otpDialogScroll} contentContainerStyle={styles.otpDialogContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}><View style={[styles.dialog, styles.otpDialog]}>'''
+          if old_open not in segment:
+              raise SystemExit('OTP modal opening anchor not found')
+          segment = segment.replace(old_open, new_open, 1)
+
+          old_controls = '''    <View style={styles.actions}><Pressable style={styles.cancelButton} onPress={onClose}><Text style={styles.cancelText}>Annulla</Text></Pressable><Pressable disabled={busy || code.length !== 6} style={[styles.approveButton, (busy || code.length !== 6) && styles.disabled]} onPress={() => void onConfirm(code)}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.approveText}>Conferma</Text>}</Pressable></View>\n    <Pressable disabled={resending} onPress={() => void (async () => { try { setResending(true); await onResend(); Alert.alert('Codice inviato', 'Ti abbiamo inviato un nuovo codice via email.'); } catch (error) { Alert.alert('Conferma', error instanceof Error ? error.message : 'Invio non riuscito'); } finally { setResending(false); } })()}><Text style={styles.resendText}>{resending ? 'Invio…' : 'Invia un nuovo codice'}</Text></Pressable>'''
+          new_controls = '''    <Pressable disabled={resending} onPress={() => void (async () => { try { setResending(true); await onResend(); Alert.alert('Codice inviato', 'Ti abbiamo inviato un nuovo codice via email.'); } catch (error) { Alert.alert('Conferma', error instanceof Error ? error.message : 'Invio non riuscito'); } finally { setResending(false); } })()}><Text style={styles.resendText}>{resending ? 'Invio…' : 'Invia un nuovo codice'}</Text></Pressable>\n    <View style={styles.otpActions}><Pressable style={[styles.cancelButton, styles.otpActionButton]} onPress={onClose}><Text style={styles.cancelText}>Annulla</Text></Pressable><Pressable disabled={busy || code.length !== 6} style={[styles.approveButton, styles.otpActionButton, (busy || code.length !== 6) && styles.disabled]} onPress={() => void onConfirm(code)}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.approveText}>Conferma</Text>}</Pressable></View>'''
+          if old_controls not in segment:
+              raise SystemExit('OTP controls anchor not found')
+          segment = segment.replace(old_controls, new_controls, 1)
+
+          old_close = '''  </View></View></Modal>;'''
+          new_close = '''  </View></ScrollView></View></Modal>;'''
+          if old_close not in segment:
+              raise SystemExit('OTP modal closing anchor not found')
+          segment = segment.replace(old_close, new_close, 1)
+          text = text[:start] + segment + text[end:]
+
+          extraordinary_style = '''  extraordinaryText: { color: ui.colors.primaryDark, fontSize: 12, fontWeight: '800' },'''
+          extraordinary_styles = extraordinary_style + '''\n  otpRequirementNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, backgroundColor: ui.colors.primarySoft, paddingHorizontal: 11, paddingVertical: 10 },\n  otpRequirementText: { flex: 1, color: ui.colors.primaryDark, fontSize: 12.5, lineHeight: 18, fontWeight: '700' },'''
+          if extraordinary_style not in text:
+              raise SystemExit('Extraordinary style anchor not found')
+          text = text.replace(extraordinary_style, extraordinary_styles, 1)
+
+          otp_style = '''  otpIcon: { width: 58, height: 58, borderRadius: 29, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },'''
+          otp_styles = '''  otpDialogScroll: { width: '100%', maxWidth: 560 },\n  otpDialogContent: { flexGrow: 1, justifyContent: 'center', paddingVertical: 8 },\n  otpDialog: { maxHeight: '100%', padding: 16, gap: 10 },\n  otpIcon: { width: 58, height: 58, borderRadius: 29, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },'''
+          if otp_style not in text:
+              raise SystemExit('OTP style anchor not found')
+          text = text.replace(otp_style, otp_styles, 1)
+
+          resend_style = '''  resendText: { color: ui.colors.primary, fontWeight: '900', textAlign: 'center', paddingVertical: 5 },'''
+          resend_styles = '''  resendText: { color: ui.colors.primary, fontWeight: '900', textAlign: 'center', paddingVertical: 7 },\n  otpActions: { flexDirection: 'row', gap: 10, alignItems: 'stretch' },\n  otpActionButton: { flex: 1 },'''
+          if resend_style not in text:
+              raise SystemExit('Resend style anchor not found')
+          text = text.replace(resend_style, resend_styles, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Typecheck frontend
+        working-directory: frontend
+        run: npm ci && npm run typecheck
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/screens/ExpensesScreen.tsx
+          git commit -m "Fix OTP expense mobile layout and guidance"
+          git push
