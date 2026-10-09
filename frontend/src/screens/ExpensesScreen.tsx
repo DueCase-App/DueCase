@@ -369,6 +369,12 @@ export function ExpensesScreen(): React.JSX.Element {
                     </View>
 
                     <View style={styles.badgeRow}><StatusPill text={actionText} tone={tone} />{expense.isExtraordinary ? <View style={styles.extraordinaryPill}><Ionicons name="shield-checkmark-outline" size={14} color={ui.colors.primary} /><Text style={styles.extraordinaryText}>Straordinaria</Text></View> : null}</View>
+                    {expense.isExtraordinary && !expense.otpSignatureMetadata ? (
+                      <View style={styles.otpRequirementNotice}>
+                        <Ionicons name="mail-outline" size={17} color={ui.colors.primary} />
+                        <Text style={styles.otpRequirementText}>Per approvare questa spesa straordinaria è richiesto un codice OTP inviato via email all’altro genitore</Text>
+                      </View>
+                    ) : null}
 
                     <View style={styles.splitBox}>
                       <View style={styles.splitItem}><Text style={styles.splitRole}>Papà</Text><Text style={styles.splitValue}>{Number(expense.fatherPercentage).toLocaleString('it-IT')}%</Text></View>
@@ -465,15 +471,15 @@ function OtpApprovalModal({ expense, maskedEmail, busy, onClose, onConfirm, onRe
     if (cleaned && index < 5) refs.current[index + 1]?.focus();
   }
   const code = digits.join('');
-  return <Modal visible={expense !== null} transparent animationType="slide" onRequestClose={onClose}><View style={styles.backdrop}><View style={styles.dialog}>
+  return <Modal visible={expense !== null} transparent animationType="slide" onRequestClose={onClose}><View style={styles.backdrop}><ScrollView style={styles.otpDialogScroll} contentContainerStyle={styles.otpDialogContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}><View style={[styles.dialog, styles.otpDialog]}>
     <View style={styles.otpIcon}><Ionicons name="shield-checkmark-outline" size={30} color={ui.colors.primary} /></View>
     <Text style={styles.modalTitle}>Conferma spesa straordinaria</Text>
     <Text style={styles.otpSubtitle}>Inserisci il codice a 6 cifre inviato via email. DueCase registrerà chi ha confermato e quando, senza presentarlo come firma digitale qualificata.</Text>
     <Text style={styles.otpDelivery}>Codice inviato{maskedEmail ? ` a ${maskedEmail}` : ''}. Scade dopo 5 minuti.</Text>
     <View style={styles.otpRow}>{digits.map((digit, index) => <TextInput key={index} ref={(ref) => { refs.current[index] = ref; }} value={digit} onChangeText={(value) => changeDigit(index, value)} onKeyPress={({ nativeEvent }) => { if (nativeEvent.key === 'Backspace' && !digit && index > 0) refs.current[index - 1]?.focus(); }} keyboardType="number-pad" inputMode="numeric" maxLength={1} textAlign="center" style={[styles.otpInput, digit && styles.otpInputFilled]} />)}</View>
-    <View style={styles.actions}><Pressable style={styles.cancelButton} onPress={onClose}><Text style={styles.cancelText}>Annulla</Text></Pressable><Pressable disabled={busy || code.length !== 6} style={[styles.approveButton, (busy || code.length !== 6) && styles.disabled]} onPress={() => void onConfirm(code)}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.approveText}>Conferma</Text>}</Pressable></View>
     <Pressable disabled={resending} onPress={() => void (async () => { try { setResending(true); await onResend(); Alert.alert('Codice inviato', 'Ti abbiamo inviato un nuovo codice via email.'); } catch (error) { Alert.alert('Conferma', error instanceof Error ? error.message : 'Invio non riuscito'); } finally { setResending(false); } })()}><Text style={styles.resendText}>{resending ? 'Invio…' : 'Invia un nuovo codice'}</Text></Pressable>
-  </View></View></Modal>;
+    <View style={styles.otpActions}><Pressable style={[styles.cancelButton, styles.otpActionButton]} onPress={onClose}><Text style={styles.cancelText}>Annulla</Text></Pressable><Pressable disabled={busy || code.length !== 6} style={[styles.approveButton, styles.otpActionButton, (busy || code.length !== 6) && styles.disabled]} onPress={() => void onConfirm(code)}>{busy ? <ActivityIndicator color="#FFF" /> : <Text style={styles.approveText}>Conferma</Text>}</Pressable></View>
+  </View></ScrollView></View></Modal>;
 }
 
 function PaymentModal({ expense, reserved, currentRole, onClose, onDone }: { expense: Expense | null; reserved: number; currentRole: ParentRole | null; onClose: () => void; onDone: () => void }): React.JSX.Element {
@@ -598,6 +604,8 @@ const styles = StyleSheet.create({
   statusInfo: { backgroundColor: ui.colors.primarySoft }, statusInfoText: { color: ui.colors.primary },
   extraordinaryPill: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, backgroundColor: ui.colors.skySoft, paddingHorizontal: 9, paddingVertical: 6 },
   extraordinaryText: { color: ui.colors.primaryDark, fontSize: 12, fontWeight: '800' },
+  otpRequirementNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, backgroundColor: ui.colors.primarySoft, paddingHorizontal: 11, paddingVertical: 10 },
+  otpRequirementText: { flex: 1, color: ui.colors.primaryDark, fontSize: 12.5, lineHeight: 18, fontWeight: '700' },
   splitBox: { flexDirection: 'row', borderRadius: 14, backgroundColor: ui.colors.input, borderWidth: 1, borderColor: ui.colors.border, overflow: 'hidden' },
   splitItem: { flex: 1, alignItems: 'center', paddingVertical: 10 },
   splitDivider: { width: 1, backgroundColor: ui.colors.border },
@@ -655,11 +663,16 @@ const styles = StyleSheet.create({
   filePreview: { minHeight: 220, borderRadius: 14, backgroundColor: ui.colors.input, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 20 },
   attachmentChoice: { minHeight: 58, borderRadius: 13, borderWidth: 1, borderColor: ui.colors.border, backgroundColor: ui.colors.input, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
   attachmentChoiceIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  otpDialogScroll: { width: '100%', maxWidth: 560 },
+  otpDialogContent: { flexGrow: 1, justifyContent: 'center', paddingVertical: 8 },
+  otpDialog: { maxHeight: '100%', padding: 16, gap: 10 },
   otpIcon: { width: 58, height: 58, borderRadius: 29, backgroundColor: ui.colors.primarySoft, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
   otpSubtitle: { color: ui.colors.text, textAlign: 'center', lineHeight: 20 },
   otpDelivery: { color: ui.colors.muted, textAlign: 'center', fontSize: 12.5 },
   otpRow: { flexDirection: 'row', justifyContent: 'center', gap: 7 },
   otpInput: { width: 43, height: 51, borderRadius: 12, borderWidth: 1.5, borderColor: ui.colors.border, backgroundColor: ui.colors.input, color: ui.colors.primaryDark, fontSize: 20, fontWeight: '900' },
   otpInputFilled: { borderColor: ui.colors.primary, backgroundColor: ui.colors.primarySoft },
-  resendText: { color: ui.colors.primary, fontWeight: '900', textAlign: 'center', paddingVertical: 5 },
+  resendText: { color: ui.colors.primary, fontWeight: '900', textAlign: 'center', paddingVertical: 7 },
+  otpActions: { flexDirection: 'row', gap: 10, alignItems: 'stretch' },
+  otpActionButton: { flex: 1 },
 });
