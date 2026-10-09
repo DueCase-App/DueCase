@@ -125,3 +125,5 @@ jobs:
               --notes "APK Android di test DueCase ${APP_VERSION}, compilato e firmato tramite EAS con le credenziali Android del progetto DueCase." \
               --prerelease
           fi
+
+# Trigger signed preview build 2026-10-09
