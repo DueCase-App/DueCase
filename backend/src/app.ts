@@ -27,6 +27,7 @@ import messagesRouter from './routes/messages.js';
 import notificationsRouter from './routes/notifications.js';
 import permanenceRouter from './routes/permanence.js';
 import professionalAuthRouter from './routes/professionalAuth.js';
+import professionalEmailChangeRouter from './routes/professionalEmailChange.js';
 import professionalPasswordResetRouter from './routes/professionalPasswordReset.js';
 import professionalPrivacyOverridesRouter from './routes/professionalPrivacyOverrides.js';
 import professionalPortalRouter from './routes/professionalPortal.js';
@@ -76,6 +77,7 @@ app.use('/api/auth', emailChangeRouter);
 // Accesso professionisti completamente separato dagli account Padre/Madre.
 app.use('/api/professional-auth', professionalPasswordResetRouter);
 app.use('/api/professional-auth', professionalAuthRouter);
+app.use('/api/professional-auth', professionalEmailChangeRouter);
 app.use('/api/professional', professionalPrivacyOverridesRouter);
 app.use('/api/professional', professionalPortalRouter);
 

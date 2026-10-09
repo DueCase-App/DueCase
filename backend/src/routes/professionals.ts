@@ -24,8 +24,8 @@ const uuidSchema = z.string().uuid();
 const INVITE_DAYS = 7;
 
 function invitationLink(rawToken: string): string {
-  const portalBase = (config.PROFESSIONAL_PORTAL_URL ?? `${config.SITE_URL.replace(/\/$/, '')}/professionisti`).replace(/\/$/, '');
-  return `${portalBase}/accetta?token=${encodeURIComponent(rawToken)}`;
+  const portalBase = `${config.SITE_URL.replace(/\/$/, '')}/professionisti`;
+  return `${portalBase}/?token=${encodeURIComponent(rawToken)}`;
 }
 
 async function sendInviteEmail(input: {

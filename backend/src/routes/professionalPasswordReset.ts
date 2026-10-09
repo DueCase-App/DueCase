@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
-import { isEmailConfigured, sendAccountCode } from '../services/emailService.js';
+import { isEmailConfigured, sendAccountCode, sendProfessionalSecurityNotice } from '../services/emailService.js';
 import { rateLimit } from '../services/rateLimit.js';
 import { passwordSchema } from '../services/validation.js';
 
@@ -108,6 +108,7 @@ router.post('/password-reset/confirm', rateLimit(20, 15 * 60 * 1000, ['POST']), 
       [professional.id, passwordHash],
     );
     await client.query('COMMIT');
+    await sendProfessionalSecurityNotice({ to: input.email, displayName: 'Professionista', title: 'Password reimpostata', message: 'La password del tuo account professionista DueCase è stata reimpostata tramite codice email. Tutte le sessioni precedenti sono state invalidate.' }).catch((error) => console.error('Professional reset security email failed', error instanceof Error ? error.message : error));
     res.json({ reset: true });
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch { /* transaction may already be closed after invalid attempt */ }

@@ -6,6 +6,7 @@ import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
 import { getProfessionalAuth, requireProfessionalAuth, signProfessionalAccessToken } from '../professionalAuth.js';
 import { passwordSchema } from '../services/validation.js';
+import { sendProfessionalSecurityNotice } from '../services/emailService.js';
 import { appendProfessionalAudit, hashProfessionalInvitationToken } from '../services/professionalAccessService.js';
 import { rateLimit } from '../services/rateLimit.js';
 
@@ -281,6 +282,7 @@ router.post('/change-password', requireProfessionalAuth, asyncHandler(async (req
     `UPDATE professional_users SET password_hash=$1,token_version=$2,updated_at=NOW() WHERE id=$3`,
     [passwordHash, nextVersion, professional.professionalId],
   );
+  await sendProfessionalSecurityNotice({ to: professional.email, displayName: professional.displayName, title: 'Password modificata', message: 'La password del tuo account professionista DueCase è stata modificata. Le altre sessioni già aperte sono state disconnesse.' }).catch((error) => console.error('Professional password security email failed', error instanceof Error ? error.message : error));
   res.json({ token: signProfessionalAccessToken(professional.professionalId, nextVersion) });
 }));
 

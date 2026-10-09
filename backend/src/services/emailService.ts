@@ -301,3 +301,30 @@ export async function sendProfessionalInvitationEmail(input: {
     html,
   });
 }
+
+
+export async function sendProfessionalEmailChangeCode(input: { to: string; displayName: string; code: string }): Promise<void> {
+  if (!isEmailConfigured()) throw new Error('SMTP_NOT_CONFIGURED');
+  const subject = 'DueCase · Conferma nuovo indirizzo email';
+  const text = `Ciao ${input.displayName},\n\nil codice per confermare il nuovo indirizzo email del tuo account professionista DueCase è ${input.code}.\n\nScade tra 10 minuti e può essere usato una sola volta. Se non hai richiesto tu questa modifica, non usare il codice e contatta l'assistenza.`;
+  const html = emailShell({
+    eyebrow: 'Sicurezza account professionista',
+    title: 'Conferma il nuovo indirizzo email',
+    body: `<p style="margin:0 0 16px">Ciao <strong>${escapeHtml(input.displayName)}</strong>, usa questo codice per confermare il nuovo indirizzo email del tuo account professionista:</p><div style="font-size:38px;font-weight:800;letter-spacing:9px;text-align:center;padding:20px 14px;background:#EAF3FB;border:1px solid #D6E5F3;border-radius:14px;margin:22px 0;color:#0B376D">${input.code}</div><p style="margin:0">Il codice è valido per <strong>10 minuti</strong> e può essere utilizzato una sola volta.</p>`,
+    note: 'Se non hai richiesto tu questa modifica, non utilizzare il codice e contatta l’assistenza DueCase.',
+  });
+  await sendEmail({ to: input.to, subject, text, html });
+}
+
+export async function sendProfessionalSecurityNotice(input: { to: string; displayName: string; title: string; message: string }): Promise<void> {
+  if (!isEmailConfigured()) throw new Error('SMTP_NOT_CONFIGURED');
+  const subject = `DueCase · ${input.title}`;
+  const text = `Ciao ${input.displayName},\n\n${input.message}\n\nSe non riconosci questa operazione, contatta immediatamente l'assistenza DueCase.`;
+  const html = emailShell({
+    eyebrow: 'Sicurezza account professionista',
+    title: input.title,
+    body: `<p style="margin:0 0 14px">Ciao <strong>${escapeHtml(input.displayName)}</strong>,</p><p style="margin:0">${escapeHtml(input.message)}</p>`,
+    note: 'Se non riconosci questa operazione, contatta immediatamente l’assistenza DueCase.',
+  });
+  await sendEmail({ to: input.to, subject, text, html });
+}
