@@ -4,7 +4,7 @@
     "slug": "duecase",
     "owner": "riccardobiusos-team",
     "scheme": "duecase",
-    "version": "0.4.5",
+    "version": "0.4.6",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "backgroundColor": "#FFF9F0",
@@ -57,7 +57,7 @@
       "config": {
         "usesNonExemptEncryption": false
       },
-      "buildNumber": "45"
+      "buildNumber": "46"
     },
     "android": {
       "package": "com.duecaseununicasquadra.duecase",
@@ -73,7 +73,7 @@
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
       ],
-      "versionCode": 45
+      "versionCode": 46
     },
     "extra": {
       "eas": {
