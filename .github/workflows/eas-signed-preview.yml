@@ -141,3 +141,4 @@ jobs:
 # Retry with build diagnostics 2026-10-09
 # Local prebuild added to surface/fix remote prebuild failure
 # Retry after replacing the corrupt Android notification PNG at runtime
+# Trigger update-safe DueCase 0.4.6 EAS-signed build 2026-10-09 17:01 Europe/Rome
