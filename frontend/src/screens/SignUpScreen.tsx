@@ -1,4 +1,5 @@
 import { SafeModal as Modal } from '../components/SafeModal';
+import { LegalLinks } from '../components/LegalLinks';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useEffect, useMemo, useState, type ComponentProps } from 'react';
@@ -35,8 +36,8 @@ const COLORS = {
   modalPlaceholder: '#4B5563',
 };
 const MIN_DATE = new Date(1900, 0, 1);
-const PRIVACY_URL = 'https://www.duecaseununicasquadra.com/privacy.html';
-const TERMS_URL = 'https://www.duecaseununicasquadra.com/termini.html';
+const PRIVACY_URL = 'https://duecaseununicasquadra.com/privacy.html';
+const TERMS_URL = 'https://duecaseununicasquadra.com/termini.html';
 type IconName = ComponentProps<typeof Ionicons>['name'];
 type DateTarget = 'parent' | 'child';
 type ChildDraft = { id: string; displayName: string; birthDate: Date | null };
@@ -93,7 +94,7 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
 
   function applySelectedDate(target:DateTarget,date:Date){ if(target==='parent')setBirthDate(date); else setChildBirthDate(date); }
   function openDatePicker(target:DateTarget){
-    const current=target==='parent'?(birthDate??new Date()):(childBirthDate??new Date());
+    const current=target==='parent'?(birthDate??defaultDate(30)):(childBirthDate??defaultDate(8));
     if(Platform.OS==='android'){
       DateTimePickerAndroid.open({value:current,mode:'date',display:'default',minimumDate:MIN_DATE,maximumDate:new Date(),onChange:(event:DateTimePickerEvent,date?:Date)=>{if(event.type==='set'&&date)applySelectedDate(target,date);}}); return;
     }
@@ -101,6 +102,7 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
   }
   function addChild(){
     const name=childName.trim(); if(name.length<2){Alert.alert('Nome del figlio','Inserisci il nome del figlio.');return;}
+    if(!childBirthDate){Alert.alert('Data di nascita','Inserisci o seleziona la data di nascita del figlio.');return;}
     setChildren(v=>[...v,{id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`,displayName:name,birthDate:childBirthDate}]);
     setChildName('');setChildBirthDate(null);setChildModalVisible(false);
   }
@@ -185,16 +187,23 @@ export function SignUpScreen({ onShowLogin }: { onShowLogin: () => void }): Reac
           {error?<View style={styles.errorBox}><Ionicons name="alert-circle-outline" size={20} color={COLORS.danger}/><Text style={styles.errorText}>{error}</Text></View>:null}
           <Pressable disabled={loading} onPress={()=>void submit()} style={[styles.continueButton,loading&&{opacity:.6}]}><Text style={styles.continueText}>{loading?'Creazione account…':'Continua'}</Text><Ionicons name="chevron-forward" size={22} color="#fff"/></Pressable>
           <Pressable onPress={onShowLogin} style={styles.loginLink}><Text style={styles.hint}>Hai già un account? <Text style={styles.legalLink}>Accedi</Text></Text></Pressable>
+          <LegalLinks />
         </View>
       </ScrollView>
 
       <Modal visible={childModalVisible} transparent animationType="fade" onRequestClose={()=>setChildModalVisible(false)}>
-        <SafeAreaView style={styles.modalSafeArea}><KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS==='ios'?'padding':'height'}><View style={styles.modalCard}>
-          <View style={styles.modalHeader}><Text style={styles.modalTitle}>Aggiungi un figlio</Text><Pressable onPress={()=>setChildModalVisible(false)}><Ionicons name="close" size={28} color={COLORS.text}/></Pressable></View>
-          <FormField label="Nome" required icon="person-outline" value={childName} onChangeText={setChildName} placeholder="Nome del figlio" autoCapitalize="words" />
-          <DateField label="Data di nascita" value={childBirthDate} onChangeDate={setChildBirthDate} onPress={()=>openDatePicker('child')} />
-          <Pressable onPress={addChild} style={styles.continueButton}><Text style={styles.continueText}>Aggiungi</Text></Pressable>
-        </View></KeyboardAvoidingView></SafeAreaView>
+        <SafeAreaView style={styles.modalSafeArea}>
+          <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS==='ios'?'padding':'height'} keyboardVerticalOffset={Platform.OS==='ios'?8:0}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}><Text style={styles.modalTitle}>Aggiungi un figlio</Text><Pressable onPress={()=>setChildModalVisible(false)}><Ionicons name="close" size={28} color={COLORS.text}/></Pressable></View>
+              <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS==='ios'?'interactive':'on-drag'} showsVerticalScrollIndicator={false}>
+                <FormField label="Nome" required icon="person-outline" value={childName} onChangeText={setChildName} placeholder="Nome del figlio" autoCapitalize="words" />
+                <DateField label="Data di nascita" required value={childBirthDate} onChangeDate={setChildBirthDate} onPress={()=>openDatePicker('child')} />
+                <Pressable onPress={addChild} style={styles.continueButton}><Text style={styles.continueText}>Aggiungi</Text></Pressable>
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
       </Modal>
       {Platform.OS==='ios'?<Modal visible={iosDateTarget!==null} transparent animationType="fade" onRequestClose={()=>setIosDateTarget(null)}><View style={styles.dateOverlay}><View style={styles.modalCard}><Text style={styles.modalTitle}>Seleziona la data</Text><DateTimePicker value={iosPickerValue} mode="date" display="spinner" minimumDate={MIN_DATE} maximumDate={new Date()} onChange={(_,d)=>{if(d)setIosPickerValue(d);}} locale="it-IT"/><Pressable onPress={()=>{if(iosDateTarget)applySelectedDate(iosDateTarget,iosPickerValue);setIosDateTarget(null);}} style={styles.continueButton}><Text style={styles.continueText}>Fine</Text></Pressable></View></View></Modal>:null}
     </KeyboardAvoidingView>
@@ -205,9 +214,9 @@ function RequiredLabel({label,required=true}:{label:string;required?:boolean}){r
 function FormField({label,required=false,icon,rightIcon,onRightPress,...props}:TextInputProps&{label:string;required?:boolean;icon:IconName;rightIcon?:IconName;onRightPress?:()=>void}){return <View style={styles.formField}><RequiredLabel label={label} required={required}/><View style={styles.inputShell}><Ionicons name={icon} size={22} color={COLORS.muted}/><TextInput {...props} style={styles.input} placeholderTextColor="#7892B5" selectionColor={COLORS.blue}/>{rightIcon?<Pressable onPress={onRightPress}><Ionicons name={rightIcon} size={23} color={COLORS.muted}/></Pressable>:null}</View></View>;}
 function DateField({label,required=false,value,onPress,onChangeDate}:{label:string;required?:boolean;value:Date|null;onPress:()=>void;onChangeDate:(date:Date|null)=>void}){
   const [draft,setDraft]=useState(formatItalianDate(value)); useEffect(()=>{setDraft(formatItalianDate(value));},[value]);
-  function change(text:string){const digits=text.replace(/\D/g,'').slice(0,8);const formatted=digits.slice(0,2)+(digits.length>2?'/'+digits.slice(2,4):'')+(digits.length>4?'/'+digits.slice(4):'');setDraft(formatted);const d=new Date(Number(digits.slice(4)),Number(digits.slice(2,4))-1,Number(digits.slice(0,2)),12);onChangeDate(digits.length===8&&d.getFullYear()===Number(digits.slice(4))&&d.getMonth()===Number(digits.slice(2,4))-1&&d.getDate()===Number(digits.slice(0,2))&&d<=new Date()?d:null);}
-  if(Platform.OS==='web')return <View style={styles.formField}><RequiredLabel label={label} required={required}/><input aria-label={label} type="date" min="1900-01-01" max={toIsoDate(new Date())} value={value?toIsoDate(value):''} onChange={e=>onChangeDate(e.target.value?new Date(e.target.value+'T00:00:00'):null)} style={{padding:14,fontSize:16,borderRadius:14,border:'1px solid #C5D9EF',background:'#E9F0F8',color:'#15345F'}}/></View>;
-  return <View style={styles.formField}><RequiredLabel label={label} required={required}/><View style={styles.inputShell}><TextInput value={draft} onChangeText={change} keyboardType="number-pad" placeholder="gg/mm/aaaa" placeholderTextColor={COLORS.muted} style={styles.input} maxLength={10}/><Pressable onPress={onPress}><Ionicons name="calendar-outline" size={24} color={COLORS.blue}/></Pressable></View></View>;
+  function change(text:string){const digits=text.replace(/\D/g,'').slice(0,8);const formatted=digits.slice(0,2)+(digits.length>2?'/'+digits.slice(2,4):'')+(digits.length>4?'/'+digits.slice(4):'');setDraft(formatted);const d=new Date(Number(digits.slice(4)),Number(digits.slice(2,4))-1,Number(digits.slice(0,2)),12);const valid=digits.length===8&&d.getFullYear()===Number(digits.slice(4))&&d.getMonth()===Number(digits.slice(2,4))-1&&d.getDate()===Number(digits.slice(0,2))&&d>=MIN_DATE&&d<=new Date();onChangeDate(valid?d:null);}
+  if(Platform.OS==='web')return <View style={styles.formField}><RequiredLabel label={label} required={required}/><input aria-label={label} type="date" min="1900-01-01" max={toIsoDate(new Date())} value={value?toIsoDate(value):''} onChange={e=>onChangeDate(e.target.value?new Date(e.target.value+'T12:00:00'):null)} style={{padding:14,fontSize:16,borderRadius:14,border:'1px solid #C5D9EF',background:'#E9F0F8',color:'#15345F'}}/></View>;
+  return <View style={styles.formField}><RequiredLabel label={label} required={required}/><View style={styles.inputShell}><TextInput value={draft} onChangeText={change} keyboardType="number-pad" inputMode="numeric" placeholder="gg/mm/aaaa" placeholderTextColor={COLORS.muted} style={styles.input} maxLength={10}/><Pressable accessibilityRole="button" accessibilityLabel={`Apri calendario per ${label}`} onPress={onPress}><Ionicons name="calendar-outline" size={24} color={COLORS.blue}/></Pressable></View><Text style={styles.dateHint}>Digita 8 cifre, ad esempio 04091993 → 04/09/1993.</Text></View>;
 }
 function RoleButton({label,selected,onPress}:{label:string;selected:boolean;onPress:()=>void}){return <Pressable onPress={onPress} style={[styles.roleButton,selected&&styles.selected]}><Ionicons name="person-outline" size={24} color={selected?COLORS.blue:COLORS.muted}/><Text style={[styles.roleText,selected&&{color:COLORS.blue}]}>{label}</Text></Pressable>;}
 function SelectorButton({label,selected,onPress}:{label:string;selected:boolean;onPress:()=>void}){return <Pressable onPress={onPress} style={[styles.selectorButton,selected&&styles.selected]}><Text style={[styles.selectorText,selected&&{color:COLORS.blue}]}>{label}</Text></Pressable>;}
@@ -216,11 +225,11 @@ const styles=StyleSheet.create({
   safeArea:{flex:1,backgroundColor:'#D9ECFA'},screen:{flex:1,backgroundColor:'#D9ECFA'},scrollContent:{flexGrow:1,backgroundColor:'#D9ECFA',paddingTop:6},hero:{width:'100%',backgroundColor:'#D9ECFA'},
   card:{width:'100%',maxWidth:900,alignSelf:'center',marginTop:-22,paddingTop:28,paddingHorizontal:20,paddingBottom:36,borderTopLeftRadius:30,borderTopRightRadius:30,backgroundColor:'#fff',shadowColor:COLORS.shadow,shadowOpacity:.16,shadowRadius:18,shadowOffset:{width:0,height:-4},elevation:8,gap:15},
   title:{color:COLORS.text,fontSize:31,lineHeight:36,fontWeight:'900'},subtitle:{marginTop:-7,color:COLORS.muted,fontSize:16,lineHeight:22},progressTrack:{width:146,height:7,borderRadius:99,overflow:'hidden',flexDirection:'row',alignSelf:'center'},progressSegment:{flex:1},progressBlue:{backgroundColor:COLORS.blue},progressOrange:{backgroundColor:COLORS.orange},
-  fieldRow:{flexDirection:'row',gap:12},fieldRowStack:{flexDirection:'column'},formField:{flex:1,gap:7,minWidth:0},label:{color:COLORS.text,fontSize:14,fontWeight:'800'},required:{color:'#EF2B2D'},inputShell:{minHeight:58,borderRadius:15,borderWidth:1,borderColor:COLORS.border,backgroundColor:COLORS.input,paddingHorizontal:14,flexDirection:'row',alignItems:'center',gap:10},input:{flex:1,minWidth:0,color:COLORS.text,fontSize:15,fontWeight:'500',paddingVertical:Platform.OS==='ios'?16:12},
+  fieldRow:{flexDirection:'row',gap:12},fieldRowStack:{flexDirection:'column'},formField:{flex:1,gap:7,minWidth:0},label:{color:COLORS.text,fontSize:14,fontWeight:'800'},required:{color:'#EF2B2D'},inputShell:{minHeight:58,borderRadius:15,borderWidth:1,borderColor:COLORS.border,backgroundColor:COLORS.input,paddingHorizontal:14,flexDirection:'row',alignItems:'center',gap:10},input:{flex:1,minWidth:0,color:COLORS.text,fontSize:15,fontWeight:'500',paddingVertical:Platform.OS==='ios'?16:12},dateHint:{color:COLORS.muted,fontSize:11,lineHeight:15},
   hint:{color:COLORS.muted,fontSize:13,lineHeight:18},roleRow:{flexDirection:'row',gap:12},roleButton:{flex:1,minHeight:58,borderRadius:15,borderWidth:1,borderColor:COLORS.border,backgroundColor:'#FAFCFE',flexDirection:'row',alignItems:'center',justifyContent:'center',gap:9},roleText:{color:COLORS.muted,fontSize:16,fontWeight:'800'},selected:{borderColor:COLORS.blue,borderWidth:2,backgroundColor:'#F1F7FD'},
   notice:{flexDirection:'row',alignItems:'center',gap:10,padding:14,borderRadius:15,backgroundColor:'#F1F7FD',borderWidth:1,borderColor:COLORS.border},noticeText:{flex:1,color:COLORS.text,fontSize:13,lineHeight:19},childrenRow:{minHeight:64,borderRadius:15,backgroundColor:COLORS.input,paddingHorizontal:14,flexDirection:'row',alignItems:'center',gap:10},childrenText:{flex:1,color:COLORS.muted,fontSize:15},plusBadge:{width:44,height:44,borderRadius:22,backgroundColor:COLORS.blue,alignItems:'center',justifyContent:'center'},chips:{flexDirection:'row',flexWrap:'wrap',gap:8},chip:{borderRadius:99,paddingLeft:12,paddingRight:8,paddingVertical:7,backgroundColor:'#EAF3FC',flexDirection:'row',alignItems:'center',gap:7},chipText:{color:COLORS.text,fontSize:13,fontWeight:'700'},
   selectorRow:{flexDirection:'row',gap:8},selectorButton:{flex:1,minHeight:54,borderRadius:14,borderWidth:1,borderColor:COLORS.border,alignItems:'center',justifyContent:'center',paddingHorizontal:8},selectorText:{color:COLORS.muted,fontSize:13,fontWeight:'800',textAlign:'center'},
   legalBox:{gap:10,padding:14,borderWidth:1,borderColor:COLORS.border,borderRadius:15,backgroundColor:'#F8FBFE'},legalRow:{flexDirection:'row',alignItems:'flex-start',gap:10},legalText:{flex:1,color:COLORS.text,fontSize:13,lineHeight:19},legalLink:{color:COLORS.blue,fontWeight:'900',textDecorationLine:'underline'},legalNotice:{marginTop:2,paddingTop:12,borderTopWidth:1,borderTopColor:COLORS.border,flexDirection:'row',alignItems:'flex-start',gap:8},legalNoticeText:{flex:1,color:COLORS.muted,fontSize:12,lineHeight:17},
   errorBox:{borderRadius:13,padding:12,backgroundColor:'#FEF2F2',flexDirection:'row',gap:8},errorText:{flex:1,color:COLORS.danger,fontSize:13,fontWeight:'600'},continueButton:{minHeight:58,borderRadius:15,backgroundColor:COLORS.blue,alignItems:'center',justifyContent:'center',flexDirection:'row',gap:8},continueText:{color:'#fff',fontSize:18,fontWeight:'900'},loginLink:{alignSelf:'center',paddingVertical:8},
-  modalSafeArea:{flex:1,backgroundColor:'rgba(9,35,67,.42)'},modalOverlay:{flex:1,justifyContent:'center',padding:20,backgroundColor:'rgba(9,35,67,.42)'},modalCard:{width:'100%',maxWidth:520,alignSelf:'center',borderRadius:24,backgroundColor:'#fff',padding:20,gap:18},modalHeader:{flexDirection:'row',alignItems:'center',justifyContent:'space-between'},modalTitle:{color:COLORS.text,fontSize:24,fontWeight:'900'},dateOverlay:{flex:1,justifyContent:'center',padding:20,backgroundColor:'rgba(9,35,67,.42)'},
+  modalSafeArea:{flex:1,backgroundColor:'rgba(9,35,67,.42)'},modalOverlay:{flex:1,justifyContent:'center',padding:16,backgroundColor:'rgba(9,35,67,.42)'},modalCard:{width:'100%',maxWidth:520,maxHeight:'92%',alignSelf:'center',borderRadius:24,backgroundColor:'#fff',padding:20,gap:12},modalHeader:{flexDirection:'row',alignItems:'center',justifyContent:'space-between'},modalTitle:{color:COLORS.text,fontSize:24,fontWeight:'900'},modalScroll:{flexGrow:0},modalScrollContent:{gap:18,paddingBottom:4},dateOverlay:{flex:1,justifyContent:'center',padding:20,backgroundColor:'rgba(9,35,67,.42)'},
 });
