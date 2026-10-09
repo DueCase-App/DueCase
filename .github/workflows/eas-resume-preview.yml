@@ -1,0 +1,143 @@
+name: DueCase EAS Resume Preview
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/eas-resume-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  resume-preview:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      CI: '1'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install EAS CLI
+        run: npm install --global eas-cli
+
+      - name: Verify Expo account
+        run: eas whoami
+
+      - name: Wait for latest Android preview build
+        shell: bash
+        run: |
+          set -euo pipefail
+          eas build:list --platform android --limit 1 --json --non-interactive > "$RUNNER_TEMP/latest.json"
+          cat "$RUNNER_TEMP/latest.json"
+
+          BUILD_ID="$(node - "$RUNNER_TEMP/latest.json" <<'NODE'
+          const fs = require('fs');
+          const rows = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const build = Array.isArray(rows) ? rows[0] : rows;
+          if (!build?.id) process.exit(1);
+          process.stdout.write(build.id);
+          NODE
+          )"
+
+          echo "Monitoring EAS build $BUILD_ID"
+
+          for attempt in $(seq 1 60); do
+            eas build:view "$BUILD_ID" --json > "$RUNNER_TEMP/build.json"
+            STATUS="$(node - "$RUNNER_TEMP/build.json" <<'NODE'
+          const fs = require('fs');
+          const build = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          process.stdout.write(build.status || 'UNKNOWN');
+          NODE
+          )"
+            echo "Attempt $attempt: $STATUS"
+
+            if [ "$STATUS" = "FINISHED" ]; then
+              break
+            fi
+            if [ "$STATUS" = "ERRORED" ] || [ "$STATUS" = "CANCELED" ]; then
+              cat "$RUNNER_TEMP/build.json"
+              exit 1
+            fi
+            if [ "$attempt" = "60" ]; then
+              echo "Timed out waiting for EAS build $BUILD_ID"
+              exit 1
+            fi
+            sleep 15
+          done
+
+          cat "$RUNNER_TEMP/build.json"
+
+          BUILD_URL="$(node - "$RUNNER_TEMP/build.json" <<'NODE'
+          const fs = require('fs');
+          const build = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const url = build?.artifacts?.buildUrl || build?.artifactUrl;
+          if (!url) process.exit(1);
+          process.stdout.write(url);
+          NODE
+          )"
+
+          APP_VERSION="$(node - "$RUNNER_TEMP/build.json" <<'NODE'
+          const fs = require('fs');
+          const build = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          process.stdout.write(build?.appVersion || '0.4.4');
+          NODE
+          )"
+
+          APK_DEST="$GITHUB_WORKSPACE/frontend/DueCase-${APP_VERSION}.apk"
+          curl --fail --location --retry 5 --retry-delay 2 "$BUILD_URL" --output "$APK_DEST"
+          test -s "$APK_DEST"
+          unzip -t "$APK_DEST" >/dev/null
+
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+          echo "APK_DEST=$APK_DEST" >> "$GITHUB_ENV"
+          echo "EAS_BUILD_ID=$BUILD_ID" >> "$GITHUB_ENV"
+
+      - name: Verify package and signing certificate
+        shell: bash
+        run: |
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          "$AAPT" dump badging "$APK_DEST" | head -1 | tee "$RUNNER_TEMP/package.txt"
+          grep -q "name='com.duecaseununicasquadra.duecase'" "$RUNNER_TEMP/package.txt"
+          "$APKSIGNER" verify --verbose --print-certs "$APK_DEST"
+
+      - name: Upload signed APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DueCase-${{ env.APP_VERSION }}-EAS-Signed-Android
+          path: ${{ env.APK_DEST }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Publish preview APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          TAG="v${APP_VERSION}-preview"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK_DEST" --clobber
+            gh release edit "$TAG" \
+              --title "DueCase ${APP_VERSION} Preview" \
+              --notes "APK Android di test DueCase ${APP_VERSION}, compilato e firmato tramite EAS con le credenziali Android del progetto DueCase. Build EAS: ${EAS_BUILD_ID}."
+          else
+            gh release create "$TAG" "$APK_DEST" \
+              --target main \
+              --title "DueCase ${APP_VERSION} Preview" \
+              --notes "APK Android di test DueCase ${APP_VERSION}, compilato e firmato tramite EAS con le credenziali Android del progetto DueCase. Build EAS: ${EAS_BUILD_ID}." \
+              --prerelease
+          fi
