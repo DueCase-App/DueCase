@@ -50,6 +50,9 @@ jobs:
       - name: Expo Doctor
         run: npx expo-doctor@latest
 
+      - name: Android prebuild diagnostic
+        run: npx expo prebuild --platform android --no-install --clean
+
       - name: Install EAS CLI
         run: npm install --global eas-cli
 
@@ -136,3 +139,4 @@ jobs:
 # Trigger signed preview build 2026-10-09
 # Trigger after EXPO_TOKEN refresh 2026-10-09 09:30 Europe/Rome
 # Retry with build diagnostics 2026-10-09
+# Local prebuild added to surface/fix remote prebuild failure
