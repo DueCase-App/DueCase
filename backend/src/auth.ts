@@ -137,7 +137,7 @@ export async function checkPremiumStatus(req: Request, _res: Response, next: Nex
 
     const auth = getAuth(req);
     if (config.EMAIL_VERIFICATION_REQUIRED && !auth.emailVerifiedAt) throw new ApiError(403, 'Verifica prima il tuo indirizzo email.', 'EMAIL_VERIFICATION_REQUIRED');
-    if (!auth.familyId) {
+  if (!auth.familyId) {
       throw new ApiError(
         403,
         'Abbonamento Premium richiesto',
@@ -161,7 +161,7 @@ export async function checkPremiumStatus(req: Request, _res: Response, next: Nex
     const periodEnd = subscription?.currentPeriodEnd ? new Date(subscription.currentPeriodEnd) : null;
     const entitled = Boolean(
       subscription
-      && (subscription.status === 'active' || subscription.status === 'canceled' || subscription.status === 'past_due')
+      && (subscription.status === 'active' || subscription.status === 'canceled')
       && periodEnd
       && !Number.isNaN(periodEnd.getTime())
       && periodEnd.getTime() > Date.now(),

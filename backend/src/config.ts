@@ -23,18 +23,11 @@ const schema = z.object({
   INFO_EMAIL: z.string().email().default('info@duecaseununicasquadra.com'),
   PRIVACY_EMAIL: z.string().email().default('privacy@duecaseununicasquadra.com'),
   LEGAL_EMAIL: z.string().email().default('legal@duecaseununicasquadra.com'),
-  AGENT_REPORT_EMAIL: z.string().email().optional(),
   SITE_URL: z.string().url().default('https://www.duecaseununicasquadra.com'),
   PROFESSIONAL_PORTAL_URL: z.string().url().optional(),
   PRIVACY_POLICY_URL: z.string().url().optional(),
   TERMS_URL: z.string().url().optional(),
   PREMIUM_ENFORCEMENT_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
-
-  // Server-to-server secrets. Keep these only in the deployment secret store.
-  GROWTH_AGENT_KEY: z.string().min(32).optional(),
-  REVENUECAT_WEBHOOK_AUTH: z.string().min(16).optional(),
-  REVENUECAT_PREMIUM_ENTITLEMENT: z.string().trim().min(1).default('premium_family'),
-  REVENUECAT_PREMIUM_PRODUCT_ID: z.string().trim().min(1).default('duecase_premium_monthly'),
 });
 
 export const config = schema.parse(process.env);
