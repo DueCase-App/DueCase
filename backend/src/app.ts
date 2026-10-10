@@ -8,6 +8,7 @@ import { checkPremiumStatus, requireAuth } from './auth.js';
 import { config } from './config.js';
 import { checkDatabase } from './db.js';
 import { asyncHandler, errorHandler } from './http.js';
+import agentReportsRouter from './routes/agentReports.js';
 import emailAuthRouter from './routes/emailAuth.js';
 import syncRouter from './routes/sync.js';
 import emailChangeRouter from './routes/emailChange.js';
@@ -83,9 +84,10 @@ app.use('/api/professional-auth', professionalEmailChangeRouter);
 app.use('/api/professional', professionalPrivacyOverridesRouter);
 app.use('/api/professional', professionalPortalRouter);
 
-// Billing e growth sono server-to-server / analytics privacy-safe.
+// Billing, growth e bridge agenti sono server-to-server / analytics privacy-safe.
 app.use('/api/billing', billingRouter);
 app.use('/api/growth', growthRouter);
+app.use('/api/agent-reports', agentReportsRouter);
 
 // Famiglia, notifiche e storico sono consultabili anche senza Premium.
 app.use('/api/sync', syncRouter);
