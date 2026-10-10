@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { Router, type Request } from 'express';
 import { z } from 'zod';
+import { getAuth, requireAuth } from '../auth.js';
 import { config } from '../config.js';
 import { pool } from '../db.js';
 import { ApiError, asyncHandler } from '../http.js';
@@ -25,6 +26,14 @@ const revenueCatWebhookSchema = z.object({
 }).passthrough();
 
 type SubscriptionStatus = 'inactive' | 'active' | 'past_due' | 'canceled';
+
+type SubscriptionRow = {
+  status: SubscriptionStatus;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  provider: string | null;
+};
 
 function requireRevenueCatAuthorization(req: Request): void {
   const expected = config.REVENUECAT_WEBHOOK_AUTH;
@@ -70,6 +79,70 @@ function statusForEvent(type: string): { status: SubscriptionStatus | null; canc
   }
   return { status: null, cancelAtPeriodEnd: null };
 }
+
+router.get('/status', requireAuth, asyncHandler(async (req, res) => {
+  const auth = getAuth(req);
+  if (!auth.familyId) {
+    res.json({
+      planCode: 'premium_monthly',
+      priceCents: 499,
+      currency: 'EUR',
+      billingPeriod: 'month',
+      trial: false,
+      status: 'inactive',
+      entitled: false,
+      currentPeriodStart: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      provider: null,
+      revenueCatAppUserId: null,
+      familyRequired: true,
+    });
+    return;
+  }
+
+  const { rows } = await pool.query<SubscriptionRow>(
+    `SELECT status,
+            CASE WHEN current_period_start IS NULL THEN NULL
+                 ELSE to_char(current_period_start AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+             END AS "currentPeriodStart",
+            CASE WHEN current_period_end IS NULL THEN NULL
+                 ELSE to_char(current_period_end AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+             END AS "currentPeriodEnd",
+            cancel_at_period_end AS "cancelAtPeriodEnd",
+            provider
+       FROM family_subscriptions
+      WHERE family_id=$1
+      LIMIT 1`,
+    [auth.familyId],
+  );
+
+  const subscription = rows[0];
+  const periodEnd = subscription?.currentPeriodEnd ? new Date(subscription.currentPeriodEnd) : null;
+  const entitled = Boolean(
+    subscription
+    && ['active', 'canceled', 'past_due'].includes(subscription.status)
+    && periodEnd
+    && !Number.isNaN(periodEnd.getTime())
+    && periodEnd.getTime() > Date.now(),
+  );
+
+  res.json({
+    planCode: 'premium_monthly',
+    priceCents: 499,
+    currency: 'EUR',
+    billingPeriod: 'month',
+    trial: false,
+    status: subscription?.status ?? 'inactive',
+    entitled,
+    currentPeriodStart: subscription?.currentPeriodStart ?? null,
+    currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
+    cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd ?? false,
+    provider: subscription?.provider ?? null,
+    revenueCatAppUserId: `family:${auth.familyId}`,
+    familyRequired: false,
+  });
+}));
 
 router.post('/revenuecat/webhook', asyncHandler(async (req, res) => {
   requireRevenueCatAuthorization(req);
